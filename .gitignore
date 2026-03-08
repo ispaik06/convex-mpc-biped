@@ -1,0 +1,12 @@
+# Exclude editor config
+.vscode/
+# Exclude temporary folders
+build/
+# Exclude macOS folder attributes
+.DS_Store
+# Exclude macOS Info.framework.plist
+Info.framework.plist
+# MuJoCo
+MUJOCO_LOG.TXT
+MJDATA.TXT
+MJMODEL.TXT
