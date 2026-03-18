@@ -14,15 +14,19 @@ void printUsage() {
 }
 
 int main_helper(int argc, char** argv, RobotController* ctrl) {
-	if(argc > 4) {
-		printUsage();
-		return EXIT_FAILURE;
-	}
-	else if(argc == 1) {
-		printUsage();
-		return EXIT_FAILURE;
-	}
 	bool headless;
+
+	if(argc > 4 || argc == 1) {
+		printUsage();
+		return EXIT_FAILURE;
+	}
+	else if(argc == 2) {
+		if(argv[1][0] == 'm' || argv[1][0] == 'g') headless = true;
+		else {
+			printUsage();
+			return EXIT_FAILURE;
+		}
+	}
 
 	if(argv[2][0] == 'y' || argv[2][0] == 'Y') {
 		headless = false;
