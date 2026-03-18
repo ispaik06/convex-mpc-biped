@@ -28,15 +28,17 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		}
 	}
 
-	if(argv[2][0] == 'y' || argv[2][0] == 'Y') {
-		headless = false;
-	}
-	else if(argv[2][0] == 'n' || argv[2][0] == 'N') {
-		headless = true;
-	}
-	else {
+	if(argc == 3) {
+		if(argv[2][0] == 'y' || argv[2][0] == 'Y') {
+			headless = false;
+		}
+		else if(argv[2][0] == 'n' || argv[2][0] == 'N') {
+			headless = true;
+		}
+		else {
 		printUsage();
 		return EXIT_FAILURE;
+	}
 	}
 
 	if(argv[1][0] == 'm') {
