@@ -10,17 +10,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Eigen3 REQUIRED NO_MODULE)
 
-# ---------- MuJoCo ----------
-set(MUJOCO_ROOT "$ENV{HOME}/.local/mujoco" CACHE PATH "MuJoCo install prefix")
-set(mujoco_DIR "${MUJOCO_ROOT}/lib/cmake/mujoco" CACHE PATH "Path to mujocoConfig.cmake")
+set(mujoco_DIR "$ENV{HOME}/.local/mujoco/lib/cmake/mujoco")
 find_package(mujoco CONFIG REQUIRED)
 
-# ---------- Targets ----------
-if(EXISTS "${CMAKE_SOURCE_DIR}/src/test.cpp")
-  add_executable(test src/test.cpp)
-  target_link_libraries(test PRIVATE Eigen3::Eigen mujoco::mujoco)
-  set_target_properties(test PROPERTIES
-    BUILD_RPATH "${MUJOCO_ROOT}/lib"
-    INSTALL_RPATH "${MUJOCO_ROOT}/lib"
-  )
-endif()
+
+add_subdirectory(common)
+add_subdirectory(robot)
+add_subdirectory(sim)
+add_subdirectory(My_controller)
+add_subdirectory(apps)

@@ -5,7 +5,7 @@ A from-scratch MuJoCo project that re-implements Convex MPC by studying and reco
 Core goals:
 
 1. Reconstruct the system by understanding not only the paper-level ideas, but also the actual software design, timing structure, and constraint construction used in code.
-2. Build a modular codebase (`modules/*`) that is easy to debug, replace, and extend.
+2. Build a modular codebase (`common/`, `robot/`, `sim/`, `controller/`) that is easy to debug, replace, and extend.
 3. Preserve a structure that can be re-tuned for Cheetah 3 physical parameters.
 
 ---
@@ -61,26 +61,16 @@ In other words, the algorithmic structure can be reused as a reference, but the 
 
 ## 4) Current repository structure
 
-- `apps/`: application entry points and top-level module wiring
+- `apps/`: application entry points and top-level wiring
 - `cmake/`: CMake helper scripts for compiler options and dependency discovery
+- `common/`: shared types, utilities, and base interfaces
+- `controller/`: control logic and concrete controller implementations
+- `robot/`: robot model selection and robot-specific mappings
+- `sim/`: MuJoCo integration layer
 - `config/`: YAML/JSON parameter files
 - `models/`: MuJoCo XML models and assets
-- `modules/`: core libraries
 - `tests/`: unit and integration tests
 - `scripts/`: experiment and automation scripts
-
-### Module summary
-
-| module | role |
-|---|---|
-| `common` | common types, utilities, parameters, and base interfaces |
-| `robot` | robot model layer (FK/Jacobian/physical parameters) |
-| `sim` | MuJoCo I/O adapter (sensor/actuator bridge) |
-| `estimator` | state and contact estimation |
-| `planner` | gait, swing, and reference generation |
-| `mpc` | Convex MPC QP construction and solver interface |
-| `controller` | stance/swing composition and final command generation |
-| `fsm` | mode execution, transition logic, and safety rules |
 
 ---
 
@@ -90,35 +80,30 @@ From a layered perspective, the structure is:
 
 - `L0`: `common`
 - `L1`: `robot`
-- `L2`: `sim / estimator / planner / mpc`
+- `L2`: `sim`
 - `L3`: `controller`
-- `L4`: `fsm`
-- `L5`: `apps`
+- `L4`: `apps`
 
 The allowed dependencies are:
 
 1. `common -> robot`
-2. `common, robot -> sim / estimator / planner / mpc`
-3. `common, robot, estimator, planner, mpc -> controller`
-4. `common, controller -> fsm`
-5. `common, sim, controller, fsm -> apps`
+2. `common, robot -> sim`
+3. `common, robot -> controller`
+4. `common, robot, sim, controller -> apps`
 
 Interpretation:
 
-- `sim` is the only module allowed to depend directly on MuJoCo.
-- The control-core modules (`estimator`, `planner`, `mpc`, `controller`, `fsm`) must communicate only through internal project types defined in `common`.
-- Dependencies must remain strictly top-down by layer. Reverse references and cyclic dependencies are forbidden.
+- `sim` is the only directory allowed to depend directly on MuJoCo.
+- Shared project types should live in `common`.
+- Dependencies should stay top-down and acyclic.
 
 ---
 
 ## 6) Recommended implementation order
 
-1. `sim + robot + common`: establish the minimum loop that reads state and writes commands
-2. `planner`: generate gait and swing references
-3. `mpc`: connect force computation
-4. `controller`: combine stance and swing control
-5. `fsm`: integrate mode transitions
-6. `tests/unit`: add minimal unit tests for each module
+1. `common + robot + sim`: establish the minimum loop that reads state and writes commands
+2. `controller`: connect a first feedback controller
+3. `tests/unit`: add minimal unit tests for each directory
 
 ---
 
@@ -129,9 +114,9 @@ Interpretation:
 
 ---
 
-## 8) `modules/*` responsibilities and MIT mapping
+## 8) Directory responsibilities and MIT mapping
 
-### `modules/common`
+### `common`
 
 Responsibilities:
 
@@ -149,7 +134,7 @@ Key lesson:
 
 - Fixing inter-module interfaces around simple shared types makes it much easier to replace solvers or estimators later.
 
-### `modules/robot`
+### `robot`
 
 Responsibilities:
 
@@ -168,7 +153,7 @@ Key lesson:
 
 - The controller code should remain separated from the robot-model implementation if portability matters.
 
-### `modules/sim`
+### `sim`
 
 Responsibilities:
 
@@ -187,65 +172,7 @@ Key lesson:
 
 - Keeping simulator-specific dependencies in one place makes it much easier to switch later to hardware or another simulator.
 
-### `modules/estimator`
-
-Responsibilities:
-
-- base pose and velocity estimation
-- contact-state estimation
-- fused state outputs for planner/controller use
-
-MIT mapping:
-
-- `common/include/Controllers/StateEstimatorContainer.h`
-- `common/src/Controllers/OrientationEstimator.cpp`
-- `common/src/Controllers/PositionVelocityEstimator.cpp`
-- `common/src/Controllers/ContactEstimator.cpp`
-
-Key lesson:
-
-- In practice, MPC performance is often limited more by estimator quality than by the optimizer itself.
-
-### `modules/planner`
-
-Responsibilities:
-
-- gait schedule generation
-- swing-foot trajectory generation
-- body and foot reference generation
-
-MIT mapping:
-
-- `common/src/Controllers/GaitScheduler.cpp`
-- `user/MIT_Controller/Controllers/convexMPC/Gait.cpp`
-- `common/src/Controllers/FootSwingTrajectory.cpp`
-- `user/MIT_Controller/Controllers/convexMPC/ConvexMPCLocomotion.cpp` (foot placement logic)
-
-Key lesson:
-
-- Swing foot placement rules (e.g., Raibert-style placement plus yaw compensation) strongly affect overall stability.
-
-### `modules/mpc`
-
-Responsibilities:
-
-- linear model construction and discretization
-- cost and constraint matrix construction
-- QP solver calls and solution interpretation (force sequence)
-
-MIT mapping:
-
-- `user/MIT_Controller/Controllers/convexMPC/ConvexMPCLocomotion.cpp`
-- `user/MIT_Controller/Controllers/convexMPC/SolverMPC.cpp`
-- `user/MIT_Controller/Controllers/convexMPC/convexMPC_interface.cpp`
-- `common/src/SparseCMPC/SparseCMPC.cpp`
-- `common/src/SparseCMPC/OsqpTriples.cpp`
-
-Key lesson:
-
-- Separating dense/sparse paths and fixing the solver I/O interface early makes long-term maintenance much easier.
-
-### `modules/controller`
+### `controller`
 
 Responsibilities:
 
@@ -262,21 +189,4 @@ MIT mapping:
 
 Key lesson:
 
-- A dedicated layer is needed to convert MPC outputs (forces) into safe and usable actuator commands (torques/targets).
-
-### `modules/fsm`
-
-Responsibilities:
-
-- execution of mode states (`Idle`, `Stand`, `Locomotion`)
-- transition logic and safety checks
-- selection of planner/controller behavior per mode
-
-MIT mapping:
-
-- `user/MIT_Controller/FSM_States/ControlFSM.cpp`
-- `user/MIT_Controller/FSM_States/FSM_State*.cpp`
-
-Key lesson:
-
-- In full systems, operational logic often matters as much as, or more than, the core control algorithm itself.
+- A dedicated layer is needed to convert higher-level control outputs into safe and usable actuator commands.
