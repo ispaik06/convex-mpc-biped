@@ -2,11 +2,14 @@
 #define SIMULATION_RUNNER_H
 
 #include <string>
-#include <mujoco/mujoco.h>
 
 #include "RobotController.h"
 #include "RobotRunner.h"
+#include "SimViewer.h"
 #include "Types.h"
+
+struct mjModel_;
+struct mjData_;
 
 class SimulationRunner {
 public:
@@ -28,8 +31,9 @@ private:
 	bool _firstControllerRun = true;
 	std::string _modelPath;
 	u64 _iteration = 0;
-	mjModel* model = nullptr;
-	mjData* data = nullptr;
+	SimViewer _viewer;
+	mjModel_* model = nullptr;
+	mjData_* data = nullptr;
 
 };
 

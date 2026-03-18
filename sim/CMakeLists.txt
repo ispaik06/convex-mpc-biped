@@ -1,4 +1,5 @@
 add_library(sim
+	src/SimViewer.cpp
 	src/SimulationRunner.cpp
 )
 
@@ -10,8 +11,8 @@ target_include_directories(sim PUBLIC
 target_link_libraries(sim
 	PUBLIC
 		common
-	PRIVATE
 		mujoco::mujoco
+		glfw
 )
 
 target_compile_definitions(sim

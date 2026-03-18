@@ -2,6 +2,7 @@
 .vscode/
 # Exclude temporary folders
 build/
+build-codex/
 # Exclude macOS folder attributes
 .DS_Store
 # Exclude macOS Info.framework.plist

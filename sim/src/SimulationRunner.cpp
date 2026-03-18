@@ -1,4 +1,10 @@
+#include <array>
+#include <chrono>
 #include <iostream>
+#include <thread>
+#include <stdexcept>
+
+#include <mujoco/mujoco.h>
 
 #include "SimulationRunner.h"
 
@@ -36,25 +42,41 @@ void SimulationRunner::init() {
 }
 
 void SimulationRunner::run() {
+	_viewer.init(model);
 
-    for(;;) {
-        mj_step(model, data);
-        ++_iteration;
-        runRobotControl();
+	const auto wallStart = std::chrono::steady_clock::now();
+	const double simStart = data->time;
 
-        if (_iteration % 50 == 0) {
-            std::cout << "t=" << data->time
-                        << " q=" << data->qpos[qadr]
-                        << " qdot=" << data->qvel[vadr]
-                        << " ctrl=" << data->ctrl[act_id] << "\n";
-        }
-    }
+	while (!_viewer.isEnabled() || !_viewer.shouldClose()) {
+		runRobotControl();
+		mj_step(model, data);
+		++_iteration;
+		_viewer.render(model, data);
 
-    std::cout << "Simulated " << _iteration
+		if (_iteration % 50 == 0) {
+			std::cout << "t=" << data->time
+					  << " q=" << data->qpos[0]
+					  << " qdot=" << data->qvel[0]
+					  << " ctrl=" << data->ctrl[0] << "\n";
+		}
+
+		const double simElapsed = data->time - simStart;
+		const double wallElapsed =
+			std::chrono::duration<double>(std::chrono::steady_clock::now() - wallStart).count();
+		if (simElapsed > wallElapsed) {
+			std::this_thread::sleep_for(std::chrono::duration<double>(simElapsed - wallElapsed));
+		}
+	}
+
+	std::cout << "Simulated " << _iteration
 			  << " steps, sim time=" << data->time << " sec" << '\n';
+
+	_viewer.shutdown();
 
     mj_deleteData(data);
 	mj_deleteModel(model);
+	data = nullptr;
+	model = nullptr;
 }
 
 void SimulationRunner::runRobotControl() {

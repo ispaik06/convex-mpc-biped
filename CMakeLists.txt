@@ -12,6 +12,7 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 
 set(mujoco_DIR "$ENV{HOME}/.local/mujoco/lib/cmake/mujoco")
 find_package(mujoco CONFIG REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
 
 
 add_subdirectory(common)

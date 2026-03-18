@@ -13,7 +13,11 @@ void printUsage() {
 }
 
 int main_helper(int argc, char** argv, RobotController* ctrl) {
-	if(argc > 3 || argc < 1) {
+	if(argc > 3) {
+		printUsage();
+		return EXIT_FAILURE;
+	}
+	else if(argc == 1) {
 		printUsage();
 		return EXIT_FAILURE;
 	}
