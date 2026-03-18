@@ -13,8 +13,8 @@ struct mjData_;
 
 class SimulationRunner {
 public:
-	explicit SimulationRunner(RobotType robot, RobotController* ctrl) :
-	_robot(robot) {
+	explicit SimulationRunner(RobotType robot, RobotController* ctrl, bool headless) :
+	_robot(robot), _headless(headless) {
 		_robotRunner = new RobotRunner(ctrl);
 	}
 
@@ -34,7 +34,7 @@ private:
 	SimViewer _viewer;
 	mjModel_* model = nullptr;
 	mjData_* data = nullptr;
-
+	bool _headless = true;
 };
 
 #endif  // SIMULATION_RUNNER_H

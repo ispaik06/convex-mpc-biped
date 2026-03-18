@@ -8,12 +8,13 @@
 
 void printUsage() {
 	printf(
-		"Usage: robot [robot-id] \n"
-		"\t where robot-id:    m for MIT humanoid, g for UNITREE G1\n");
+		"Usage: robot [robot-id] Viewer [y/n] \n"
+		"\t where robot-id:    m for MIT humanoid, g for UNITREE G1\n"
+		"\t where Viewer  :    y for opening viewer, n for headless mode\n");
 }
 
 int main_helper(int argc, char** argv, RobotController* ctrl) {
-	if(argc > 3) {
+	if(argc > 4) {
 		printUsage();
 		return EXIT_FAILURE;
 	}
@@ -21,16 +22,27 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		printUsage();
 		return EXIT_FAILURE;
 	}
+	bool headless;
 
+	if(argv[2][0] == 'y' || argv[2][0] == 'Y') {
+		headless = false;
+	}
+	else if(argv[2][0] == 'n' || argv[2][0] == 'N') {
+		headless = true;
+	}
+	else {
+		printUsage();
+		return EXIT_FAILURE;
+	}
 
 	if(argv[1][0] == 'm') {
-		SimulationRunner simulationRunner(RobotType::MIT_HUMANOID, ctrl);
+		SimulationRunner simulationRunner(RobotType::MIT_HUMANOID, ctrl, headless);
 		simulationRunner.init();
 		simulationRunner.run();
 		printf("[MIT HUMANOID] Sim Runner run() has finished!\n");
 	}
 	else if(argv[1][0] == 'g') {
-		SimulationRunner simulationRunner(RobotType::UNITREE_G1, ctrl);
+		SimulationRunner simulationRunner(RobotType::MIT_HUMANOID, ctrl, headless);
 		simulationRunner.init();
 		simulationRunner.run();
 		printf("[MIT HUMANOID] Sim Runner run() has finished!\n");

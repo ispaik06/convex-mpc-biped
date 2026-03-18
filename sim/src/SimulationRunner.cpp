@@ -42,16 +42,19 @@ void SimulationRunner::init() {
 }
 
 void SimulationRunner::run() {
-	_viewer.init(model);
+    const bool useViewer = !_headless && _viewer.init(model);
 
 	const auto wallStart = std::chrono::steady_clock::now();
 	const double simStart = data->time;
 
-	while (!_viewer.isEnabled() || !_viewer.shouldClose()) {
+
+	while (!useViewer || !_viewer.shouldClose()) {
 		runRobotControl();
 		mj_step(model, data);
 		++_iteration;
-		_viewer.render(model, data);
+		if (useViewer) {
+			_viewer.render(model, data);
+		}
 
 		if (_iteration % 50 == 0) {
 			std::cout << "t=" << data->time
@@ -71,7 +74,9 @@ void SimulationRunner::run() {
 	std::cout << "Simulated " << _iteration
 			  << " steps, sim time=" << data->time << " sec" << '\n';
 
-	_viewer.shutdown();
+	if (useViewer) {
+		_viewer.shutdown();
+	}
 
     mj_deleteData(data);
 	mj_deleteModel(model);
