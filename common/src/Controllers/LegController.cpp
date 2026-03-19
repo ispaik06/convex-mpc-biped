@@ -264,18 +264,24 @@ void LegController<T>::resizeFromModel() {
     datas.reserve(_robotModel->numLegs());
 
     for (std::size_t leg = 0; leg < _robotModel->numLegs(); ++leg) {
-        const auto jointCount =
-            static_cast<Eigen::Index>(_robotModel->legJointIndices(static_cast<int>(leg)).size());
+        const auto qCount =
+            static_cast<Eigen::Index>(_robotModel->legQIndices(static_cast<int>(leg)).size());
+        const auto qdCount =
+            static_cast<Eigen::Index>(_robotModel->legQdIndices(static_cast<int>(leg)).size());
         const auto actuatorCount = static_cast<Eigen::Index>(
             _robotModel->legActuatorIndices(static_cast<int>(leg)).size());
 
-        if (jointCount != actuatorCount) {
+        if (qCount != qdCount) {
+            throw std::invalid_argument("LegController requires q and qd index counts to match");
+        }
+
+        if (qCount != actuatorCount) {
             throw std::invalid_argument(
                 "LegController currently requires actuator count to match joint count");
         }
 
-        commands.emplace_back(jointCount);
-        datas.emplace_back(jointCount);
+        commands.emplace_back(qCount);
+        datas.emplace_back(qCount);
     }
 }
 

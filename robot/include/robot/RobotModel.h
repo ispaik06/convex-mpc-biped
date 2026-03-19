@@ -21,7 +21,8 @@ public:
     std::size_t numLegs() const { return _params->legs.size(); }
     std::size_t numArms() const { return _params->arms.size(); }
 
-    const std::vector<int>& legJointIndices(int leg) const;
+    const std::vector<int>& legQIndices(int leg) const;
+    const std::vector<int>& legQdIndices(int leg) const;
     const std::vector<int>& legActuatorIndices(int leg) const;
 
     DVec<T> getLegQ(const DVec<T>& q, int leg) const;

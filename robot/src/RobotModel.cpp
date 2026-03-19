@@ -42,37 +42,45 @@ bool RobotModel<T>::validate() const {
     }
 
     for (const auto& leg : _params->legs) {
-        const auto joint_count = static_cast<Eigen::Index>(leg.joints.joint_idx.size());
+        const auto q_count = static_cast<Eigen::Index>(leg.joints.q_idx.size());
+        const auto qd_count = static_cast<Eigen::Index>(leg.joints.qd_idx.size());
         const auto actuator_count = static_cast<Eigen::Index>(leg.joints.actuator_idx.size());
-        if (joint_count == 0) {
+        if (q_count == 0 || qd_count == 0) {
+            return false;
+        }
+        if (q_count != qd_count) {
             return false;
         }
         if (leg.joints.motorTauMax.size() != 0 &&
-            leg.joints.motorTauMax.size() != (actuator_count == 0 ? joint_count : actuator_count)) {
+            leg.joints.motorTauMax.size() != (actuator_count == 0 ? q_count : actuator_count)) {
             return false;
         }
-        if (leg.joints.damping.size() != 0 && leg.joints.damping.size() != joint_count) {
+        if (leg.joints.damping.size() != 0 && leg.joints.damping.size() != qd_count) {
             return false;
         }
-        if (leg.joints.dryFriction.size() != 0 && leg.joints.dryFriction.size() != joint_count) {
+        if (leg.joints.dryFriction.size() != 0 && leg.joints.dryFriction.size() != qd_count) {
             return false;
         }
     }
 
     for (const auto& arm : _params->arms) {
-        const auto joint_count = static_cast<Eigen::Index>(arm.joints.joint_idx.size());
+        const auto q_count = static_cast<Eigen::Index>(arm.joints.q_idx.size());
+        const auto qd_count = static_cast<Eigen::Index>(arm.joints.qd_idx.size());
         const auto actuator_count = static_cast<Eigen::Index>(arm.joints.actuator_idx.size());
-        if (joint_count == 0) {
+        if (q_count == 0 || qd_count == 0) {
+            return false;
+        }
+        if (q_count != qd_count) {
             return false;
         }
         if (arm.joints.motorTauMax.size() != 0 &&
-            arm.joints.motorTauMax.size() != (actuator_count == 0 ? joint_count : actuator_count)) {
+            arm.joints.motorTauMax.size() != (actuator_count == 0 ? q_count : actuator_count)) {
             return false;
         }
-        if (arm.joints.damping.size() != 0 && arm.joints.damping.size() != joint_count) {
+        if (arm.joints.damping.size() != 0 && arm.joints.damping.size() != qd_count) {
             return false;
         }
-        if (arm.joints.dryFriction.size() != 0 && arm.joints.dryFriction.size() != joint_count) {
+        if (arm.joints.dryFriction.size() != 0 && arm.joints.dryFriction.size() != qd_count) {
             return false;
         }
     }
@@ -81,37 +89,42 @@ bool RobotModel<T>::validate() const {
 }
 
 template <typename T>
-const std::vector<int>& RobotModel<T>::legJointIndices(int leg) const {
-    return checkedLeg(_params, leg).joints.joint_idx;
-}
-
-template <typename T>
 const std::vector<int>& RobotModel<T>::legActuatorIndices(int leg) const {
     const auto& leg_params = checkedLeg(_params, leg);
     if (!leg_params.joints.actuator_idx.empty()) {
         return leg_params.joints.actuator_idx;
     }
-    return leg_params.joints.joint_idx;
+    return leg_params.joints.qd_idx;
+}
+
+template <typename T>
+const std::vector<int>& RobotModel<T>::legQIndices(int leg) const {
+    return checkedLeg(_params, leg).joints.q_idx;
+}
+
+template <typename T>
+const std::vector<int>& RobotModel<T>::legQdIndices(int leg) const {
+    return checkedLeg(_params, leg).joints.qd_idx;
 }
 
 template <typename T>
 DVec<T> RobotModel<T>::getLegQ(const DVec<T>& q, int leg) const {
-    const auto& joint_idx = legJointIndices(leg);
-    DVec<T> q_leg(static_cast<Eigen::Index>(joint_idx.size()));
+    const auto& q_idx = legQIndices(leg);
+    DVec<T> q_leg(static_cast<Eigen::Index>(q_idx.size()));
     for (Eigen::Index i = 0; i < q_leg.size(); ++i) {
-        checkVectorIndex(q, joint_idx[static_cast<std::size_t>(i)], "q");
-        q_leg[i] = q[joint_idx[static_cast<std::size_t>(i)]];
+        checkVectorIndex(q, q_idx[static_cast<std::size_t>(i)], "q");
+        q_leg[i] = q[q_idx[static_cast<std::size_t>(i)]];
     }
     return q_leg;
 }
 
 template <typename T>
 DVec<T> RobotModel<T>::getLegQd(const DVec<T>& qd, int leg) const {
-    const auto& joint_idx = legJointIndices(leg);
-    DVec<T> qd_leg(static_cast<Eigen::Index>(joint_idx.size()));
+    const auto& qd_idx = legQdIndices(leg);
+    DVec<T> qd_leg(static_cast<Eigen::Index>(qd_idx.size()));
     for (Eigen::Index i = 0; i < qd_leg.size(); ++i) {
-        checkVectorIndex(qd, joint_idx[static_cast<std::size_t>(i)], "qd");
-        qd_leg[i] = qd[joint_idx[static_cast<std::size_t>(i)]];
+        checkVectorIndex(qd, qd_idx[static_cast<std::size_t>(i)], "qd");
+        qd_leg[i] = qd[qd_idx[static_cast<std::size_t>(i)]];
     }
     return qd_leg;
 }

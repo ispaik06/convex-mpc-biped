@@ -8,9 +8,9 @@
 class RobotRunner {
 public:
     explicit RobotRunner(RobotController* robot_ctrl)
-        : _robotController(robot_ctrl), _model(&_params) {}
+        : _robotController(robot_ctrl), _model(_params) {}
 
-    void init();
+    void init(RobotParams<double>*);
     void setupStep();
     void run();
     void finalizeStep();
@@ -19,11 +19,11 @@ public:
 
     RobotController* _robotController;
     RobotType _robotType;
-    RobotParams<double> _params;
 
 private:
+    RobotParams<double>* _params;
     RobotModel<double> _model;
-    LegController<double>* _legController;
+    std::unique_ptr<LegController<double>> _legController;
     u64 _iterations = 0;
 };
 

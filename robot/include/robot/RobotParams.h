@@ -43,7 +43,8 @@ struct EndEffectorParams {
 
 template <typename T>
 struct JointGroupParams {
-    std::vector<int> joint_idx;
+    std::vector<int> q_idx;
+    std::vector<int> qd_idx;
     std::vector<int> actuator_idx;
 
     DVec<T> motorTauMax;
