@@ -10,18 +10,18 @@ void printUsage() {
 	printf(
 		"Usage: robot [robot-id] Viewer [y/n] \n"
 		"\t where robot-id:    m for MIT humanoid, g for UNITREE G1\n"
-		"\t where Viewer  :    y for opening viewer, n for headless mode\n");
+		"\t where default viewer mode  :    GUI viewer");
 }
 
 int main_helper(int argc, char** argv, RobotController* ctrl) {
-	bool headless = true;
+	bool headless = false;
 
 	if(argc > 3 || argc == 1) {
 		printUsage();
 		return EXIT_FAILURE;
 	}
 	if(argc == 2) {
-		if(argv[1][0] == 'm' || argv[1][0] == 'g') headless = true;
+		if(argv[1][0] == 'm' || argv[1][0] == 'g') headless = false;
 		else {
 			printUsage();
 			return EXIT_FAILURE;

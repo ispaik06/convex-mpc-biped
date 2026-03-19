@@ -11,6 +11,8 @@
 
 struct mjModel_;
 struct mjData_;
+using mjModel = mjModel_;
+using mjData = mjData_;
 
 class SimulationRunner {
 public:
@@ -34,8 +36,8 @@ private:
 	std::string _modelPath;
 	u64 _iteration = 0;
 	MainThread _mainThread;
-	mjModel_* model = nullptr;
-	mjData_* data = nullptr;
+	mjModel* model = nullptr;
+	mjData* data = nullptr;
 	bool _headless = true;
 	std::atomic<bool> _stopRequested = false;
 };
