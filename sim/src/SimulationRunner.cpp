@@ -97,8 +97,8 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 		}
 	}
 
-	std::cout << "Simulated " << _iteration
-			  << " steps, sim time=" << data->time << " sec" << '\n';
+	std::cout << '\n' << "Simulated " << _iteration
+			  << " steps, sim time=" << data->time << " sec" << "\n\n";
 }
 
 void SimulationRunner::runRobotControl() {
