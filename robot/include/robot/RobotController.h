@@ -1,13 +1,22 @@
 #ifndef ROBOT_CONTROLLER_H
 #define ROBOT_CONTROLLER_H
 
+#include "RobotModel.h"
+
+
 class RobotController {
 public:
-	RobotController() = default;
-	virtual ~RobotController() = default;
+	RobotController(){}
+	virtual ~RobotController(){}
+
+	virtual void initializeController();
+
+	virtual void runController();
 
 private:
-	RobotType _robot;
+	RobotModel<double>* _robotModel = nullptr;
+
+	RobotType _robotType;
 };
 
 #endif  // ROBOT_CONTROLLER_H
