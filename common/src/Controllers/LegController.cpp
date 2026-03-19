@@ -269,10 +269,10 @@ void LegController<T>::resizeFromModel() {
         const auto actuatorCount = static_cast<Eigen::Index>(
             _robotModel->legActuatorIndices(static_cast<int>(leg)).size());
 
-        // if (jointCount != actuatorCount) {
-        //     throw std::invalid_argument(
-        //         "LegController currently requires actuator count to match joint count");
-        // }
+        if (jointCount != actuatorCount) {
+            throw std::invalid_argument(
+                "LegController currently requires actuator count to match joint count");
+        }
 
         commands.emplace_back(jointCount);
         datas.emplace_back(jointCount);
