@@ -2,6 +2,7 @@ add_library(robot
 	src/RobotModel.cpp
 	src/RobotRunner.cpp
 	src/main_helper.cpp
+	../common/src/Controllers/LegController.cpp
 )
 
 target_include_directories(robot
