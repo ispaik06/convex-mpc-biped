@@ -109,6 +109,4 @@ using D3Mat = typename Eigen::Matrix<T, 3, Eigen::Dynamic>;
 template <typename T>
 using vectorAligned = typename std::vector<T, Eigen::aligned_allocator<T>>;
 
-enum class RobotType { MIT_HUMANOID, UNITREE_G1, UNITREE_H1 };
-
 #endif  // CPP_TYPES_H
