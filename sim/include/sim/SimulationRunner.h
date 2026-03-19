@@ -7,6 +7,7 @@
 #include "main_thread.h"
 #include "RobotController.h"
 #include "RobotRunner.h"
+#include "RobotParams.h"
 #include "Types.h"
 
 struct mjModel_;
@@ -29,6 +30,7 @@ public:
 
 private:
 	RobotType _robot;
+	RobotParams<double> _params;
 	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
 	bool _firstControllerRun = true;
 	std::string _modelPath;

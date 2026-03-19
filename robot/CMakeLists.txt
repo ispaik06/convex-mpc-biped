@@ -1,4 +1,5 @@
 add_library(robot
+	src/RobotController.cpp
 	src/RobotModel.cpp
 	src/RobotRunner.cpp
 	src/main_helper.cpp

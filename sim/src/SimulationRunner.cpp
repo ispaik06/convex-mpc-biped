@@ -7,6 +7,7 @@
 #include <mujoco/mujoco.h>
 
 #include "SimulationRunner.h"
+#include "setupRobotParams.h"
 
 void SimulationRunner::init() {
 	if (_robot == RobotType::MIT_HUMANOID) _modelPath = "/models/mit_humanoid/scene.xml";
@@ -96,7 +97,9 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 
 void SimulationRunner::runRobotControl() {
 	if (_firstControllerRun) {
-
+		_params = setupRobotParams<double>(_robot, model);
+		_robotRunner->init(&_params);
+		_firstControllerRun = false;
 	}
 	_robotRunner->run();
 }

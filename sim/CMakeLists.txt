@@ -2,6 +2,7 @@ add_library(sim
 	src/main_thread.cpp
 	src/SimViewer.cpp
 	src/SimulationRunner.cpp
+	src/setupRobotParams.cpp
 )
 
 target_include_directories(sim PUBLIC
