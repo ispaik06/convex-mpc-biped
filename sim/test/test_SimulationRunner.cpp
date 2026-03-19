@@ -51,12 +51,12 @@ void SimulationRunner::run() {
 	while (!useViewer || !_viewer.shouldClose()) {
 		runRobotControl();
 		mj_step(model, data);
-		++_iteration;
+		++_iterations;
 		if (useViewer) {
 			_viewer.render(model, data);
 		}
 
-		if (_iteration % 50 == 0) {
+		if (_iterations % 50 == 0) {
 			std::cout << "t=" << data->time
 					  << " q=" << data->qpos[0]
 					  << " qdot=" << data->qvel[0]

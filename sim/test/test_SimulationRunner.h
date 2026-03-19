@@ -30,7 +30,7 @@ private:
 	RobotRunner* _robotRunner = nullptr;
 	bool _firstControllerRun = true;
 	std::string _modelPath;
-	u64 _iteration = 0;
+	u64 _iterations = 0;
 	SimViewer _viewer;
 	mjModel_* model = nullptr;
 	mjData_* data = nullptr;

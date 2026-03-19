@@ -72,7 +72,7 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 	while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
 		runRobotControl();
 		mj_step(model, data);
-		++_iteration;
+		++_iterations;
 
 		if (syncViewer) {
 			_mainThread.sync();
@@ -90,7 +90,7 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 		}
 	}
 
-	std::cout << '\n' << "Simulated " << _iteration
+	std::cout << '\n' << "Simulated " << _iterations
 			  << " steps, sim time=" << data->time << " sec" << "\n\n";
 }
 

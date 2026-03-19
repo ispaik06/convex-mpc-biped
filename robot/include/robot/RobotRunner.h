@@ -2,7 +2,7 @@
 #define ROBOT_RUNNER_H
 
 #include "RobotController.h"
-
+#include "RobotModel.h"
 
 class RobotRunner {
 public:
@@ -15,7 +15,7 @@ public:
     virtual ~RobotRunner();
 
 private:
-
+    u64 _iterations = 0;
 };
 
 
