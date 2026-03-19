@@ -18,20 +18,18 @@ class SimulationRunner {
 public:
 	explicit SimulationRunner(RobotType robot, RobotController* ctrl, bool headless) :
 	_robot(robot), _headless(headless) {
-		_robotRunner = new RobotRunner(ctrl);
+		_robotRunner = std::make_unique<RobotRunner>(ctrl);
 	}
 
 	void init();
 	void run();
 	void runRobotControl();
 	void runPhysicsLoop(bool throttleRealtime, bool syncViewer);
-	~SimulationRunner() {
-		delete _robotRunner;
-	}
+
 
 private:
 	RobotType _robot;
-	RobotRunner* _robotRunner = nullptr;
+	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
 	bool _firstControllerRun = true;
 	std::string _modelPath;
 	u64 _iterations = 0;
