@@ -78,13 +78,6 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 			_mainThread.sync();
 		}
 
-		if (_iteration % 50 == 0) {
-			std::cout << "t=" << data->time
-					  << " q=" << data->qpos[0]
-					  << " qdot=" << data->qvel[0]
-					  << " ctrl=" << data->ctrl[0] << "\n";
-		}
-
 		if (!throttleRealtime) {
 			continue;
 		}
