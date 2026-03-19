@@ -1,11 +1,12 @@
 #include "setupRobotParams.h"
 
-#include <array>
 #include <cmath>
 #include <stdexcept>
 #include <string>
 
 #include <mujoco/mujoco.h>
+
+#include "models/RobotMujocoSpec.h"
 
 namespace {
 template <typename T>
@@ -52,21 +53,19 @@ void fillBodyMassProperties(const mjModel* model,
         static_cast<T>(model->body_ipos[3 * baseBodyId + 2]);
 }
 
-template <typename T, std::size_t NJ, std::size_t NA>
+template <typename T>
 void fillJointGroup(const mjModel* model,
-                    const std::array<const char*, NJ>& jointNames,
-                    const std::array<const char*, NA>& actuatorNames,
+                    const std::vector<JointActuatorSpec>& jointSpecs,
                     JointGroupParams<T>& group) {
-    static_assert(NJ == NA, "joint and actuator name counts must match");
-
     group.q_idx.clear();
     group.qd_idx.clear();
     group.actuator_idx.clear();
-    group.motorTauMax.resize(static_cast<Eigen::Index>(NA));
+    group.motorTauMax.resize(static_cast<Eigen::Index>(jointSpecs.size()));
 
-    for (std::size_t i = 0; i < jointNames.size(); ++i) {
-        const int jointId = requireId<T>(model, mjOBJ_JOINT, jointNames[i], "joint");
-        const int actuatorId = requireId<T>(model, mjOBJ_ACTUATOR, actuatorNames[i], "actuator");
+    for (std::size_t i = 0; i < jointSpecs.size(); ++i) {
+        const auto& spec = jointSpecs[i];
+        const int jointId = requireId<T>(model, mjOBJ_JOINT, spec.joint, "joint");
+        const int actuatorId = requireId<T>(model, mjOBJ_ACTUATOR, spec.actuator, "actuator");
 
         group.q_idx.push_back(model->jnt_qposadr[jointId]);
         group.qd_idx.push_back(model->jnt_dofadr[jointId]);
@@ -81,8 +80,12 @@ void fillJointGroup(const mjModel* model,
 
 template <typename T>
 Vec3<T> firstJointLocationFromBase(const mjModel* model,
-                                   const std::string& firstJointName) {
-    const int jointId = requireId<T>(model, mjOBJ_JOINT, firstJointName, "joint");
+                                   const std::vector<JointActuatorSpec>& jointSpecs) {
+    if (jointSpecs.empty()) {
+        throw std::runtime_error("Limb spec has no joints");
+    }
+
+    const int jointId = requireId<T>(model, mjOBJ_JOINT, jointSpecs.front().joint, "joint");
     const int bodyId = model->jnt_bodyid[jointId];
 
     Vec3<T> hip = Vec3<T>::Zero();
@@ -92,118 +95,53 @@ Vec3<T> firstJointLocationFromBase(const mjModel* model,
     return hip;
 }
 
-template <typename T, std::size_t NJ, std::size_t NA>
-LegParams<T> makeLeg(const mjModel* model,
-                     Side side,
-                     const std::array<const char*, NJ>& jointNames,
-                     const std::array<const char*, NA>& actuatorNames,
-                     const char* footBodyName,
-                     const char* footSiteName) {
+template <typename T>
+LegParams<T> makeLeg(const mjModel* model, const LimbMujocoSpec& spec) {
     LegParams<T> leg;
-    leg.side = side;
-    fillJointGroup(model, jointNames, actuatorNames, leg.joints);
+    leg.side = spec.side;
+    fillJointGroup(model, spec.joints, leg.joints);
 
-    leg.foot.body_name = footBodyName;
-    leg.foot.site_name = footSiteName ? footSiteName : "";
+    leg.foot.body_name = spec.endBody;
+    leg.foot.site_name = spec.endSite ? spec.endSite : "";
     leg.foot.body_id = requireId<T>(model, mjOBJ_BODY, leg.foot.body_name, "foot body");
     leg.foot.site_id = optionalId<T>(model, mjOBJ_SITE, leg.foot.site_name);
-    leg.hipLocation_from_body = firstJointLocationFromBase<T>(model, jointNames.front());
+    leg.hipLocation_from_body = firstJointLocationFromBase<T>(model, spec.joints);
     return leg;
 }
 
-template <typename T, std::size_t NJ, std::size_t NA>
-ArmParams<T> makeArm(const mjModel* model,
-                     Side side,
-                     const std::array<const char*, NJ>& jointNames,
-                     const std::array<const char*, NA>& actuatorNames,
-                     const char* handBodyName,
-                     const char* handSiteName) {
+template <typename T>
+ArmParams<T> makeArm(const mjModel* model, const LimbMujocoSpec& spec) {
     ArmParams<T> arm;
-    arm.side = side;
-    fillJointGroup(model, jointNames, actuatorNames, arm.joints);
+    arm.side = spec.side;
+    fillJointGroup(model, spec.joints, arm.joints);
 
-    arm.hand.body_name = handBodyName;
-    arm.hand.site_name = handSiteName ? handSiteName : "";
+    arm.hand.body_name = spec.endBody;
+    arm.hand.site_name = spec.endSite ? spec.endSite : "";
     arm.hand.body_id = requireId<T>(model, mjOBJ_BODY, arm.hand.body_name, "hand body");
     arm.hand.site_id = optionalId<T>(model, mjOBJ_SITE, arm.hand.site_name);
     return arm;
 }
 
 template <typename T>
-RobotParams<T> setupMitHumanoidParams(const mjModel* model) {
+RobotParams<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMujocoSpec& spec) {
     RobotParams<T> params;
-    params.roboType = RobotType::MIT_HUMANOID;
+    params.roboType = spec.type;
     params.nq = model->nq;
     params.nv = model->nv;
     params.nu = model->nu;
 
     fillDefaultQpos(model, params);
-    fillBodyMassProperties(model, "torso", params);
+    fillBodyMassProperties(model, spec.baseBody, params);
 
-    const std::array<const char*, 5> leftLegJoints = {
-        "left_hip_yaw_joint",
-        "left_hip_abad_joint",
-        "left_hip_pitch_joint",
-        "left_knee_joint",
-        "left_ankle_joint",
-    };
-    const std::array<const char*, 5> leftLegActuators = {
-        "left_hip_yaw",
-        "left_hip_abad",
-        "left_hip_pitch",
-        "left_knee",
-        "left_ankle",
-    };
-    const std::array<const char*, 5> rightLegJoints = {
-        "right_hip_yaw_joint",
-        "right_hip_abad_joint",
-        "right_hip_pitch_joint",
-        "right_knee_joint",
-        "right_ankle_joint",
-    };
-    const std::array<const char*, 5> rightLegActuators = {
-        "right_hip_yaw",
-        "right_hip_abad",
-        "right_hip_pitch",
-        "right_knee",
-        "right_ankle",
-    };
-    const std::array<const char*, 4> leftArmJoints = {
-        "left_shoulder_pitch_joint",
-        "left_shoulder_abad_joint",
-        "left_shoulder_yaw_joint",
-        "left_elbow_joint",
-    };
-    const std::array<const char*, 4> leftArmActuators = {
-        "left_shoulder_pitch",
-        "left_shoulder_abad",
-        "left_shoulder_yaw",
-        "left_elbow",
-    };
-    const std::array<const char*, 4> rightArmJoints = {
-        "right_shoulder_pitch_joint",
-        "right_shoulder_abad_joint",
-        "right_shoulder_yaw_joint",
-        "right_elbow_joint",
-    };
-    const std::array<const char*, 4> rightArmActuators = {
-        "right_shoulder_pitch",
-        "right_shoulder_abad",
-        "right_shoulder_yaw",
-        "right_elbow",
-    };
+    params.legs.reserve(spec.legs.size());
+    for (const auto& legSpec : spec.legs) {
+        params.legs.push_back(makeLeg<T>(model, legSpec));
+    }
 
-    params.legs.reserve(2);
-    params.legs.push_back(
-        makeLeg<T>(model, Side::Left, leftLegJoints, leftLegActuators, "left_foot_link", ""));
-    params.legs.push_back(
-        makeLeg<T>(model, Side::Right, rightLegJoints, rightLegActuators, "right_foot_link", ""));
-
-    params.arms.reserve(2);
-    params.arms.push_back(
-        makeArm<T>(model, Side::Left, leftArmJoints, leftArmActuators, "left_forearm_link", ""));
-    params.arms.push_back(makeArm<T>(
-        model, Side::Right, rightArmJoints, rightArmActuators, "right_forearm_link", ""));
+    params.arms.reserve(spec.arms.size());
+    for (const auto& armSpec : spec.arms) {
+        params.arms.push_back(makeArm<T>(model, armSpec));
+    }
 
     return params;
 }
@@ -215,12 +153,8 @@ RobotParams<T> setupRobotParams(const RobotType robotType, const mjModel_* model
         throw std::runtime_error("setupRobotParams received null mjModel");
     }
 
-    switch (robotType) {
-        case RobotType::MIT_HUMANOID:
-            return setupMitHumanoidParams<T>(reinterpret_cast<const mjModel*>(model));
-        default:
-            throw std::runtime_error("setupRobotParams currently supports only MIT_HUMANOID");
-    }
+    const auto& spec = getRobotMujocoSpec(robotType);
+    return buildRobotParamsFromSpec<T>(reinterpret_cast<const mjModel*>(model), spec);
 }
 
 template RobotParams<float> setupRobotParams<float>(RobotType, const mjModel_*);
