@@ -1,10 +1,14 @@
+#include <stdexcept>
+
 #include "RobotRunner.h"
 
 void RobotRunner::init(RobotParams<double>* params) {
     _params = params;
+    _model = RobotModel<double>(_params);
     if(!_model.validate()) {
         throw std::runtime_error("Invalid RobotParams");
     }
+    _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
 }
 
