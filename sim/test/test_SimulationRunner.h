@@ -1,12 +1,11 @@
 #ifndef SIMULATION_RUNNER_H
 #define SIMULATION_RUNNER_H
 
-#include <atomic>
 #include <string>
 
-#include "main_thread.h"
 #include "RobotController.h"
 #include "RobotRunner.h"
+#include "SimViewer.h"
 #include "Types.h"
 
 struct mjModel_;
@@ -22,7 +21,6 @@ public:
 	void init();
 	void run();
 	void runRobotControl();
-	void runPhysicsLoop(bool throttleRealtime, bool syncViewer);
 	~SimulationRunner() {
 		delete _robotRunner;
 	}
@@ -33,11 +31,10 @@ private:
 	bool _firstControllerRun = true;
 	std::string _modelPath;
 	u64 _iteration = 0;
-	MainThread _mainThread;
+	SimViewer _viewer;
 	mjModel_* model = nullptr;
 	mjData_* data = nullptr;
 	bool _headless = true;
-	std::atomic<bool> _stopRequested = false;
 };
 
 #endif  // SIMULATION_RUNNER_H

@@ -1,4 +1,5 @@
 add_library(sim
+	src/main_thread.cpp
 	src/SimViewer.cpp
 	src/SimulationRunner.cpp
 )
@@ -11,9 +12,14 @@ target_include_directories(sim PUBLIC
 target_link_libraries(sim
 	PUBLIC
 		common
+		mujoco::libmujoco_simulate
 		mujoco::mujoco
 		glfw
 )
+
+if(APPLE)
+	target_link_libraries(sim PUBLIC "-framework CoreVideo")
+endif()
 
 target_compile_definitions(sim
 	PRIVATE

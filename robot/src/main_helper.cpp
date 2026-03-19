@@ -14,13 +14,13 @@ void printUsage() {
 }
 
 int main_helper(int argc, char** argv, RobotController* ctrl) {
-	bool headless;
+	bool headless = true;
 
-	if(argc > 4 || argc == 1) {
+	if(argc > 3 || argc == 1) {
 		printUsage();
 		return EXIT_FAILURE;
 	}
-	else if(argc == 2) {
+	if(argc == 2) {
 		if(argv[1][0] == 'm' || argv[1][0] == 'g') headless = true;
 		else {
 			printUsage();
@@ -48,10 +48,10 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		printf("[MIT HUMANOID] Sim Runner run() has finished!\n");
 	}
 	else if(argv[1][0] == 'g') {
-		SimulationRunner simulationRunner(RobotType::MIT_HUMANOID, ctrl, headless);
+		SimulationRunner simulationRunner(RobotType::UNITREE_G1, ctrl, headless);
 		simulationRunner.init();
 		simulationRunner.run();
-		printf("[MIT HUMANOID] Sim Runner run() has finished!\n");
+		printf("[UNITREE G1] Sim Runner run() has finished!\n");
 	}
 	else {
 		printUsage();
