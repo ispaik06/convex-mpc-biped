@@ -1,29 +1,35 @@
-#include "setupRobotParams.h"
-
 #include <cmath>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include <mujoco/mujoco.h>
 
+#include "setupRobotParams.h"
 #include "models/RobotMujocoSpec.h"
 
 namespace {
+std::string asString(std::string_view value) {
+    return std::string(value);
+}
+
 template <typename T>
-int requireId(const mjModel* model, int objType, const std::string& name, const char* what) {
-    const int id = mj_name2id(model, objType, name.c_str());
+int requireId(const mjModel* model, int objType, std::string_view name, const char* what) {
+    const std::string key = asString(name);
+    const int id = mj_name2id(model, objType, key.c_str());
     if (id < 0) {
-        throw std::runtime_error(std::string("Failed to find ") + what + ": " + name);
+        throw std::runtime_error(std::string("Failed to find ") + what + ": " + key);
     }
     return id;
 }
 
 template <typename T>
-int optionalId(const mjModel* model, int objType, const std::string& name) {
+int optionalId(const mjModel* model, int objType, std::string_view name) {
     if (name.empty()) {
         return -1;
     }
-    return mj_name2id(model, objType, name.c_str());
+    const std::string key = asString(name);
+    return mj_name2id(model, objType, key.c_str());
 }
 
 template <typename T>
@@ -36,12 +42,14 @@ void fillDefaultQpos(const mjModel* model, RobotParams<T>& params) {
 
 template <typename T>
 void fillBodyMassProperties(const mjModel* model,
-                            const std::string& baseBodyName,
+                            std::string_view baseBodyName,
                             RobotParams<T>& params) {
     params.bodyMass = T(0);
-    for (int i = 1; i < model->nbody; ++i) {
-        params.bodyMass += static_cast<T>(model->body_mass[i]);
-    }
+    // for (int i = 1; i < model->nbody; ++i) {
+    //     params.bodyMass += static_cast<T>(model->body_mass[i]);
+    // }
+    int baseBodyidx = requireId(model, mjOBJ_BODY, baseBodyName, "base body");
+    params.bodyMass += static_cast<T>(model->body_mass[baseBodyidx];
 
     const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
     params.bodyInertia.setZero();
@@ -101,8 +109,8 @@ LegParams<T> makeLeg(const mjModel* model, const LimbMujocoSpec& spec) {
     leg.side = spec.side;
     fillJointGroup(model, spec.joints, leg.joints);
 
-    leg.foot.body_name = spec.endBody;
-    leg.foot.site_name = spec.endSite ? spec.endSite : "";
+    leg.foot.body_name = std::string(spec.endBody);
+    leg.foot.site_name = std::string(spec.endSite);
     leg.foot.body_id = requireId<T>(model, mjOBJ_BODY, leg.foot.body_name, "foot body");
     leg.foot.site_id = optionalId<T>(model, mjOBJ_SITE, leg.foot.site_name);
     leg.hipLocation_from_body = firstJointLocationFromBase<T>(model, spec.joints);
@@ -115,8 +123,8 @@ ArmParams<T> makeArm(const mjModel* model, const LimbMujocoSpec& spec) {
     arm.side = spec.side;
     fillJointGroup(model, spec.joints, arm.joints);
 
-    arm.hand.body_name = spec.endBody;
-    arm.hand.site_name = spec.endSite ? spec.endSite : "";
+    arm.hand.body_name = std::string(spec.endBody);
+    arm.hand.site_name = std::string(spec.endSite);
     arm.hand.body_id = requireId<T>(model, mjOBJ_BODY, arm.hand.body_name, "hand body");
     arm.hand.site_id = optionalId<T>(model, mjOBJ_SITE, arm.hand.site_name);
     return arm;

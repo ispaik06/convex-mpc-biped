@@ -1,26 +1,27 @@
 #ifndef ROBOT_MUJOCO_SPEC_H
 #define ROBOT_MUJOCO_SPEC_H
 
+#include <string_view>
 #include <stdexcept>
 #include <vector>
 
 #include "RobotParams.h"
 
 struct JointActuatorSpec {
-    const char* joint = "";
-    const char* actuator = "";
+    std::string_view joint{};
+    std::string_view actuator{};
 };
 
 struct LimbMujocoSpec {
     Side side = Side::Left;
-    const char* endBody = "";
-    const char* endSite = "";
+    std::string_view endBody{};
+    std::string_view endSite{};
     std::vector<JointActuatorSpec> joints;
 };
 
 struct RobotMujocoSpec {
     RobotType type = RobotType::MIT_HUMANOID;
-    const char* baseBody = "";
+    std::string_view baseBody{};
     std::vector<LimbMujocoSpec> legs;
     std::vector<LimbMujocoSpec> arms;
 };
