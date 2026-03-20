@@ -1,23 +1,23 @@
-#include "JointPosInitializer.h"
+#include "LegPosInitializer.h"
 
 #include <array>
 #include <stdexcept>
 
 template <typename T>
-JointPosInitializer<T>::JointPosInitializer(const RobotParams<T>* params, T end_time, float dt)
+LegPosInitializer<T>::LegPosInitializer(const RobotParams<T>* params, T end_time, float dt)
     : _params(params),
       _end_time(end_time),
       _curr_time(0),
       _dt(static_cast<T>(dt)) {
     if (_params == nullptr) {
-        throw std::invalid_argument("JointPosInitializer received null RobotParams");
+        throw std::invalid_argument("LegPosInitializer received null RobotParams");
     }
 }
 
 template <typename T>
-bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
+bool LegPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
     if (leg_ctrl == nullptr) {
-        throw std::invalid_argument("JointPosInitializer received null LegController");
+        throw std::invalid_argument("LegPosInitializer received null LegController");
     }
 
     if (!_splineInitialized) {
@@ -28,7 +28,7 @@ bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
 
     std::array<T, MIThumanoid::num_leg_joint * 2> jpos{};
     if (!_jpos_trj.getCurvePoint(_curr_time, jpos.data())) {
-        throw std::runtime_error("JointPosInitializer failed to evaluate joint spline");
+        throw std::runtime_error("LegPosInitializer failed to evaluate joint spline");
     }
 
     std::size_t joint_idx = 0;
@@ -37,7 +37,7 @@ bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
         for (Eigen::Index jidx = 0; jidx < command.dof(); ++jidx) {
             if (joint_idx >= MIThumanoid::num_leg_joint * 2) {
                 throw std::runtime_error(
-                    "JointPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
+                    "LegPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
             }
             command.tauFeedForward[jidx] = T(0);
             command.qDes[jidx] = jpos[joint_idx];
@@ -50,7 +50,7 @@ bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
 }
 
 template <typename T>
-void JointPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
+void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
     std::array<T, 3 * MIThumanoid::num_leg_joint * 2> ini{};
     std::array<T, 3 * MIThumanoid::num_leg_joint * 2> fin{};
     std::array<T, MIThumanoid::num_leg_joint * 2> mid_storage{};
@@ -64,12 +64,12 @@ void JointPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) 
         for (Eigen::Index jidx = 0; jidx < q.size(); ++jidx) {
             if (joint_idx >= MIThumanoid::num_leg_joint * 2) {
                 throw std::runtime_error(
-                    "JointPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
+                    "LegPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
             }
 
             const int qpos_idx = q_idx[static_cast<std::size_t>(jidx)];
             if (qpos_idx < 0 || qpos_idx >= _params->default_qpos.size()) {
-                throw std::out_of_range("JointPosInitializer q index is out of range");
+                throw std::out_of_range("LegPosInitializer q index is out of range");
             }
 
             ini[joint_idx] = q[jidx];
@@ -80,11 +80,11 @@ void JointPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) 
     }
 
     if (!_jpos_trj.SetParam(ini.data(), fin.data(), mid, _end_time)) {
-        throw std::runtime_error("JointPosInitializer failed to initialize joint spline");
+        throw std::runtime_error("LegPosInitializer failed to initialize joint spline");
     }
 
     _splineInitialized = true;
 }
 
-template class JointPosInitializer<float>;
-template class JointPosInitializer<double>;
+template class LegPosInitializer<float>;
+template class LegPosInitializer<double>;

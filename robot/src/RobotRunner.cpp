@@ -11,7 +11,8 @@ void RobotRunner::init(RobotParams<double>* params) {
     _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
     _armController = std::make_unique<ArmController<double>>(_model);
-    _jointPosInitializer = std::make_unique<JointPosInitializer<double>>(_params, 3., 0.01);
+    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 3., 0.01);
+    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 3., 0.01);
 }
 
 void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& command) {
@@ -38,7 +39,8 @@ void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& com
         armCommand.kdJoint.diagonal().setConstant(3.0);
     }
 
-    _jointPosInitializer->IsInitialized(_legController.get());
+    _legPosInitializer->IsInitialized(_legController.get());
+    _armPosInitializer->IsInitialized(_armController.get());
     composeCommand(command);
 
     finalizeStep();
