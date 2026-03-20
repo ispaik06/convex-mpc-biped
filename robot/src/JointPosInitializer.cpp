@@ -26,7 +26,7 @@ bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
 
     _curr_time += _dt;
 
-    std::array<T, MIThumanoid::num_act_joint> jpos{};
+    std::array<T, MIThumanoid::num_leg_joint * 2> jpos{};
     if (!_jpos_trj.getCurvePoint(_curr_time, jpos.data())) {
         throw std::runtime_error("JointPosInitializer failed to evaluate joint spline");
     }
@@ -35,9 +35,9 @@ bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
     for (std::size_t leg = 0; leg < leg_ctrl->numLegs(); ++leg) {
         auto& command = leg_ctrl->commands[leg];
         for (Eigen::Index jidx = 0; jidx < command.dof(); ++jidx) {
-            if (joint_idx >= MIThumanoid::num_act_joint) {
+            if (joint_idx >= MIThumanoid::num_leg_joint * 2) {
                 throw std::runtime_error(
-                    "JointPosInitializer currently assumes MIThumanoid::num_act_joint");
+                    "JointPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
             }
             command.tauFeedForward[jidx] = T(0);
             command.qDes[jidx] = jpos[joint_idx];
@@ -51,9 +51,9 @@ bool JointPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
 
 template <typename T>
 void JointPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
-    std::array<T, 3 * MIThumanoid::num_act_joint> ini{};
-    std::array<T, 3 * MIThumanoid::num_act_joint> fin{};
-    std::array<T, MIThumanoid::num_act_joint> mid_storage{};
+    std::array<T, 3 * MIThumanoid::num_leg_joint * 2> ini{};
+    std::array<T, 3 * MIThumanoid::num_leg_joint * 2> fin{};
+    std::array<T, MIThumanoid::num_leg_joint * 2> mid_storage{};
     T* mid[1] = {mid_storage.data()};
 
     std::size_t joint_idx = 0;
@@ -62,9 +62,9 @@ void JointPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) 
         const auto& q_idx = leg_ctrl.model().legQIndices(static_cast<int>(leg));
 
         for (Eigen::Index jidx = 0; jidx < q.size(); ++jidx) {
-            if (joint_idx >= MIThumanoid::num_act_joint) {
+            if (joint_idx >= MIThumanoid::num_leg_joint * 2) {
                 throw std::runtime_error(
-                    "JointPosInitializer currently assumes MIThumanoid::num_act_joint");
+                    "JointPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
             }
 
             const int qpos_idx = q_idx[static_cast<std::size_t>(jidx)];

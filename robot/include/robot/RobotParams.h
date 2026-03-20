@@ -11,7 +11,7 @@
  * Basic parameters for MIT humanoid robot
  */
 namespace MIThumanoid {
-    constexpr size_t num_act_joint = 11;
+    constexpr size_t num_act_joint = 18;
     constexpr size_t num_q = 12;
     constexpr size_t num_v = 11;
     constexpr size_t num_leg = 2;

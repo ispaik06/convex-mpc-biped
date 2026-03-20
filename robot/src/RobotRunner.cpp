@@ -26,7 +26,7 @@ void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& com
         auto& legCommand = _legController->commands[leg];
         legCommand.kpJoint.setZero(legCommand.dof(), legCommand.dof());
         legCommand.kdJoint.setZero(legCommand.dof(), legCommand.dof());
-        legCommand.kpJoint.diagonal().setConstant(5.0);
+        legCommand.kpJoint.diagonal().setConstant(10.0);
         legCommand.kdJoint.diagonal().setConstant(1.0);
     }
     _armController->setEnabled(true);
@@ -34,7 +34,7 @@ void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& com
         auto& armCommand = _armController->commands[leg];
         armCommand.kpJoint.setZero(armCommand.dof(), armCommand.dof());
         armCommand.kdJoint.setZero(armCommand.dof(), armCommand.dof());
-        armCommand.kpJoint.diagonal().setConstant(5.0);
+        armCommand.kpJoint.diagonal().setConstant(10.0);
         armCommand.kdJoint.diagonal().setConstant(3.0);
     }
 
