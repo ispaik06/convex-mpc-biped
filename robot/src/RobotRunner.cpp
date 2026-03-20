@@ -21,13 +21,21 @@ void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& com
 
     setupStep(state);
 
-    // Apply simple diagonal gains while the posture initializer drives qDes.
+    _legController->setEnabled(true);
     for (std::size_t leg = 0; leg < _legController->numLegs(); ++leg) {
         auto& legCommand = _legController->commands[leg];
         legCommand.kpJoint.setZero(legCommand.dof(), legCommand.dof());
         legCommand.kdJoint.setZero(legCommand.dof(), legCommand.dof());
         legCommand.kpJoint.diagonal().setConstant(5.0);
         legCommand.kdJoint.diagonal().setConstant(1.0);
+    }
+    _armController->setEnabled(true);
+    for (std::size_t leg = 0; leg < _armController->numArms(); ++leg) {
+        auto& armCommand = _armController->commands[leg];
+        armCommand.kpJoint.setZero(armCommand.dof(), armCommand.dof());
+        armCommand.kdJoint.setZero(armCommand.dof(), armCommand.dof());
+        armCommand.kpJoint.diagonal().setConstant(5.0);
+        armCommand.kdJoint.diagonal().setConstant(3.0);
     }
 
     _jointPosInitializer->IsInitialized(_legController.get());
@@ -47,7 +55,6 @@ void RobotRunner::setupStep(const RobotState<double>& state) {
 
     _legController->zeroCommand();
     _legController->zeroData();
-    _legController->setEnabled(true);
     _armController->zeroCommand();
     _armController->zeroData();
 
