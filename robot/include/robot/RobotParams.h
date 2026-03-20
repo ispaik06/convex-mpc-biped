@@ -12,11 +12,11 @@
  */
 namespace MIThumanoid {
     constexpr size_t num_act_joint = 11;
-    constexpr size_t num_q = 11;
+    constexpr size_t num_q = 12;
     constexpr size_t num_v = 11;
     constexpr size_t num_leg = 2;
     constexpr size_t num_arm = 2;
-    constexpr size_t num_arm_joint = 3;
+    constexpr size_t num_arm_joint = 4;
     constexpr size_t num_leg_joint = 5;
 }  // namespace MIT humanoid
 
@@ -24,12 +24,13 @@ namespace MIThumanoid {
  * Basic parameters for UNITREE G1
  */
 namespace UnitreeG1 {
-    constexpr size_t num_act_joint = 11;
-    constexpr size_t num_q = 11;
-    constexpr size_t num_v = 11;
+    constexpr size_t num_act_joint = 23;
+    constexpr size_t num_q = 24;
+    constexpr size_t num_v = 23;
     constexpr size_t num_leg = 2;
-    constexpr size_t num_arm_joint = 3;
-    constexpr size_t num_leg_joint = 5;
+    constexpr size_t num_arm = 2;
+    constexpr size_t num_arm_joint = 4;
+    constexpr size_t num_leg_joint = 6;
 }
 
 enum class Side { Left, Right, FL, FR, BL, BR };
