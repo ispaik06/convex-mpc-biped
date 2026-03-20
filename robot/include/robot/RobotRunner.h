@@ -6,6 +6,7 @@
 #include "RobotController.h"
 #include "RobotModel.h"
 #include "RobotState.h"
+#include "Controllers/ArmController.h"
 #include "Controllers/LegController.h"
 #include "JointPosInitializer.h"
 
@@ -28,6 +29,7 @@ private:
     RobotParams<double>* _params = nullptr;
     RobotModel<double> _model;
     std::unique_ptr<LegController<double>> _legController;
+    std::unique_ptr<ArmController<double>> _armController;
     std::unique_ptr<JointPosInitializer<double>> _jointPosInitializer;
     u64 _iterations = 0;
 };

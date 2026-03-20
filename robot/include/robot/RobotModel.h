@@ -24,14 +24,22 @@ public:
     const std::vector<int>& legQIndices(int leg) const;
     const std::vector<int>& legQdIndices(int leg) const;
     const std::vector<int>& legActuatorIndices(int leg) const;
+    const std::vector<int>& armQIndices(int arm) const;
+    const std::vector<int>& armQdIndices(int arm) const;
+    const std::vector<int>& armActuatorIndices(int arm) const;
 
     DVec<T> getLegQ(const DVec<T>& q, int leg) const;
     DVec<T> getLegQd(const DVec<T>& qd, int leg) const;
+    DVec<T> getArmQ(const DVec<T>& q, int arm) const;
+    DVec<T> getArmQd(const DVec<T>& qd, int arm) const;
 
     void setLegTau(int leg, const DVec<T>& tau_leg, DVec<T>& tau_all) const;
+    void setArmTau(int arm, const DVec<T>& tau_arm, DVec<T>& tau_all) const;
 
     int footBodyId(int leg) const;
     int footSiteId(int leg) const;
+    int handBodyId(int arm) const;
+    int handSiteId(int arm) const;
 
     const Vec3<T>& hipLocationFromBody(int leg) const;
 

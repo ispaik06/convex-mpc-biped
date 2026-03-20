@@ -10,6 +10,7 @@ void RobotRunner::init(RobotParams<double>* params) {
     }
     _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
+    _armController = std::make_unique<ArmController<double>>(_model);
     _jointPosInitializer = std::make_unique<JointPosInitializer<double>>(_params, 3., 0.01);
 }
 
@@ -40,10 +41,15 @@ void RobotRunner::setupStep(const RobotState<double>& state) {
     if (state.legs.size() != _model.numLegs()) {
         throw std::invalid_argument("RobotState leg count does not match RobotModel");
     }
+    if (state.arms.size() != _model.numArms()) {
+        throw std::invalid_argument("RobotState arm count does not match RobotModel");
+    }
 
     _legController->zeroCommand();
     _legController->zeroData();
     _legController->setEnabled(true);
+    _armController->zeroCommand();
+    _armController->zeroData();
 
     for (std::size_t leg = 0; leg < state.legs.size(); ++leg) {
         const auto& legState = state.legs[leg];
@@ -65,6 +71,29 @@ void RobotRunner::setupStep(const RobotState<double>& state) {
         } else if (legState.tauEstimate.size() != 0) {
             throw std::invalid_argument(
                 "RobotLegState tauEstimate dimension does not match RobotModel");
+        }
+    }
+
+    for (std::size_t arm = 0; arm < state.arms.size(); ++arm) {
+        const auto& armState = state.arms[arm];
+        const Eigen::Index q_size =
+            static_cast<Eigen::Index>(_model.armQIndices(static_cast<int>(arm)).size());
+        const Eigen::Index qd_size =
+            static_cast<Eigen::Index>(_model.armQdIndices(static_cast<int>(arm)).size());
+        const Eigen::Index tau_size =
+            static_cast<Eigen::Index>(_model.armActuatorIndices(static_cast<int>(arm)).size());
+
+        if (armState.q.size() != q_size || armState.qd.size() != qd_size) {
+            throw std::invalid_argument("RobotArmState joint dimension does not match RobotModel");
+        }
+
+        _armController->setArmJointData(static_cast<int>(arm), armState.q, armState.qd);
+
+        if (armState.tauEstimate.size() == tau_size) {
+            _armController->setArmTauEstimate(static_cast<int>(arm), armState.tauEstimate);
+        } else if (armState.tauEstimate.size() != 0) {
+            throw std::invalid_argument(
+                "RobotArmState tauEstimate dimension does not match RobotModel");
         }
     }
 }
