@@ -1,4 +1,5 @@
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
@@ -103,5 +104,42 @@ void SimulationRunner::runRobotControl() {
 		_robotRunner->init(&_params);
 		_firstControllerRun = false;
 	}
-	_robotRunner->run();
+
+	updateRobotState();
+	_robotRunner->run(_robotState, _robotCommand);
+	applyRobotCommand();
+}
+
+void SimulationRunner::updateRobotState() {
+	_robotState.time = data->time;
+	_robotState.resize(model->nq, model->nv, model->nu);
+
+	for (int i = 0; i < model->nq; ++i) {
+		_robotState.q[i] = static_cast<double>(data->qpos[i]);
+	}
+
+	for (int i = 0; i < model->nv; ++i) {
+		_robotState.qd[i] = static_cast<double>(data->qvel[i]);
+	}
+
+	for (int i = 0; i < model->nu; ++i) {
+		_robotState.tauEstimate[i] = static_cast<double>(data->actuator_force[i]);
+	}
+}
+
+void SimulationRunner::applyRobotCommand() {
+	if (_robotCommand.tau.size() != model->nu) {
+		throw std::runtime_error("RobotCommand torque dimension does not match model->nu");
+	}
+
+	for (int i = 0; i < model->nu; ++i) {
+		const double tau = _robotCommand.tau[i];
+		if (model->actuator_ctrllimited[i]) {
+			const double lo = static_cast<double>(model->actuator_ctrlrange[2 * i + 0]);
+			const double hi = static_cast<double>(model->actuator_ctrlrange[2 * i + 1]);
+			data->ctrl[i] = std::clamp(tau, lo, hi);
+		} else {
+			data->ctrl[i] = tau;
+		}
+	}
 }

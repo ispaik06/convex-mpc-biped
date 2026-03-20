@@ -29,8 +29,13 @@ public:
 
 
 private:
+	void updateRobotState();
+	void applyRobotCommand();
+
 	RobotType _robot;
 	RobotParams<double> _params;
+	RobotState<double> _robotState;
+	RobotCommand<double> _robotCommand;
 	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
 	bool _firstControllerRun = true;
 	std::string _modelPath;

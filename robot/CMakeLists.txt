@@ -1,4 +1,5 @@
 add_library(robot
+	src/JointPosInitializer.cpp
 	src/RobotController.cpp
 	src/RobotModel.cpp
 	src/RobotRunner.cpp
@@ -9,6 +10,7 @@ add_library(robot
 target_include_directories(robot
 	PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/include/robot
+		${PROJECT_SOURCE_DIR}/common/include/Utilities
 	PRIVATE
 		${PROJECT_SOURCE_DIR}/sim/include/sim
 )

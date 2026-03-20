@@ -5,7 +5,9 @@
 
 #include "RobotController.h"
 #include "RobotModel.h"
+#include "RobotState.h"
 #include "Controllers/LegController.h"
+#include "JointPosInitializer.h"
 
 class RobotRunner {
 public:
@@ -13,8 +15,8 @@ public:
         : _robotController(robot_ctrl), _params(nullptr), _model(nullptr) {}
 
     void init(RobotParams<double>*);
-    void setupStep();
-    void run();
+    void setupStep(const RobotState<double>& state);
+    void run(const RobotState<double>& state, RobotCommand<double>& command);
     void finalizeStep();
 
     virtual ~RobotRunner() = default;
@@ -26,6 +28,7 @@ private:
     RobotParams<double>* _params = nullptr;
     RobotModel<double> _model;
     std::unique_ptr<LegController<double>> _legController;
+    std::unique_ptr<JointPosInitializer<double>> _jointPosInitializer;
     u64 _iterations = 0;
 };
 
