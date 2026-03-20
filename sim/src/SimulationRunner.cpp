@@ -97,6 +97,8 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 
 void SimulationRunner::runRobotControl() {
 	if (_firstControllerRun) {
+		//Todo: driverCommand, cheaterState, controlParameters, ....
+
 		_params = setupRobotParams<double>(_robot, model);
 		_robotRunner->init(&_params);
 		_firstControllerRun = false;
