@@ -17,6 +17,7 @@ public:
 
     void init(RobotParams<double>*);
     void setupStep(const RobotState<double>& state);
+    void composeCommand(RobotCommand<double>& command) const;
     void run(const RobotState<double>& state, RobotCommand<double>& command);
     void finalizeStep();
 

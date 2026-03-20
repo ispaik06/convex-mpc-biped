@@ -39,9 +39,15 @@ void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& com
     }
 
     _jointPosInitializer->IsInitialized(_legController.get());
-    command.tau = _legController->updateCommand();
+    composeCommand(command);
 
     finalizeStep();
+}
+
+void RobotRunner::composeCommand(RobotCommand<double>& command) const {
+    command.tau.setZero(_model.nu());
+    _legController->updateCommand(command.tau);
+    _armController->updateCommand(command.tau);
 }
 
 

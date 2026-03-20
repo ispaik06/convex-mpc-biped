@@ -222,7 +222,6 @@ DVec<T> ArmController<T>::computeArmTorque(int arm) const {
 
 template <typename T>
 void ArmController<T>::updateCommand(DVec<T>& tauAll) const {
-    tauAll.setZero(_robotModel->nu());
     if (!_armsEnabled) {
         return;
     }
@@ -235,7 +234,7 @@ void ArmController<T>::updateCommand(DVec<T>& tauAll) const {
 
 template <typename T>
 DVec<T> ArmController<T>::updateCommand() const {
-    DVec<T> tauAll;
+    DVec<T> tauAll = DVec<T>::Zero(_robotModel->nu());
     updateCommand(tauAll);
     return tauAll;
 }

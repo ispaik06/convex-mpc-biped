@@ -222,7 +222,6 @@ DVec<T> LegController<T>::computeLegTorque(int leg) const {
 
 template <typename T>
 void LegController<T>::updateCommand(DVec<T>& tauAll) const {
-    tauAll.setZero(_robotModel->nu());
     if (!_legsEnabled) {
         return;
     }
@@ -235,7 +234,7 @@ void LegController<T>::updateCommand(DVec<T>& tauAll) const {
 
 template <typename T>
 DVec<T> LegController<T>::updateCommand() const {
-    DVec<T> tauAll;
+    DVec<T> tauAll = DVec<T>::Zero(_robotModel->nu());
     updateCommand(tauAll);
     return tauAll;
 }
