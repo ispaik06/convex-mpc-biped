@@ -111,19 +111,38 @@ void SimulationRunner::runRobotControl() {
 }
 
 void SimulationRunner::updateRobotState() {
+	auto copyIndexed = [](const mjtNum* src, const std::vector<int>& indices, DVec<double>& dst) {
+		if (dst.size() != static_cast<Eigen::Index>(indices.size())) {
+			throw std::runtime_error("RobotState segment size does not match index count");
+		}
+		for (Eigen::Index i = 0; i < dst.size(); ++i) {
+			dst[i] = static_cast<double>(src[indices[static_cast<std::size_t>(i)]]);
+		}
+	};
+
 	_robotState.time = data->time;
-	_robotState.resize(model->nq, model->nv, model->nu);
+	_robotState.resize(_params);
 
-	for (int i = 0; i < model->nq; ++i) {
-		_robotState.q[i] = static_cast<double>(data->qpos[i]);
+	for (std::size_t leg = 0; leg < _params.legs.size(); ++leg) {
+		const auto& joints = _params.legs[leg].joints;
+		auto& legState = _robotState.legs[leg];
+		copyIndexed(data->qpos, joints.q_idx, legState.q);
+		copyIndexed(data->qvel, joints.qd_idx, legState.qd);
+
+		const auto& tau_idx =
+			joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
+		copyIndexed(data->actuator_force, tau_idx, legState.tauEstimate);
 	}
 
-	for (int i = 0; i < model->nv; ++i) {
-		_robotState.qd[i] = static_cast<double>(data->qvel[i]);
-	}
+	for (std::size_t arm = 0; arm < _params.arms.size(); ++arm) {
+		const auto& joints = _params.arms[arm].joints;
+		auto& armState = _robotState.arms[arm];
+		copyIndexed(data->qpos, joints.q_idx, armState.q);
+		copyIndexed(data->qvel, joints.qd_idx, armState.qd);
 
-	for (int i = 0; i < model->nu; ++i) {
-		_robotState.tauEstimate[i] = static_cast<double>(data->actuator_force[i]);
+		const auto& tau_idx =
+			joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
+		copyIndexed(data->actuator_force, tau_idx, armState.tauEstimate);
 	}
 }
 

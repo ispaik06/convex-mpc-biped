@@ -37,22 +37,35 @@ void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& com
 
 
 void RobotRunner::setupStep(const RobotState<double>& state) {
-    if (state.q.size() != _model.nq() || state.qd.size() != _model.nv()) {
-        throw std::invalid_argument("RobotState size does not match RobotModel dimensions");
-    }
-
-    if (state.tauEstimate.size() != 0 && state.tauEstimate.size() != _model.nu()) {
-        throw std::invalid_argument("RobotState tauEstimate size does not match RobotModel::nu");
+    if (state.legs.size() != _model.numLegs()) {
+        throw std::invalid_argument("RobotState leg count does not match RobotModel");
     }
 
     _legController->zeroCommand();
     _legController->zeroData();
     _legController->setEnabled(true);
 
-    if (state.tauEstimate.size() == _model.nu()) {
-        _legController->updateJointData(state.q, state.qd, state.tauEstimate);
-    } else {
-        _legController->updateJointData(state.q, state.qd);
+    for (std::size_t leg = 0; leg < state.legs.size(); ++leg) {
+        const auto& legState = state.legs[leg];
+        const Eigen::Index q_size =
+            static_cast<Eigen::Index>(_model.legQIndices(static_cast<int>(leg)).size());
+        const Eigen::Index qd_size =
+            static_cast<Eigen::Index>(_model.legQdIndices(static_cast<int>(leg)).size());
+        const Eigen::Index tau_size =
+            static_cast<Eigen::Index>(_model.legActuatorIndices(static_cast<int>(leg)).size());
+
+        if (legState.q.size() != q_size || legState.qd.size() != qd_size) {
+            throw std::invalid_argument("RobotLegState joint dimension does not match RobotModel");
+        }
+
+        _legController->setLegJointData(static_cast<int>(leg), legState.q, legState.qd);
+
+        if (legState.tauEstimate.size() == tau_size) {
+            _legController->setLegTauEstimate(static_cast<int>(leg), legState.tauEstimate);
+        } else if (legState.tauEstimate.size() != 0) {
+            throw std::invalid_argument(
+                "RobotLegState tauEstimate dimension does not match RobotModel");
+        }
     }
 }
 
