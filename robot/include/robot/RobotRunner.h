@@ -3,9 +3,10 @@
 
 #include <memory>
 
+#include "Estimator/StateEstimator.h"
 #include "RobotController.h"
 #include "RobotModel.h"
-#include "RobotState.h"
+#include "SimulationIO.h"
 #include "ArmPosInitializer.h"
 #include "Controllers/ArmController.h"
 #include "Controllers/ControlGains.h"
@@ -18,9 +19,9 @@ public:
         : _robotController(robot_ctrl), _params(nullptr), _model(nullptr) {}
 
     void init(RobotParams<double>*);
-    void setupStep(const RobotState<double>& state);
+    void setupStep(const StateEstimate<double>& state);
     void composeCommand(RobotCommand<double>& command) const;
-    void run(const RobotState<double>& state, RobotCommand<double>& command);
+    void run(const StateEstimate<double>& state, RobotCommand<double>& command);
     void finalizeStep();
 
     virtual ~RobotRunner() = default;

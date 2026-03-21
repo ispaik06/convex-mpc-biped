@@ -16,7 +16,7 @@ void RobotRunner::init(RobotParams<double>* params) {
     initializeJointTrackingGains();
 }
 
-void RobotRunner::run(const RobotState<double>& state, RobotCommand<double>& command) {
+void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& command) {
     if (!_legController) {
         throw std::runtime_error("RobotRunner::init must be called before run");
     }
@@ -82,12 +82,12 @@ void RobotRunner::applyJointTrackingGains() {
 }
 
 
-void RobotRunner::setupStep(const RobotState<double>& state) {
+void RobotRunner::setupStep(const StateEstimate<double>& state) {
     if (state.legs.size() != _model.numLegs()) {
-        throw std::invalid_argument("RobotState leg count does not match RobotModel");
+        throw std::invalid_argument("StateEstimate leg count does not match RobotModel");
     }
     if (state.arms.size() != _model.numArms()) {
-        throw std::invalid_argument("RobotState arm count does not match RobotModel");
+        throw std::invalid_argument("StateEstimate arm count does not match RobotModel");
     }
 
     _legController->zeroCommand();

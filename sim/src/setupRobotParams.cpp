@@ -49,6 +49,8 @@ void fillBodyMassProperties(const mjModel* model,
     //     params.bodyMass += static_cast<T>(model->body_mass[i]);
     // }
     const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
+    params.baseBodyName = asString(baseBodyName);
+    params.baseBodyId = baseBodyId;
     params.bodyMass += static_cast<T>(model->body_mass[baseBodyId]);
 
     params.bodyInertia.setZero();

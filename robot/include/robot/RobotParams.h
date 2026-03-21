@@ -80,6 +80,8 @@ struct RobotParams {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   RobotType roboType{RobotType::MIT_HUMANOID};
+  std::string baseBodyName;
+  int baseBodyId{-1};
 
   int nq{0};
   int nv{0};

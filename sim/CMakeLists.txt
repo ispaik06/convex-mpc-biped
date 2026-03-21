@@ -1,4 +1,5 @@
 add_library(sim
+	src/MujocoCheaterStateReader.cpp
 	src/main_thread.cpp
 	src/SimViewer.cpp
 	src/SimulationRunner.cpp

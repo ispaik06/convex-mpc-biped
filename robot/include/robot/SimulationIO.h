@@ -1,5 +1,5 @@
-#ifndef ROBOT_STATE_H
-#define ROBOT_STATE_H
+#ifndef SIMULATION_IO_H
+#define SIMULATION_IO_H
 
 #include "RobotParams.h"
 
@@ -8,11 +8,15 @@ struct RobotLegState {
     DVec<T> q;
     DVec<T> qd;
     DVec<T> tauEstimate;
+    Vec3<T> footPosWorld = Vec3<T>::Zero();
+    Vec3<T> footVelWorld = Vec3<T>::Zero();
+    bool contact = true;
 
     void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) {
         q.resize(q_size);
         qd.resize(qd_size);
         tauEstimate.resize(tau_size);
+        contact = true;
     }
 };
 
@@ -21,19 +25,29 @@ struct RobotArmState {
     DVec<T> q;
     DVec<T> qd;
     DVec<T> tauEstimate;
+    Vec3<T> handPosWorld = Vec3<T>::Zero();
+    Vec3<T> handVelWorld = Vec3<T>::Zero();
+    bool contact = true;
 
     void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) {
         q.resize(q_size);
         qd.resize(qd_size);
         tauEstimate.resize(tau_size);
+        contact = true;
     }
 };
 
 template <typename T>
-struct RobotState {
+struct CheaterState {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    
+
     double time{0.0};
+    Vec3<T> basePos = Vec3<T>::Zero();
+    Quat<T> baseQuat = Quat<T>::Zero();
+    Vec3<T> baseLinVel = Vec3<T>::Zero();
+    Vec3<T> baseAngVel = Vec3<T>::Zero();
+    Vec3<T> baseLinAcc = Vec3<T>::Zero();
+    Vec3<T> baseAngAcc = Vec3<T>::Zero();
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
 
@@ -69,4 +83,4 @@ struct RobotCommand {
     }
 };
 
-#endif  // ROBOT_STATE_H
+#endif  // SIMULATION_IO_H
