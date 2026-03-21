@@ -8,6 +8,7 @@
 #include "RobotState.h"
 #include "ArmPosInitializer.h"
 #include "Controllers/ArmController.h"
+#include "Controllers/ControlGains.h"
 #include "Controllers/LegController.h"
 #include "LegPosInitializer.h"
 
@@ -28,12 +29,17 @@ public:
     RobotType _robotType;
 
 private:
+    void initializeJointTrackingGains();
+    void applyJointTrackingGains();
+
     RobotParams<double>* _params = nullptr;
     RobotModel<double> _model;
     std::unique_ptr<LegController<double>> _legController;
     std::unique_ptr<ArmController<double>> _armController;
     std::unique_ptr<LegPosInitializer<double>> _legPosInitializer;
     std::unique_ptr<ArmPosInitializer<double>> _armPosInitializer;
+    JointPdGains<double> _legJointTrackingGains;
+    JointPdGains<double> _armJointTrackingGains;
     u64 _iterations = 0;
 };
 
