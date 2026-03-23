@@ -6,7 +6,7 @@
 #include <mujoco/mujoco.h>
 
 #include "setupRobotParams.h"
-#include "RobotMujocoSpec.h"
+#include "models/RobotMujocoSpec.h"
 
 namespace {
 std::string asString(std::string_view value) {
@@ -43,14 +43,14 @@ void fillDefaultQpos(const mjModel* model, RobotParams<T>& params) {
 template <typename T>
 void fillBodyMassProperties(const mjModel* model,
                             std::string_view baseBodyName,
-                            RobotParams<T>& params) {
+                            RobotParams<T>& params,
+                            MujocoRobotBindings& bindings) {
     params.bodyMass = T(0);
     // for (int i = 1; i < model->nbody; ++i) {
     //     params.bodyMass += static_cast<T>(model->body_mass[i]);
     // }
     const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
-    params.baseBodyName = asString(baseBodyName);
-    params.baseBodyId = baseBodyId;
+    bindings.baseBodyId = baseBodyId;
     params.bodyMass += static_cast<T>(model->body_mass[baseBodyId]);
 
     params.bodyInertia.setZero();
@@ -105,59 +105,63 @@ Vec3<T> firstJointLocationFromBase(const mjModel* model,
 }
 
 template <typename T>
-LegParams<T> makeLeg(const mjModel* model, const LimbMujocoSpec& spec) {
-    LegParams<T> leg;
+void fillLeg(const mjModel* model,
+             const LimbMujocoSpec& spec,
+             LegParams<T>& leg,
+             MujocoEndEffectorBinding& foot_binding) {
     leg.side = spec.side;
     fillJointGroup(model, spec.joints, leg.joints);
-
-    leg.foot.body_name = std::string(spec.endBody);
-    leg.foot.site_name = std::string(spec.endSite);
-    leg.foot.body_id = requireId<T>(model, mjOBJ_BODY, leg.foot.body_name, "foot body");
-    leg.foot.site_id = optionalId<T>(model, mjOBJ_SITE, leg.foot.site_name);
+    foot_binding.bodyId = requireId<T>(model, mjOBJ_BODY, spec.endBody, "foot body");
+    foot_binding.siteId = optionalId<T>(model, mjOBJ_SITE, spec.endSite);
     leg.hipLocation_from_body = firstJointLocationFromBase<T>(model, spec.joints);
-    return leg;
 }
 
 template <typename T>
-ArmParams<T> makeArm(const mjModel* model, const LimbMujocoSpec& spec) {
-    ArmParams<T> arm;
+void fillArm(const mjModel* model,
+             const LimbMujocoSpec& spec,
+             ArmParams<T>& arm,
+             MujocoEndEffectorBinding& hand_binding) {
     arm.side = spec.side;
     fillJointGroup(model, spec.joints, arm.joints);
-
-    arm.hand.body_name = std::string(spec.endBody);
-    arm.hand.site_name = std::string(spec.endSite);
-    arm.hand.body_id = requireId<T>(model, mjOBJ_BODY, arm.hand.body_name, "hand body");
-    arm.hand.site_id = optionalId<T>(model, mjOBJ_SITE, arm.hand.site_name);
-    return arm;
+    hand_binding.bodyId = requireId<T>(model, mjOBJ_BODY, spec.endBody, "hand body");
+    hand_binding.siteId = optionalId<T>(model, mjOBJ_SITE, spec.endSite);
 }
 
 template <typename T>
-RobotParams<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMujocoSpec& spec) {
-    RobotParams<T> params;
+MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMujocoSpec& spec) {
+    MujocoRobotSetup<T> setup;
+    RobotParams<T>& params = setup.params;
+    MujocoRobotBindings& bindings = setup.bindings;
     params.roboType = spec.type;
     params.nq = model->nq;
     params.nv = model->nv;
     params.nu = model->nu;
 
     fillDefaultQpos(model, params);
-    fillBodyMassProperties(model, spec.baseBody, params);
+    fillBodyMassProperties(model, spec.baseBody, params, bindings);
 
     params.legs.reserve(spec.legs.size());
+    bindings.feet.reserve(spec.legs.size());
     for (const auto& legSpec : spec.legs) {
-        params.legs.push_back(makeLeg<T>(model, legSpec));
+        params.legs.emplace_back();
+        bindings.feet.emplace_back();
+        fillLeg<T>(model, legSpec, params.legs.back(), bindings.feet.back());
     }
 
     params.arms.reserve(spec.arms.size());
+    bindings.hands.reserve(spec.arms.size());
     for (const auto& armSpec : spec.arms) {
-        params.arms.push_back(makeArm<T>(model, armSpec));
+        params.arms.emplace_back();
+        bindings.hands.emplace_back();
+        fillArm<T>(model, armSpec, params.arms.back(), bindings.hands.back());
     }
 
-    return params;
+    return setup;
 }
 }  // namespace
 
 template <typename T>
-RobotParams<T> setupRobotParams(const RobotType robotType, const mjModel_* model) {
+MujocoRobotSetup<T> setupRobotParams(const RobotType robotType, const mjModel_* model) {
     if (model == nullptr) {
         throw std::runtime_error("setupRobotParams received null mjModel");
     }
@@ -166,5 +170,5 @@ RobotParams<T> setupRobotParams(const RobotType robotType, const mjModel_* model
     return buildRobotParamsFromSpec<T>(reinterpret_cast<const mjModel*>(model), spec);
 }
 
-template RobotParams<float> setupRobotParams<float>(RobotType, const mjModel_*);
-template RobotParams<double> setupRobotParams<double>(RobotType, const mjModel_*);
+template MujocoRobotSetup<float> setupRobotParams<float>(RobotType, const mjModel_*);
+template MujocoRobotSetup<double> setupRobotParams<double>(RobotType, const mjModel_*);

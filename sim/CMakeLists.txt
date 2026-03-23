@@ -1,8 +1,8 @@
 add_library(sim
 	src/MujocoCheaterStateReader.cpp
-	src/MitHumanoidSpec.cpp
-	src/G1_23Spec.cpp
-	src/H1Spec.cpp
+	src/models/MitHumanoidSpec.cpp
+	src/models/G1_23Spec.cpp
+	src/models/H1Spec.cpp
 	src/main_thread.cpp
 	src/SimViewer.cpp
 	src/SimulationRunner.cpp
@@ -12,6 +12,10 @@ add_library(sim
 target_include_directories(sim PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/include/sim
 	${PROJECT_SOURCE_DIR}/robot/include/robot
+)
+
+target_include_directories(sim PRIVATE
+	${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(sim

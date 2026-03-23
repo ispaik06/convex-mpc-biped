@@ -1,4 +1,5 @@
 add_library(common
+	src/RobotModel.cpp
 	src/Estimator/StateEstimator.cpp
 )
 

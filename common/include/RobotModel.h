@@ -36,11 +36,6 @@ public:
     void setLegTau(int leg, const DVec<T>& tau_leg, DVec<T>& tau_all) const;
     void setArmTau(int arm, const DVec<T>& tau_arm, DVec<T>& tau_all) const;
 
-    int footBodyId(int leg) const;
-    int footSiteId(int leg) const;
-    int handBodyId(int arm) const;
-    int handSiteId(int arm) const;
-
     const Vec3<T>& hipLocationFromBody(int leg) const;
 
 private:

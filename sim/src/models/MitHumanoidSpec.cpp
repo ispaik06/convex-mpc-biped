@@ -1,4 +1,4 @@
-#include "RobotMujocoSpec.h"
+#include "models/RobotMujocoSpec.h"
 
 const RobotMujocoSpec& getMitHumanoidMujocoSpec() {
     static const RobotMujocoSpec spec{

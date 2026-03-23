@@ -101,14 +101,16 @@ void SimulationRunner::runRobotControl() {
 	if (_firstControllerRun) {
 		//Todo: driverCommand, cheaterState, controlParameters, ....
 
-		_params = setupRobotParams<double>(_robot, model);
+		const auto robotSetup = setupRobotParams<double>(_robot, model);
+		_params = robotSetup.params;
+		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
 		_robotRunner->init(&_params);
 		_firstControllerRun = false;
 	}
 
-	fillCheaterState(model, data, _params, _cheaterState);
+	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
 	_robotRunner->run(_stateEstimate, _robotCommand);
 	applyRobotCommand();

@@ -35,13 +35,6 @@ namespace UnitreeG1 {
 
 enum class Side { Left, Right, FL, FR, BL, BR };
 
-struct EndEffectorParams {
-    std::string body_name;
-    std::string site_name;
-    int body_id{-1};
-    int site_id{-1};
-};
-
 template <typename T>
 struct JointGroupParams {
     std::vector<int> q_idx;
@@ -59,7 +52,6 @@ struct LegParams {
 
     Side side{Side::Left};
     JointGroupParams<T> joints;
-    EndEffectorParams foot;
 
     Vec3<T> hipLocation_from_body = Vec3<T>::Zero();
 
@@ -72,7 +64,6 @@ struct ArmParams {
 
     Side side{Side::Left};
     JointGroupParams<T> joints;
-    EndEffectorParams hand;
 };
 
 template <typename T>
@@ -80,8 +71,6 @@ struct RobotParams {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   RobotType roboType{RobotType::MIT_HUMANOID};
-  std::string baseBodyName;
-  int baseBodyId{-1};
 
   int nq{0};
   int nv{0};

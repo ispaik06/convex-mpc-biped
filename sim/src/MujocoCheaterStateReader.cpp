@@ -138,23 +138,27 @@ void copyIndexed(const mjtNum* src, const std::vector<int>& indices, DVec<double
 void fillCheaterState(const mjModel* model,
                       const mjData* data,
                       const RobotParams<double>& params,
+                      const MujocoRobotBindings& bindings,
                       CheaterState<double>& cheater_state) {
     if (model == nullptr || data == nullptr) {
         throw std::runtime_error("fillCheaterState received null MuJoCo pointers");
     }
+    if (bindings.feet.size() != params.legs.size() || bindings.hands.size() != params.arms.size()) {
+        throw std::runtime_error("Mujoco bindings do not match RobotParams limb counts");
+    }
 
     cheater_state.time = data->time;
     cheater_state.resize(params);
-    cheater_state.basePos = readBodyPosition(data, params.baseBodyId);
-    cheater_state.baseQuat = readBodyQuaternion(data, params.baseBodyId);
-    cheater_state.baseLinVel = readBodyLinearVelocity(model, data, params.baseBodyId);
-    cheater_state.baseAngVel = readBodyAngularVelocity(model, data, params.baseBodyId);
-    cheater_state.baseLinAcc = readBodyLinearAcceleration(model, data, params.baseBodyId);
-    cheater_state.baseAngAcc = readBodyAngularAcceleration(model, data, params.baseBodyId);
+    cheater_state.basePos = readBodyPosition(data, bindings.baseBodyId);
+    cheater_state.baseQuat = readBodyQuaternion(data, bindings.baseBodyId);
+    cheater_state.baseLinVel = readBodyLinearVelocity(model, data, bindings.baseBodyId);
+    cheater_state.baseAngVel = readBodyAngularVelocity(model, data, bindings.baseBodyId);
+    cheater_state.baseLinAcc = readBodyLinearAcceleration(model, data, bindings.baseBodyId);
+    cheater_state.baseAngAcc = readBodyAngularAcceleration(model, data, bindings.baseBodyId);
 
     for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
         const auto& joints = params.legs[leg].joints;
-        const auto& foot = params.legs[leg].foot;
+        const auto& foot = bindings.feet[leg];
         auto& leg_state = cheater_state.legs[leg];
         copyIndexed(data->qpos, joints.q_idx, leg_state.q);
         copyIndexed(data->qvel, joints.qd_idx, leg_state.qd);
@@ -162,14 +166,14 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
-        leg_state.footPosWorld = readEndEffectorPosition(data, foot.site_id, foot.body_id);
+        leg_state.footPosWorld = readEndEffectorPosition(data, foot.siteId, foot.bodyId);
         leg_state.footVelWorld =
-            readEndEffectorVelocity(model, data, foot.site_id, foot.body_id);
+            readEndEffectorVelocity(model, data, foot.siteId, foot.bodyId);
     }
 
     for (std::size_t arm = 0; arm < params.arms.size(); ++arm) {
         const auto& joints = params.arms[arm].joints;
-        const auto& hand = params.arms[arm].hand;
+        const auto& hand = bindings.hands[arm];
         auto& arm_state = cheater_state.arms[arm];
         copyIndexed(data->qpos, joints.q_idx, arm_state.q);
         copyIndexed(data->qvel, joints.qd_idx, arm_state.qd);
@@ -177,8 +181,8 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, arm_state.tauEstimate);
-        arm_state.handPosWorld = readEndEffectorPosition(data, hand.site_id, hand.body_id);
+        arm_state.handPosWorld = readEndEffectorPosition(data, hand.siteId, hand.bodyId);
         arm_state.handVelWorld =
-            readEndEffectorVelocity(model, data, hand.site_id, hand.body_id);
+            readEndEffectorVelocity(model, data, hand.siteId, hand.bodyId);
     }
 }

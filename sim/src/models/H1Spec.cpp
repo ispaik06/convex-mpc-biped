@@ -1,4 +1,4 @@
-#include "RobotMujocoSpec.h"
+#include "models/RobotMujocoSpec.h"
 
 const RobotMujocoSpec& getUnitreeH1MujocoSpec() {
     static const RobotMujocoSpec spec{

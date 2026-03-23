@@ -210,26 +210,6 @@ void RobotModel<T>::setArmTau(int arm, const DVec<T>& tau_arm, DVec<T>& tau_all)
 }
 
 template <typename T>
-int RobotModel<T>::footBodyId(int leg) const {
-    return checkedLeg(_params, leg).foot.body_id;
-}
-
-template <typename T>
-int RobotModel<T>::footSiteId(int leg) const {
-    return checkedLeg(_params, leg).foot.site_id;
-}
-
-template <typename T>
-int RobotModel<T>::handBodyId(int arm) const {
-    return checkedArm(_params, arm).hand.body_id;
-}
-
-template <typename T>
-int RobotModel<T>::handSiteId(int arm) const {
-    return checkedArm(_params, arm).hand.site_id;
-}
-
-template <typename T>
 const Vec3<T>& RobotModel<T>::hipLocationFromBody(int leg) const {
     return checkedLeg(_params, leg).hipLocation_from_body;
 }
