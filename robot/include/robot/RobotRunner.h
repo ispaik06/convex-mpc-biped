@@ -18,7 +18,7 @@ public:
     explicit RobotRunner(RobotController* robot_ctrl)
         : _robotController(robot_ctrl), _params(nullptr), _model(nullptr) {}
 
-    void init(RobotParams<double>*);
+    void init(RobotParams<double>*, double);
     void setupStep(const StateEstimate<double>& state);
     void composeCommand(RobotCommand<double>& command) const;
     void run(const StateEstimate<double>& state, RobotCommand<double>& command);
@@ -31,7 +31,6 @@ public:
 
 private:
     void initializeJointTrackingGains();
-    void applyJointTrackingGains();
 
     RobotParams<double>* _params = nullptr;
     RobotModel<double> _model;
@@ -41,6 +40,7 @@ private:
     std::unique_ptr<ArmPosInitializer<double>> _armPosInitializer;
     JointPdGains<double> _legJointTrackingGains;
     JointPdGains<double> _armJointTrackingGains;
+    double _tiemstep;
     u64 _iterations = 0;
 };
 

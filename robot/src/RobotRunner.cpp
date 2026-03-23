@@ -1,18 +1,20 @@
 #include <stdexcept>
+#include <iostream>
 
 #include "RobotRunner.h"
 
-void RobotRunner::init(RobotParams<double>* params) {
+void RobotRunner::init(RobotParams<double>* params, double timestep) {
     _params = params;
     _model = RobotModel<double>(_params);
+    _tiemstep = timestep;
     if(!_model.validate()) {
         throw std::runtime_error("Invalid RobotParams");
     }
     _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
     _armController = std::make_unique<ArmController<double>>(_model);
-    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 3., 0.01);
-    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 3., 0.01);
+    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 10., _tiemstep);
+    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 10., _tiemstep);
     initializeJointTrackingGains();
 }
 
@@ -23,12 +25,19 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
 
     setupStep(state);
 
+    if(!_legPosInitializer->IsInitialized(_legController.get())) {
+        for (auto& legCommand : _legController->commands) {
+            _legJointTrackingGains.applyTo(legCommand);
+        }
+    }
+    if(!_armPosInitializer->IsInitialized(_armController.get())) {
+        for (auto& armCommand : _armController->commands) {
+            _armJointTrackingGains.applyTo(armCommand);
+        }
+    }
+
     _legController->setEnabled(true);
     _armController->setEnabled(true);
-    applyJointTrackingGains();
-
-    _legPosInitializer->IsInitialized(_legController.get());
-    _armPosInitializer->IsInitialized(_armController.get());
     composeCommand(command);
 
     finalizeStep();
@@ -70,17 +79,6 @@ void RobotRunner::initializeJointTrackingGains() {
             throw std::runtime_error("Unsupported robot type for joint tracking gains");
     }
 }
-
-void RobotRunner::applyJointTrackingGains() {
-    for (auto& legCommand : _legController->commands) {
-        _legJointTrackingGains.applyTo(legCommand);
-    }
-
-    for (auto& armCommand : _armController->commands) {
-        _armJointTrackingGains.applyTo(armCommand);
-    }
-}
-
 
 void RobotRunner::setupStep(const StateEstimate<double>& state) {
     if (state.legs.size() != _model.numLegs()) {

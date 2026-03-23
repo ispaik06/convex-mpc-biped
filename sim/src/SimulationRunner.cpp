@@ -106,7 +106,7 @@ void SimulationRunner::runRobotControl() {
 		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
-		_robotRunner->init(&_params);
+		_robotRunner->init(&_params, model->opt.timestep);
 		_firstControllerRun = false;
 	}
 
