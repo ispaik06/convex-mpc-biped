@@ -1,9 +1,11 @@
 #ifndef ARM_POS_INITIALIZER_H
 #define ARM_POS_INITIALIZER_H
 
+#include <cstddef>
+
 #include "Controllers/ArmController.h"
 #include "Robot/RobotModel.h"
-#include "Utilities/BSplineBasic.h"
+#include "Utilities/BSplineBasicDynamic.h"
 
 template <typename T>
 class ArmPosInitializer {
@@ -15,16 +17,15 @@ public:
 
 private:
     void initializeSpline(const ArmController<T>& arm_ctrl);
+    std::size_t totalArmDof() const;
 
     const RobotParams<T>* _params = nullptr;
     T _end_time{0};
     T _curr_time{0};
     T _dt{0};
     bool _splineInitialized{false};
-
-    // TODO: MIThumanoid::num_arm_joint is hard-coded for now. Generalize spline
-    // dimension for other robots.
-    BS_Basic<T, MIThumanoid::num_arm_joint * 2, 3, 1, 2, 2> _jpos_trj;
+    std::size_t _totalArmDof{0};
+    BS_BasicDyn<T, 3, 1, 2, 2> _jpos_trj;
 };
 
 #endif  // ARM_POS_INITIALIZER_H

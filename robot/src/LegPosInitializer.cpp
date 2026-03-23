@@ -1,7 +1,7 @@
 #include "LegPosInitializer.h"
 
-#include <array>
 #include <stdexcept>
+#include <vector>
 
 template <typename T>
 LegPosInitializer<T>::LegPosInitializer(const RobotParams<T>* params, T end_time, float dt)
@@ -12,6 +12,13 @@ LegPosInitializer<T>::LegPosInitializer(const RobotParams<T>* params, T end_time
     if (_params == nullptr) {
         throw std::invalid_argument("LegPosInitializer received null RobotParams");
     }
+
+    _totalLegDof = totalLegDof();
+    if (_totalLegDof == 0) {
+        throw std::invalid_argument("LegPosInitializer requires at least one leg joint");
+    }
+
+    _jpos_trj.setDimension(static_cast<int>(_totalLegDof));
 }
 
 template <typename T>
@@ -26,7 +33,7 @@ bool LegPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
 
     _curr_time += _dt;
 
-    std::array<T, MIThumanoid::num_leg_joint * 2> jpos{};
+    std::vector<T> jpos(_totalLegDof, T(0));
     if (!_jpos_trj.getCurvePoint(_curr_time, jpos.data())) {
         throw std::runtime_error("LegPosInitializer failed to evaluate joint spline");
     }
@@ -35,9 +42,8 @@ bool LegPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
     for (std::size_t leg = 0; leg < leg_ctrl->numLegs(); ++leg) {
         auto& command = leg_ctrl->commands[leg];
         for (Eigen::Index jidx = 0; jidx < command.dof(); ++jidx) {
-            if (joint_idx >= MIThumanoid::num_leg_joint * 2) {
-                throw std::runtime_error(
-                    "LegPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
+            if (joint_idx >= _totalLegDof) {
+                throw std::runtime_error("LegPosInitializer leg dof exceeds configured spline size");
             }
             command.tauFeedForward[jidx] = T(0);
             command.qDes[jidx] = jpos[joint_idx];
@@ -51,9 +57,9 @@ bool LegPosInitializer<T>::IsInitialized(LegController<T>* leg_ctrl) {
 
 template <typename T>
 void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
-    std::array<T, 3 * MIThumanoid::num_leg_joint * 2> ini{};
-    std::array<T, 3 * MIThumanoid::num_leg_joint * 2> fin{};
-    std::array<T, MIThumanoid::num_leg_joint * 2> mid_storage{};
+    std::vector<T> ini(3 * _totalLegDof, T(0));
+    std::vector<T> fin(3 * _totalLegDof, T(0));
+    std::vector<T> mid_storage(_totalLegDof, T(0));
     T* mid[1] = {mid_storage.data()};
 
     std::size_t joint_idx = 0;
@@ -62,9 +68,8 @@ void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
         const auto& q_idx = leg_ctrl.model().legQIndices(static_cast<int>(leg));
 
         for (Eigen::Index jidx = 0; jidx < q.size(); ++jidx) {
-            if (joint_idx >= MIThumanoid::num_leg_joint * 2) {
-                throw std::runtime_error(
-                    "LegPosInitializer currently assumes MIThumanoid::num_leg_joint * 2");
+            if (joint_idx >= _totalLegDof) {
+                throw std::runtime_error("LegPosInitializer leg dof exceeds configured spline size");
             }
 
             const int qpos_idx = q_idx[static_cast<std::size_t>(jidx)];
@@ -84,6 +89,20 @@ void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
     }
 
     _splineInitialized = true;
+}
+
+template <typename T>
+std::size_t LegPosInitializer<T>::totalLegDof() const {
+    if (_params == nullptr) {
+        throw std::runtime_error("LegPosInitializer requires RobotParams");
+    }
+
+    std::size_t total_dof = 0;
+    for (const auto& leg : _params->legs) {
+        total_dof += static_cast<std::size_t>(leg.joints.q_idx.size());
+    }
+
+    return total_dof;
 }
 
 template class LegPosInitializer<float>;

@@ -6,32 +6,32 @@
 
 #include "Types.h"
 
-//? gonna use these namespaces?
-/*!
- * Basic parameters for MIT humanoid robot
- */
-namespace MIThumanoid {
-    constexpr size_t num_act_joint = 18;
-    constexpr size_t num_q = 12;
-    constexpr size_t num_v = 11;
-    constexpr size_t num_leg = 2;
-    constexpr size_t num_arm = 2;
-    constexpr size_t num_arm_joint = 4;
-    constexpr size_t num_leg_joint = 5;
-}  // namespace MIT humanoid
+// //? gonna use these namespaces?
+// /*!
+//  * Basic parameters for MIT humanoid robot
+//  */
+// namespace MIThumanoid {
+//     constexpr size_t num_act_joint = 18;
+//     constexpr size_t num_q = 12;
+//     constexpr size_t num_v = 11;
+//     constexpr size_t num_leg = 2;
+//     constexpr size_t num_arm = 2;
+//     constexpr size_t num_arm_joint = 4;
+//     constexpr size_t num_leg_joint = 5;
+// }  // namespace MIT humanoid
 
-/*!
- * Basic parameters for UNITREE G1
- */
-namespace UnitreeG1 {
-    constexpr size_t num_act_joint = 23;
-    constexpr size_t num_q = 24;
-    constexpr size_t num_v = 23;
-    constexpr size_t num_leg = 2;
-    constexpr size_t num_arm = 2;
-    constexpr size_t num_arm_joint = 4;
-    constexpr size_t num_leg_joint = 6;
-}
+// /*!
+//  * Basic parameters for UNITREE G1
+//  */
+// namespace UnitreeG1 {
+//     constexpr size_t num_act_joint = 23;
+//     constexpr size_t num_q = 24;
+//     constexpr size_t num_v = 23;
+//     constexpr size_t num_leg = 2;
+//     constexpr size_t num_arm = 2;
+//     constexpr size_t num_arm_joint = 4;
+//     constexpr size_t num_leg_joint = 6;
+// }
 
 enum class Side { Left, Right, FL, FR, BL, BR };
 

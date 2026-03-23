@@ -1,7 +1,7 @@
 #include "ArmPosInitializer.h"
 
-#include <array>
 #include <stdexcept>
+#include <vector>
 
 template <typename T>
 ArmPosInitializer<T>::ArmPosInitializer(const RobotParams<T>* params, T end_time, float dt)
@@ -12,6 +12,13 @@ ArmPosInitializer<T>::ArmPosInitializer(const RobotParams<T>* params, T end_time
     if (_params == nullptr) {
         throw std::invalid_argument("ArmPosInitializer received null RobotParams");
     }
+
+    _totalArmDof = totalArmDof();
+    if (_totalArmDof == 0) {
+        throw std::invalid_argument("ArmPosInitializer requires at least one arm joint");
+    }
+
+    _jpos_trj.setDimension(static_cast<int>(_totalArmDof));
 }
 
 template <typename T>
@@ -26,7 +33,7 @@ bool ArmPosInitializer<T>::IsInitialized(ArmController<T>* arm_ctrl) {
 
     _curr_time += _dt;
 
-    std::array<T, MIThumanoid::num_arm_joint * 2> jpos{};
+    std::vector<T> jpos(_totalArmDof, T(0));
     if (!_jpos_trj.getCurvePoint(_curr_time, jpos.data())) {
         throw std::runtime_error("ArmPosInitializer failed to evaluate joint spline");
     }
@@ -35,9 +42,8 @@ bool ArmPosInitializer<T>::IsInitialized(ArmController<T>* arm_ctrl) {
     for (std::size_t arm = 0; arm < arm_ctrl->numArms(); ++arm) {
         auto& command = arm_ctrl->commands[arm];
         for (Eigen::Index jidx = 0; jidx < command.dof(); ++jidx) {
-            if (joint_idx >= MIThumanoid::num_arm_joint * 2) {
-                throw std::runtime_error(
-                    "ArmPosInitializer currently assumes MIThumanoid::num_arm_joint * 2");
+            if (joint_idx >= _totalArmDof) {
+                throw std::runtime_error("ArmPosInitializer arm dof exceeds configured spline size");
             }
             command.tauFeedForward[jidx] = T(0);
             command.qDes[jidx] = jpos[joint_idx];
@@ -51,9 +57,9 @@ bool ArmPosInitializer<T>::IsInitialized(ArmController<T>* arm_ctrl) {
 
 template <typename T>
 void ArmPosInitializer<T>::initializeSpline(const ArmController<T>& arm_ctrl) {
-    std::array<T, 3 * MIThumanoid::num_arm_joint * 2> ini{};
-    std::array<T, 3 * MIThumanoid::num_arm_joint * 2> fin{};
-    std::array<T, MIThumanoid::num_arm_joint * 2> mid_storage{};
+    std::vector<T> ini(3 * _totalArmDof, T(0));
+    std::vector<T> fin(3 * _totalArmDof, T(0));
+    std::vector<T> mid_storage(_totalArmDof, T(0));
     T* mid[1] = {mid_storage.data()};
 
     std::size_t joint_idx = 0;
@@ -62,9 +68,8 @@ void ArmPosInitializer<T>::initializeSpline(const ArmController<T>& arm_ctrl) {
         const auto& q_idx = arm_ctrl.model().armQIndices(static_cast<int>(arm));
 
         for (Eigen::Index jidx = 0; jidx < q.size(); ++jidx) {
-            if (joint_idx >= MIThumanoid::num_arm_joint * 2) {
-                throw std::runtime_error(
-                    "ArmPosInitializer currently assumes MIThumanoid::num_arm_joint * 2");
+            if (joint_idx >= _totalArmDof) {
+                throw std::runtime_error("ArmPosInitializer arm dof exceeds configured spline size");
             }
 
             const int qpos_idx = q_idx[static_cast<std::size_t>(jidx)];
@@ -84,6 +89,20 @@ void ArmPosInitializer<T>::initializeSpline(const ArmController<T>& arm_ctrl) {
     }
 
     _splineInitialized = true;
+}
+
+template <typename T>
+std::size_t ArmPosInitializer<T>::totalArmDof() const {
+    if (_params == nullptr) {
+        throw std::runtime_error("ArmPosInitializer requires RobotParams");
+    }
+
+    std::size_t total_dof = 0;
+    for (const auto& arm : _params->arms) {
+        total_dof += static_cast<std::size_t>(arm.joints.q_idx.size());
+    }
+
+    return total_dof;
 }
 
 template class ArmPosInitializer<float>;
