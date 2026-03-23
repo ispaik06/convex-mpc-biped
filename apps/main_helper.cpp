@@ -53,6 +53,12 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		simulationRunner.run();
 		printf("[UNITREE G1] Sim Runner run() has finished!\n");
 	}
+	else if(argv[1][0] == 'h') {
+		SimulationRunner simulationRunner(RobotType::UNITREE_H1, ctrl, headless);
+		simulationRunner.init();
+		simulationRunner.run();
+		printf("[UNITREE H1] Sim Runner run() has finished!\n");
+	}
 	else {
 		printUsage();
 		return EXIT_FAILURE;

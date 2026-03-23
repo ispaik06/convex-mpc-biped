@@ -62,9 +62,9 @@ void RobotRunner::initializeJointTrackingGains() {
                 throw std::runtime_error("RobotParams is missing limb data for gain initialization");
             }
             _legJointTrackingGains.setConstant(
-                static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()), 15.0, 4.0);
+                static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()), 20.0, 16.0);
             _armJointTrackingGains.setConstant(
-                static_cast<Eigen::Index>(_params->arms.front().joints.q_idx.size()), 4.0, 2.0);
+                static_cast<Eigen::Index>(_params->arms.front().joints.q_idx.size()), 3.0, 2.0);
             break;
         default:
             throw std::runtime_error("Unsupported robot type for joint tracking gains");
