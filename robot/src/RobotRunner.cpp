@@ -47,11 +47,11 @@ void RobotRunner::initializeJointTrackingGains() {
 
     switch (_robotType) {
         case RobotType::MIT_HUMANOID:
-            // Order follows robot/src/models/MitHumanoidSpec.cpp:
+            // Order follows sim/src/MitHumanoidSpec.cpp:
             // [hip_yaw, hip_abad, hip_pitch, knee, ankle]
             _legJointTrackingGains.set({13.0, 11.0, 7.0, 7.0, 7.0},
                                        {5.0, 5.0, 5.0, 5.0, 5.0});
-            // Order follows robot/src/models/MitHumanoidSpec.cpp:
+            // Order follows sim/src/MitHumanoidSpec.cpp:
             // [shoulder_pitch, shoulder_abad, shoulder_yaw, elbow]
             _armJointTrackingGains.set({8.0, 8.0, 8.0, 2.0},
                                        {1.0, 1.5, 1.0, 0.75});

@@ -6,7 +6,7 @@
 #include <mujoco/mujoco.h>
 
 #include "setupRobotParams.h"
-#include "models/RobotMujocoSpec.h"
+#include "RobotMujocoSpec.h"
 
 namespace {
 std::string asString(std::string_view value) {
