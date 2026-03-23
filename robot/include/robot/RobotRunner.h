@@ -3,9 +3,9 @@
 
 #include <memory>
 
-#include "Estimator/StateEstimator.h"
+#include "StateEstimator/StateEstimator.h"
 #include "RobotController.h"
-#include "RobotModel.h"
+#include "Robot/RobotModel.h"
 #include "SimulationIO.h"
 #include "ArmPosInitializer.h"
 #include "Controllers/ArmController.h"

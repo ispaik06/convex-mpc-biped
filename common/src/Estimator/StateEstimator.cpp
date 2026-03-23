@@ -1,4 +1,4 @@
-#include "Estimator/StateEstimator.h"
+#include "StateEstimator/StateEstimator.h"
 
 template <typename T>
 StateEstimator<T>::StateEstimator(StateEstimatorMode mode) : _mode(mode) {}

@@ -5,7 +5,7 @@
 
 #include "Types.h"
 #include "MujocoRobotBindings.h"
-#include "RobotParams.h"
+#include "Robot/RobotParams.h"
 
 template <typename T>
 struct MujocoRobotSetup {

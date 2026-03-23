@@ -5,7 +5,7 @@
 
 #include <Eigen/StdVector>
 
-#include "RobotModel.h"
+#include "Robot/RobotModel.h"
 
 template <typename T>
 struct ArmControllerCommand {

@@ -4,12 +4,12 @@
 #include <atomic>
 #include <string>
 
-#include "Estimator/StateEstimator.h"
+#include "StateEstimator/StateEstimator.h"
 #include "MujocoRobotBindings.h"
 #include "main_thread.h"
 #include "RobotController.h"
 #include "RobotRunner.h"
-#include "RobotParams.h"
+#include "Robot/RobotParams.h"
 #include "SimulationIO.h"
 #include "Types.h"
 

@@ -2,7 +2,7 @@
 #define MUJOCO_CHEATER_STATE_READER_H
 
 #include "MujocoRobotBindings.h"
-#include "RobotParams.h"
+#include "Robot/RobotParams.h"
 #include "SimulationIO.h"
 
 struct mjModel_;

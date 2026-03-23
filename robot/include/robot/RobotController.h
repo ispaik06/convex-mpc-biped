@@ -1,7 +1,7 @@
 #ifndef ROBOT_CONTROLLER_H
 #define ROBOT_CONTROLLER_H
 
-#include "RobotModel.h"
+#include "Robot/RobotModel.h"
 
 
 class RobotController {

@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "RobotParams.h"
+#include "Robot/RobotParams.h"
 
 struct JointActuatorSpec {
     std::string_view joint{};

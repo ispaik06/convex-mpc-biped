@@ -1,7 +1,7 @@
 #ifndef SIMULATION_IO_H
 #define SIMULATION_IO_H
 
-#include "RobotParams.h"
+#include "Robot/RobotParams.h"
 
 template <typename T>
 struct RobotLegState {

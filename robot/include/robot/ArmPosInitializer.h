@@ -2,7 +2,7 @@
 #define ARM_POS_INITIALIZER_H
 
 #include "Controllers/ArmController.h"
-#include "RobotModel.h"
+#include "Robot/RobotModel.h"
 #include "Utilities/BSplineBasic.h"
 
 template <typename T>

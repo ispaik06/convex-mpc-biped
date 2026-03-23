@@ -2,7 +2,7 @@
 #define LEG_POS_INITIALIZER_H
 
 #include "Controllers/LegController.h"
-#include "RobotModel.h"
+#include "Robot/RobotModel.h"
 #include "Utilities/BSplineBasic.h"
 
 template <typename T>

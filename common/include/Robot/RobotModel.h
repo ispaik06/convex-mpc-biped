@@ -3,7 +3,7 @@
 
 #include <cstddef>
 
-#include "RobotParams.h"
+#include "Robot/RobotParams.h"
 
 template <typename T>
 class RobotModel {

@@ -3,8 +3,6 @@ add_library(robot
 	src/LegPosInitializer.cpp
 	src/RobotController.cpp
 	src/RobotRunner.cpp
-	../common/src/Controllers/ArmController.cpp
-	../common/src/Controllers/LegController.cpp
 )
 
 target_include_directories(robot
