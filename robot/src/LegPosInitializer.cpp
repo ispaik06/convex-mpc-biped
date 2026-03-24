@@ -86,6 +86,10 @@ void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
     std::size_t flat_idx = 0;
     for (const auto& leg : _params->legs) {
         const std::size_t leg_dof = leg.joints.q_idx.size();
+        if (leg_dof > 1) {
+            fin[flat_idx + 1] += (flat_idx==0 ? 0.015 : 0.0);
+            mid_storage[flat_idx + 1] = fin[flat_idx + 1];
+        }
         if (leg_dof > 2) {
             fin[flat_idx + 2] -= 0.65;
             mid_storage[flat_idx + 2] = fin[flat_idx + 2];
