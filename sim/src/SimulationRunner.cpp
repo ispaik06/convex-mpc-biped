@@ -37,6 +37,9 @@ void SimulationRunner::init() {
 
 	mj_forward(model, data);
 
+	model->opt.timestep = 0.002;
+	model->opt.integrator = mjINT_IMPLICITFAST;
+
 	std::cout << "Loaded MuJoCo model: " << _modelPath << '\n';
 	std::cout << "nq=" << model->nq
 			  << ", nv=" << model->nv
@@ -108,6 +111,7 @@ void SimulationRunner::runRobotControl() {
 		_stateEstimate.resize(_params);
 		_robotRunner->init(&_params, model->opt.timestep);
 		_firstControllerRun = false;
+		std::cout << model->opt.timestep << std::endl;
 	}
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
