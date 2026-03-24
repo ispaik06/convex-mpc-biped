@@ -13,8 +13,8 @@ void RobotRunner::init(RobotParams<double>* params, double timestep) {
     _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
     _armController = std::make_unique<ArmController<double>>(_model);
-    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 0.1, _tiemstep);
-    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 0.5, _tiemstep);
+    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 1.1, _tiemstep);
+    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 1.0, _tiemstep);
     initializeJointTrackingGains();
 }
 
@@ -63,8 +63,8 @@ void RobotRunner::initializeJointTrackingGains() {
         case RobotType::MIT_HUMANOID:
             // Order follows sim/src/MitHumanoidSpec.cpp:
             // [hip_yaw, hip_abad, hip_pitch, knee, ankle]
-            _legJointTrackingGains.set({60.0, 20.0, 25.0, 50.0, 20.0},
-                                       {15.0, 4.0, 5.0, 7.0, 10.0});
+            _legJointTrackingGains.set({60.0, 50.0, 55.0, 60.0, 40.0},
+                                       {15.0, 10.0, 7.0, 9.0, 10.0});
             // _legJointTrackingGains.setConstant(
             //     static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()), 50.0, 20.0);
             // Order follows sim/src/MitHumanoidSpec.cpp:
