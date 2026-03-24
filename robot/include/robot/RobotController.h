@@ -9,9 +9,9 @@ public:
 	RobotController(){}
 	virtual ~RobotController(){}
 
-	virtual void initializeController();
+	virtual void initializeController() = 0;
 
-	virtual void runController();
+	virtual void runController() = 0;
 
 private:
 	RobotModel<double>* _robotModel = nullptr;

@@ -16,7 +16,7 @@
 class RobotRunner {
 public:
     explicit RobotRunner(RobotController* robot_ctrl)
-        : _robotController(robot_ctrl), _params(nullptr), _model(nullptr) {}
+        : _robot_ctrl(robot_ctrl), _params(nullptr), _model(nullptr) {}
 
     void init(RobotParams<double>*, double);
     void setupStep(const StateEstimate<double>& state);
@@ -26,7 +26,7 @@ public:
 
     virtual ~RobotRunner() = default;
 
-    RobotController* _robotController;
+    RobotController* _robot_ctrl;
     RobotType _robotType;
 
 private:

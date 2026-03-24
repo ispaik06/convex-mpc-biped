@@ -1,7 +1,6 @@
 add_library(robot
 	src/ArmPosInitializer.cpp
 	src/LegPosInitializer.cpp
-	src/RobotController.cpp
 	src/RobotRunner.cpp
 )
 

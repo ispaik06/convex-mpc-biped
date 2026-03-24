@@ -8,6 +8,14 @@ public:
 	MyController() = default;
 	virtual ~MyController() {}
 
+	virtual void initializeController();
+
+	virtual void runController();
+
+private:
+	// ControlFSM<double>* _controlFSM;
+	// GaitScheduler<double>* _gaitScheduler;
+
 };
 
 #endif  // MY_CONTROLLER_H

@@ -83,6 +83,23 @@ void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
             ++joint_idx;
         }
     }
+    std::size_t flat_idx = 0;
+    for (const auto& leg : _params->legs) {
+        const std::size_t leg_dof = leg.joints.q_idx.size();
+        if (leg_dof > 2) {
+            fin[flat_idx + 2] -= 0.75;
+            mid_storage[flat_idx + 2] -= 0.75;
+        }
+        if (leg_dof > 3) {
+            fin[flat_idx + 3] += 0.7;
+            mid_storage[flat_idx + 3] += 0.7;
+        }
+        if (leg_dof > 4) {
+            fin[flat_idx + 4] -= 0.45;
+            mid_storage[flat_idx + 4] -= 0.45;
+        }
+        flat_idx += leg_dof;
+    }
 
     if (!_jpos_trj.SetParam(ini.data(), fin.data(), mid, _end_time)) {
         throw std::runtime_error("LegPosInitializer failed to initialize joint spline");

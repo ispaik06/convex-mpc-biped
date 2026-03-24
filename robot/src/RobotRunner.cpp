@@ -13,8 +13,8 @@ void RobotRunner::init(RobotParams<double>* params, double timestep) {
     _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
     _armController = std::make_unique<ArmController<double>>(_model);
-    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 10., _tiemstep);
-    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 10., _tiemstep);
+    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 0.1, _tiemstep);
+    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 0.5, _tiemstep);
     initializeJointTrackingGains();
 }
 
@@ -25,15 +25,20 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
 
     setupStep(state);
 
-    if(!_legPosInitializer->IsInitialized(_legController.get())) {
+    const bool armPosInitialized = _armPosInitializer->IsInitialized(_armController.get());
+    for (auto& armCommand : _armController->commands) {
+        _armJointTrackingGains.applyTo(armCommand);
+    }
+
+    if(1 | !_legPosInitializer->IsInitialized(_legController.get())) {
+        // Initial pose control
         for (auto& legCommand : _legController->commands) {
             _legJointTrackingGains.applyTo(legCommand);
         }
     }
-    if(!_armPosInitializer->IsInitialized(_armController.get())) {
-        for (auto& armCommand : _armController->commands) {
-            _armJointTrackingGains.applyTo(armCommand);
-        }
+    else {
+        // Run main Controller
+        _robot_ctrl->runController();
     }
 
     _legController->setEnabled(true);
@@ -58,12 +63,14 @@ void RobotRunner::initializeJointTrackingGains() {
         case RobotType::MIT_HUMANOID:
             // Order follows sim/src/MitHumanoidSpec.cpp:
             // [hip_yaw, hip_abad, hip_pitch, knee, ankle]
-            _legJointTrackingGains.set({13.0, 11.0, 7.0, 7.0, 7.0},
-                                       {5.0, 5.0, 5.0, 5.0, 5.0});
+            _legJointTrackingGains.set({60.0, 20.0, 25.0, 50.0, 20.0},
+                                       {15.0, 4.0, 5.0, 7.0, 10.0});
+            // _legJointTrackingGains.setConstant(
+            //     static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()), 50.0, 20.0);
             // Order follows sim/src/MitHumanoidSpec.cpp:
             // [shoulder_pitch, shoulder_abad, shoulder_yaw, elbow]
-            _armJointTrackingGains.set({8.0, 8.0, 8.0, 2.0},
-                                       {1.0, 1.5, 1.0, 0.75});
+            _armJointTrackingGains.set({30.0, 8.0, 8.0, 2.0},
+                                       {5.0, 1., 1.0, 0.75});
             break;
         case RobotType::UNITREE_G1:
         case RobotType::UNITREE_H1:
