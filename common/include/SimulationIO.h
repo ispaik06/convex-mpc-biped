@@ -51,6 +51,11 @@ struct CheaterState {
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
 
+    // TODO: Jacobians
+    DMat<T> jacobian;
+    DMat<T> jacobian_v;
+    DMat<T> jacobian_w;
+
     void resize(const RobotParams<T>& params) {
         legs.resize(params.legs.size());
         for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {

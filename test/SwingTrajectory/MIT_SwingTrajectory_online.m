@@ -51,8 +51,8 @@ psi_cmd_raw = 3.00 * ones(1, N);
 % y_cmd_raw(t >= 0.055) = 0.10;
 % y_cmd_raw(t >= 0.095) = -0.08;
 
-% psi_cmd_raw(t >= 0.060) = -0.35;
-% psi_cmd_raw(t >= 0.100) = 1.00;
+psi_cmd_raw(t >= 0.060) = -0.35;
+psi_cmd_raw(t >= 0.100) = 1.00;
 
 %% ===================== INTERNAL DES (MIT STYLE) =====================
 alpha = 0.1;
@@ -314,52 +314,60 @@ legend(axPsi, [hPsiraw, hPsides], {'raw yaw-rate command', 'internal _yaw_turn_r
 %% ===================== ANIMATION LOOP =====================
 s_curve = linspace(0, 1, curve_npts);
 
-for k = 1:N
-    curveW = zeros(3, curve_npts);
-    for i = 1:curve_npts
-        curveW(:,i) = footSwingMIT(P0_world, Pf_world(:,k), h, s_curve(i));
+while isgraphics(fig)
+    for k = 1:N
+        curveW = zeros(3, curve_npts);
+        for i = 1:curve_npts
+            curveW(:,i) = footSwingMIT(P0_world, Pf_world(:,k), h, s_curve(i));
+        end
+
+        curveB = R_BW(:,:,k) * (curveW - p_com_act_world(:,k) * ones(1, curve_npts));
+
+        set(hFootHistW, 'XData', p_cmd_world(1,1:k), 'YData', p_cmd_world(2,1:k), 'ZData', p_cmd_world(3,1:k));
+        set(hPfHistW,   'XData', Pf_world(1,1:k),   'YData', Pf_world(2,1:k),   'ZData', Pf_world(3,1:k));
+        set(hCurveW,    'XData', curveW(1,:),       'YData', curveW(2,:),       'ZData', curveW(3,:));
+        set(hPfNowW,    'XData', Pf_world(1,k),     'YData', Pf_world(2,k),     'ZData', Pf_world(3,k));
+        set(hFootNowW,  'XData', p_cmd_world(1,k),  'YData', p_cmd_world(2,k),  'ZData', p_cmd_world(3,k));
+
+        set(hFootHistB, 'XData', p_cmd_body(1,1:k), 'YData', p_cmd_body(2,1:k), 'ZData', p_cmd_body(3,1:k));
+        set(hPfHistB,   'XData', Pf_body(1,1:k),    'YData', Pf_body(2,1:k),    'ZData', Pf_body(3,1:k));
+        set(hCurveB,    'XData', curveB(1,:),       'YData', curveB(2,:),       'ZData', curveB(3,:));
+        set(hPfNowB,    'XData', Pf_body(1,k),      'YData', Pf_body(2,k),      'ZData', Pf_body(3,k));
+        set(hFootNowB,  'XData', p_cmd_body(1,k),   'YData', p_cmd_body(2,k),   'ZData', p_cmd_body(3,k));
+
+        set(hComDesPath, 'XData', p_com_des_world(1,1:k), 'YData', p_com_des_world(2,1:k));
+        set(hComActPath, 'XData', p_com_act_world(1,1:k), 'YData', p_com_act_world(2,1:k));
+        set(hPfHistCOM,  'XData', Pf_world(1,1:k),        'YData', Pf_world(2,1:k));
+        set(hComDesNow,  'XData', p_com_des_world(1,k),   'YData', p_com_des_world(2,k));
+        set(hComActNow,  'XData', p_com_act_world(1,k),   'YData', p_com_act_world(2,k));
+        set(hPfNowCOM,   'XData', Pf_world(1,k),          'YData', Pf_world(2,k));
+
+        body_x_world = R_WB(:,:,k) * [1;0;0];
+        arrow_len = 0.04;
+        set(hBodyArrowCOM, 'XData', p_com_act_world(1,k), ...
+                           'YData', p_com_act_world(2,k), ...
+                           'UData', arrow_len * body_x_world(1), ...
+                           'VData', arrow_len * body_x_world(2));
+
+        set(hCursor1, 'XData', [t(k) t(k)], 'YData', yl1);
+        set(hCursor2, 'XData', [t(k) t(k)], 'YData', yl2);
+        set(hCursor3, 'XData', [t(k) t(k)], 'YData', yl3);
+
+        title(axW, sprintf('Foot Motion in World Frame | t = %.3f s | s = %.3f', t(k), s(k)));
+        title(axB, sprintf('Foot Motion in Current Body Frame | yaw = %.1f deg', rad2deg(yaw(k))));
+
+        drawnow;
+
+        if k < N
+            pause(dt / playback_speed);
+        end
     end
 
-    curveB = R_BW(:,:,k) * (curveW - p_com_act_world(:,k) * ones(1, curve_npts));
-
-    set(hFootHistW, 'XData', p_cmd_world(1,1:k), 'YData', p_cmd_world(2,1:k), 'ZData', p_cmd_world(3,1:k));
-    set(hPfHistW,   'XData', Pf_world(1,1:k),   'YData', Pf_world(2,1:k),   'ZData', Pf_world(3,1:k));
-    set(hCurveW,    'XData', curveW(1,:),       'YData', curveW(2,:),       'ZData', curveW(3,:));
-    set(hPfNowW,    'XData', Pf_world(1,k),     'YData', Pf_world(2,k),     'ZData', Pf_world(3,k));
-    set(hFootNowW,  'XData', p_cmd_world(1,k),  'YData', p_cmd_world(2,k),  'ZData', p_cmd_world(3,k));
-
-    set(hFootHistB, 'XData', p_cmd_body(1,1:k), 'YData', p_cmd_body(2,1:k), 'ZData', p_cmd_body(3,1:k));
-    set(hPfHistB,   'XData', Pf_body(1,1:k),    'YData', Pf_body(2,1:k),    'ZData', Pf_body(3,1:k));
-    set(hCurveB,    'XData', curveB(1,:),       'YData', curveB(2,:),       'ZData', curveB(3,:));
-    set(hPfNowB,    'XData', Pf_body(1,k),      'YData', Pf_body(2,k),      'ZData', Pf_body(3,k));
-    set(hFootNowB,  'XData', p_cmd_body(1,k),   'YData', p_cmd_body(2,k),   'ZData', p_cmd_body(3,k));
-
-    set(hComDesPath, 'XData', p_com_des_world(1,1:k), 'YData', p_com_des_world(2,1:k));
-    set(hComActPath, 'XData', p_com_act_world(1,1:k), 'YData', p_com_act_world(2,1:k));
-    set(hPfHistCOM,  'XData', Pf_world(1,1:k),        'YData', Pf_world(2,1:k));
-    set(hComDesNow,  'XData', p_com_des_world(1,k),   'YData', p_com_des_world(2,k));
-    set(hComActNow,  'XData', p_com_act_world(1,k),   'YData', p_com_act_world(2,k));
-    set(hPfNowCOM,   'XData', Pf_world(1,k),          'YData', Pf_world(2,k));
-
-    body_x_world = R_WB(:,:,k) * [1;0;0];
-    arrow_len = 0.04;
-    set(hBodyArrowCOM, 'XData', p_com_act_world(1,k), ...
-                       'YData', p_com_act_world(2,k), ...
-                       'UData', arrow_len * body_x_world(1), ...
-                       'VData', arrow_len * body_x_world(2));
-
-    set(hCursor1, 'XData', [t(k) t(k)], 'YData', yl1);
-    set(hCursor2, 'XData', [t(k) t(k)], 'YData', yl2);
-    set(hCursor3, 'XData', [t(k) t(k)], 'YData', yl3);
-
-    title(axW, sprintf('Foot Motion in World Frame | t = %.3f s | s = %.3f', t(k), s(k)));
-    title(axB, sprintf('Foot Motion in Current Body Frame | yaw = %.1f deg', rad2deg(yaw(k))));
-
-    drawnow;
-
-    if k < N
-        pause(dt / playback_speed);
+    if ~isgraphics(fig)
+        break;
     end
+
+    pause(2);
 end
 
 %% ===================== LOCAL FUNCTIONS =====================
