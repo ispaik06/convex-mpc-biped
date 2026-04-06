@@ -1,5 +1,6 @@
 #include <sstream>
 #include <stdexcept>
+#include <cmath>
 
 #include "GaitScheduler.h"
 #include "Utilities/Math.h"
@@ -8,7 +9,7 @@
 double GaitScheduler::p(Side i, double t) {
     double phi = 0;
     if (i == Side::Left) phi = 0.5;
-    return (t - _t0) / T_cycle + phi;
+    return fmod((t - _t0) / T_cycle + phi, 1);
 }
 
 bool GaitScheduler::c(Side i, double t) {

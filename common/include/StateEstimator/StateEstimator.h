@@ -14,9 +14,8 @@ struct StateEstimate {
 
     double time{0.0};
     Vec3<T> basePos = Vec3<T>::Zero();
-    Quat<T> baseQuat = Quat<T>::Zero();
-    Mat3<T> R_WB = Mat3<T>::Zero();
-    Mat3<T> R_BW = Mat3<T>::Zero();
+    Quat<T> baseQuat = Quat<T>::Identity();
+    T psi{0};
     Vec3<T> baseLinVel = Vec3<T>::Zero();
     Vec3<T> baseAngVel = Vec3<T>::Zero();
     Vec3<T> baseLinAcc = Vec3<T>::Zero();

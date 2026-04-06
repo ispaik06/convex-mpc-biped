@@ -17,16 +17,28 @@ Vec3<double> readBodyPosition(const mjData* data, int body_id) {
     return pos;
 }
 
+Vec3<double> readBodyComPosition(const mjData* data, int body_id) {
+    if (body_id < 0) {
+        throw std::runtime_error("Invalid body id for body COM query");
+    }
+
+    Vec3<double> pos = Vec3<double>::Zero();
+    for (int i = 0; i < 3; ++i) {
+        pos[i] = static_cast<double>(data->xipos[3 * body_id + i]);
+    }
+    return pos;
+}
+
 Quat<double> readBodyQuaternion(const mjData* data, int body_id) {
     if (body_id < 0) {
         throw std::runtime_error("Invalid body id for quaternion query");
     }
 
-    Quat<double> quat = Quat<double>::Zero();
-    for (int i = 0; i < 4; ++i) {
-        quat[i] = static_cast<double>(data->xquat[4 * body_id + i]);
-    }
-    return quat;
+    const mjtNum* q = &data->xquat[4 * body_id];
+    return Quat<double>(static_cast<double>(q[0]),
+                        static_cast<double>(q[1]),
+                        static_cast<double>(q[2]),
+                        static_cast<double>(q[3]));
 }
 
 Vec3<double> readSitePosition(const mjData* data, int site_id) {
@@ -166,7 +178,7 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
-        leg_state.footPosWorld = readEndEffectorPosition(data, foot.siteId, foot.bodyId);
+        leg_state.footPosWorld = readBodyComPosition(data, foot.bodyId);
         leg_state.footVelWorld =
             readEndEffectorVelocity(model, data, foot.siteId, foot.bodyId);
     }

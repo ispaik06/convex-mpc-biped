@@ -65,11 +65,12 @@ public:
     DMat<double> C;
     DVec<double> C_bound;
 
+    double _t0;  // start time of a gait cycle
+
 private:
     Mat6<double> C_unit;
     Vec24<double> Ck_bound;
 
-    double _t0;  // start time of a gait cycle
     double _dt;  // timestep of a single step
 };
 

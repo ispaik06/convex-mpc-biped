@@ -121,6 +121,11 @@ void SimulationRunner::runRobotControl() {
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
 	_userCommand = _keyboardCommand.getUserCommand();
+	if ((_iterations % 50) == 0) {
+		std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
+				  << "  y_dot: " << _userCommand.y_dot
+				  << "  psi_dot: " << _userCommand.psi_dot << '\n';
+	}
 	_robotRunner->run(_stateEstimate, _robotCommand);
 	applyRobotCommand();
 }

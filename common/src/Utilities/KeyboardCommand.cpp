@@ -167,7 +167,7 @@ void KeyboardCommand::applyKey(char key) {
             return;
     }
 
-    std::cout << "\rUserCommand | x_dot: " << _userCommand.x_dot
+    std::cout << "UserCommand | x_dot: " << _userCommand.x_dot
               << "  y_dot: " << _userCommand.y_dot
-              << "  psi_dot: " << _userCommand.psi_dot << "   " << std::flush;
+              << "  psi_dot: " << _userCommand.psi_dot << '\n';
 }
