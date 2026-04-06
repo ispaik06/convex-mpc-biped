@@ -3,6 +3,7 @@ add_library(common
 	src/Controllers/LegController.cpp
 	src/Robot/RobotModel.cpp
 	src/Estimator/StateEstimator.cpp
+	src/Utilities/KeyboardCommand.cpp
 )
 
 target_include_directories(common PUBLIC

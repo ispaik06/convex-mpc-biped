@@ -12,6 +12,7 @@
 #include "Robot/RobotParams.h"
 #include "SimulationIO.h"
 #include "Types.h"
+#include "Utilities/KeyboardCommand.h"
 
 struct mjModel_;
 struct mjData_;
@@ -39,6 +40,7 @@ private:
 	MujocoRobotBindings _bindings;
 	CheaterState<double> _cheaterState;
 	StateEstimate<double> _stateEstimate;
+	UserCommand _userCommand;
 	StateEstimator<double> _stateEstimator{StateEstimatorMode::Cheater};
 	RobotCommand<double> _robotCommand;
 	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
@@ -50,6 +52,7 @@ private:
 	mjData* data = nullptr;
 	bool _headless = true;
 	std::atomic<bool> _stopRequested = false;
+	KeyboardCommand _keyboardCommand;
 };
 
 #endif  // SIMULATION_RUNNER_H

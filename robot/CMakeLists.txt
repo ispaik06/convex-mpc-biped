@@ -7,7 +7,6 @@ add_library(robot
 target_include_directories(robot
 	PUBLIC
 		${CMAKE_CURRENT_SOURCE_DIR}/include/robot
-		${PROJECT_SOURCE_DIR}/common/include/Utilities
 )
 
 target_link_libraries(robot PUBLIC

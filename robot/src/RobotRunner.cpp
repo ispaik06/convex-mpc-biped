@@ -3,10 +3,11 @@
 
 #include "RobotRunner.h"
 
-void RobotRunner::init(RobotParams<double>* params, double timestep) {
+void RobotRunner::init(RobotParams<double>* params, double timestep, const UserCommand* userCommand) {
     _params = params;
     _model = RobotModel<double>(_params);
     _tiemstep = timestep;
+    _robot_ctrl->_userCommand = userCommand;
     if(!_model.validate()) {
         throw std::runtime_error("Invalid RobotParams");
     }

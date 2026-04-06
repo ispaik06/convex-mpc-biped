@@ -47,6 +47,8 @@ void SimulationRunner::init() {
 }
 
 void SimulationRunner::run() {
+	_keyboardCommand.start();
+
 	if (_headless) {
 		runPhysicsLoop(false, false);
 	} else {
@@ -59,6 +61,8 @@ void SimulationRunner::run() {
 		_stopRequested = true;
 		physicsThread.join();
 	}
+
+	_keyboardCommand.stop();
 
 	mj_deleteData(data);
 	mj_deleteModel(model);
@@ -109,13 +113,14 @@ void SimulationRunner::runRobotControl() {
 		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
-		_robotRunner->init(&_params, model->opt.timestep);
+		_robotRunner->init(&_params, model->opt.timestep, &_userCommand);
 		_firstControllerRun = false;
 		std::cout << model->opt.timestep << std::endl;
 	}
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
+	_userCommand = _keyboardCommand.getUserCommand();
 	_robotRunner->run(_stateEstimate, _robotCommand);
 	applyRobotCommand();
 }
