@@ -1,6 +1,6 @@
 #include "ReferenceTrajectory.h"
 
-#include <cmath>
+#include "Utilities/MatrixUtils.h"
 
 ReferenceTrajectoryOutput ReferenceTrajectory::build() const {
     ReferenceTrajectoryOutput out;
@@ -20,13 +20,7 @@ ReferenceTrajectoryOutput ReferenceTrajectory::build() const {
 
     for (int k = 0; k < N; ++k) {
         const double psi_k = psi0 + psi_dot_des * k * dt;
-        const double cpsi = std::cos(psi_k);
-        const double spsi = std::sin(psi_k);
-
-        Mat3<double> R_WB = Mat3<double>::Zero();
-        R_WB << cpsi, -spsi, 0.0,
-                spsi,  cpsi, 0.0,
-                0.0,   0.0,  1.0;
+        const Mat3<double> R_WB = Rz(psi_k);
 
         v_ref_W = R_WB * u_des_B;
 
@@ -36,8 +30,8 @@ ReferenceTrajectoryOutput ReferenceTrajectory::build() const {
 
         out.tk[k] = _t0 + k * dt;
         out.psi[k] = psi_k;
-        out.r_left.col(k) = _posFootDes.p1_des_W - p_ref;
-        out.r_right.col(k) = _posFootDes.p2_des_W - p_ref;
+        out.r_left.col(k) = _desiredFootPositions.left_des_W - p_ref;
+        out.r_right.col(k) = _desiredFootPositions.right_des_W - p_ref;
 
         Vec13<double> x_ref_k = Vec13<double>::Zero();
         x_ref_k[0] = 0.0;

@@ -3,7 +3,7 @@
 #include <cmath>
 
 #include "GaitScheduler.h"
-#include "Utilities/Math.h"
+#include "Utilities/MatrixUtils.h"
 
 
 double GaitScheduler::p(Side i, double t) {

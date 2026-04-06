@@ -1,10 +1,11 @@
 #include "ControlFSM.h"
 
 #include <algorithm>
-#include <cmath>
 #include <stdexcept>
 
-PosFootDes ControlFSM::SwingFootDesPos() {
+#include "Utilities/MatrixUtils.h"
+
+DesiredFootPositions ControlFSM::SwingFootDesPos() {
     if (_gaitScheduler == nullptr || _stateEstimate == nullptr || _robotParams == nullptr) {
         throw std::runtime_error("ControlFSM::SwingFootDesPos requires initialized pointers");
     }
@@ -21,13 +22,7 @@ PosFootDes ControlFSM::SwingFootDesPos() {
         _userCommand != nullptr ? _userCommand->y_dot : 0.0,
         0.0};
     const double psi = _stateEstimate->psi;
-    const double cpsi = std::cos(psi);
-    const double spsi = std::sin(psi);
-
-    Mat3<double> R_WB = Mat3<double>::Zero();
-    R_WB << cpsi, -spsi, 0.0,
-            spsi,  cpsi, 0.0,
-            0.0,   0.0,  1.0;
+    const Mat3<double> R_WB = Rz(psi);
     const Mat3<double> R_BW = R_WB.transpose();
 
     const Vec3<double> u_com_B = R_BW * _stateEstimate->baseLinVel;
@@ -58,12 +53,7 @@ PosFootDes ControlFSM::SwingFootDesPos() {
         p_nom_B[1] += (side == Side::Left ? 1.0 : -1.0) * nominalLateralOffset;
 
         const double yaw_correction = psi_dot * T_stance / 2.0;
-        const double cy = std::cos(yaw_correction);
-        const double sy = std::sin(yaw_correction);
-        Mat3<double> Rz = Mat3<double>::Zero();
-        Rz << cy, -sy, 0.0,
-              sy,  cy, 0.0,
-             0.0, 0.0, 1.0;
+        const Mat3<double> R_yaw_correction = Rz(yaw_correction);
 
         double delta_x =
             (0.5 + bonusSwing) * u_com_B[0] * T_stance
@@ -80,11 +70,11 @@ PosFootDes ControlFSM::SwingFootDesPos() {
 
         Vec3<double> feedback_B(delta_x, delta_y, z_td);
         return _stateEstimate->basePos
-             + R_WB * (Rz * p_nom_B + u_des_B * T_rem + feedback_B);
+             + R_WB * (R_yaw_correction * p_nom_B + u_des_B * T_rem + feedback_B);
     };
 
-    PosFootDes posFootDes;
-    posFootDes.p1_des_W = computeDesiredFootPos(Side::Left);
-    posFootDes.p2_des_W = computeDesiredFootPos(Side::Right);
-    return posFootDes;
+    DesiredFootPositions desiredFootPositions;
+    desiredFootPositions.left_des_W = computeDesiredFootPos(Side::Left);
+    desiredFootPositions.right_des_W = computeDesiredFootPos(Side::Right);
+    return desiredFootPositions;
 }

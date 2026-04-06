@@ -2,6 +2,7 @@ add_library(My_Controller
 	src/My_Controller.cpp
 	src/ControlFSM.cpp
 	src/ReferenceTrajectory.cpp
+	src/MPCFormulation.cpp
 	# src/GaitScheduler.cpp
 	# src/ControlFSM.cpp
 )

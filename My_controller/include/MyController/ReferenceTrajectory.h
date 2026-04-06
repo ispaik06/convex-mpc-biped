@@ -30,11 +30,11 @@ class ReferenceTrajectory {
 public:
     ReferenceTrajectory(const UserCommand* userCommand,
                         const Vec13<double>& x0,
-                        const PosFootDes& posFootDes,
+                        const DesiredFootPositions& desiredFootPositions,
                         double t0)
         : _userCommand(userCommand),
           _x0(x0),
-          _posFootDes(posFootDes),
+          _desiredFootPositions(desiredFootPositions),
           _t0(t0) {}
 
     ReferenceTrajectoryOutput build() const;
@@ -42,7 +42,7 @@ public:
 private:
     const UserCommand* _userCommand = nullptr;
     Vec13<double> _x0 = Vec13<double>::Zero();
-    PosFootDes _posFootDes;
+    DesiredFootPositions _desiredFootPositions;
     double _t0{0.0};
 };
 

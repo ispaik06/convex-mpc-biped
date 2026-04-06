@@ -5,9 +5,9 @@
 #include "GaitScheduler.h"
 #include "Utilities/UserCommand.h"
 
-struct PosFootDes {
-    Vec3<double> p1_des_W = Vec3<double>::Zero();
-    Vec3<double> p2_des_W = Vec3<double>::Zero();
+struct DesiredFootPositions {
+    Vec3<double> left_des_W = Vec3<double>::Zero();
+    Vec3<double> right_des_W = Vec3<double>::Zero();
 };
 
 
@@ -22,7 +22,7 @@ public:
           _robotParams(robotParams),
           _userCommand(userCommand) {}
 
-    PosFootDes SwingFootDesPos();
+    DesiredFootPositions SwingFootDesPos();
 
 
 private:
