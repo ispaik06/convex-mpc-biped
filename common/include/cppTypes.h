@@ -33,6 +33,10 @@ using Vec10 = Eigen::Matrix<T, 10, 1>;
 template <typename T>
 using Vec12 = Eigen::Matrix<T, 12, 1>;
 
+// 13x1 Vector
+template <typename T>
+using Vec13 = Eigen::Matrix<T, 13, 1>;
+
 // 18x1 Vector
 template <typename T>
 using Vec18 = Eigen::Matrix<T, 18, 1>;
@@ -51,7 +55,7 @@ using Mat3 = typename Eigen::Matrix<T, 3, 3>;
 
 // 4x1 Vector
 template <typename T>
-using Quat = typename Eigen::Matrix<T, 4, 1>;
+using Quat = typename Eigen::Quaternion<T>;
 
 // Spatial Vector (6x1, all subspaces)
 template <typename T>

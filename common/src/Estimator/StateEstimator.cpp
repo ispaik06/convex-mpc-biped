@@ -1,5 +1,7 @@
 #include "StateEstimator/StateEstimator.h"
 
+#include <Eigen/Geometry>
+
 template <typename T>
 StateEstimator<T>::StateEstimator(StateEstimatorMode mode) : _mode(mode) {}
 
@@ -20,6 +22,10 @@ template <typename T>
 void StateEstimator<T>::updateCheater(const CheaterState<T>& cheater_state,
                                       StateEstimate<T>& state_estimate) const {
     state_estimate.copyFrom(cheater_state);
+
+    baseQuat.normalize();
+    state_estimate.R_WB = baseQuat.toRotationMatrix();
+    state_estimate.R_BW = state_estimate.R_WB.transpose();
 }
 
 template class StateEstimator<float>;
