@@ -3,6 +3,7 @@ add_library(My_Controller
 	src/ControlFSM.cpp
 	src/ReferenceTrajectory.cpp
 	src/MPCFormulation.cpp
+	src/ConvexMPC.cpp
 	# src/GaitScheduler.cpp
 	# src/ControlFSM.cpp
 )
