@@ -5,10 +5,21 @@
 
 #include "Utilities/MatrixUtils.h"
 
+void ControlFSM::syncHorizonClock() {
+    if (_horizonClock == nullptr || _stateEstimate == nullptr) {
+        throw std::runtime_error("ControlFSM::syncHorizonClock requires initialized pointers");
+    }
+
+    _horizonClock->sync(_stateEstimate->time);
+}
+
 DesiredFootPositions ControlFSM::SwingFootDesPos() {
-    if (_gaitScheduler == nullptr || _stateEstimate == nullptr || _robotParams == nullptr) {
+    if (_gaitScheduler == nullptr || _horizonClock == nullptr || _stateEstimate == nullptr ||
+        _robotParams == nullptr) {
         throw std::runtime_error("ControlFSM::SwingFootDesPos requires initialized pointers");
     }
+
+    syncHorizonClock();
 
     const double kv = 0.03;
     const double footPlacementClamp = 0.3;

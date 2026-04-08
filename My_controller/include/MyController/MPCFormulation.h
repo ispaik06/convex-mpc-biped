@@ -1,6 +1,7 @@
 #ifndef MPC_FORMULATION_H
 #define MPC_FORMULATION_H
 
+#include "ControlParameters.h"
 #include "ReferenceTrajectory.h"
 #include "Robot/RobotParams.h"
 

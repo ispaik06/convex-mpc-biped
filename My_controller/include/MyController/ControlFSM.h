@@ -1,6 +1,7 @@
 #ifndef CONTROL_FSM_H
 #define CONTROL_FSM_H
 
+#include "HorizonClock.h"
 #include "StateEstimator/StateEstimator.h"
 #include "GaitScheduler.h"
 #include "Utilities/UserCommand.h"
@@ -14,19 +15,23 @@ struct DesiredFootPositions {
 class ControlFSM {
 public:
     ControlFSM(GaitScheduler* gaitScheduler,
+               HorizonClock* horizonClock,
                StateEstimate<double>* stateEstimate,
                const RobotParams<double>* robotParams,
                const UserCommand* userCommand)
         : _gaitScheduler(gaitScheduler),
+          _horizonClock(horizonClock),
           _stateEstimate(stateEstimate),
           _robotParams(robotParams),
           _userCommand(userCommand) {}
 
+    void syncHorizonClock();
     DesiredFootPositions SwingFootDesPos();
 
 
 private:
     GaitScheduler* _gaitScheduler = nullptr;
+    HorizonClock* _horizonClock = nullptr;
     StateEstimate<double>* _stateEstimate = nullptr;
     const RobotParams<double>* _robotParams = nullptr;
     const UserCommand* _userCommand = nullptr;

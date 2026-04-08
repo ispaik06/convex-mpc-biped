@@ -1,11 +1,16 @@
 #include "ReferenceTrajectory.h"
 
+#include <stdexcept>
+
 #include "Utilities/MatrixUtils.h"
 
 ReferenceTrajectoryOutput ReferenceTrajectory::build() const {
+    if (_horizonClock == nullptr) {
+        throw std::runtime_error("ReferenceTrajectory::build requires initialized HorizonClock");
+    }
+
     ReferenceTrajectoryOutput out;
 
-    const double dt = T_horizon / N;
     const double psi_dot_des = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const Vec3<double> u_des_B(
         _userCommand != nullptr ? _userCommand->x_dot : 0.0,
@@ -19,16 +24,18 @@ ReferenceTrajectoryOutput ReferenceTrajectory::build() const {
     Vec3<double> v_ref_W = Vec3<double>::Zero();
 
     for (int k = 0; k < N; ++k) {
-        const double psi_k = psi0 + psi_dot_des * k * dt;
+        const double tk = _horizonClock->tk(k);
+        const double tau_k = tk - _horizonClock->t0();
+        const double psi_k = psi0 + psi_dot_des * tau_k;
         const Mat3<double> R_WB = Rz(psi_k);
 
         v_ref_W = R_WB * u_des_B;
 
         if (k > 0) {
-            p_ref += v_ref_W * dt;
+            p_ref += v_ref_W * dt_mpc;
         }
 
-        out.tk[k] = _t0 + k * dt;
+        out.tk[k] = tk;
         out.psi[k] = psi_k;
         out.r_left.col(k) = _desiredFootPositions.left_des_W - p_ref;
         out.r_right.col(k) = _desiredFootPositions.right_des_W - p_ref;

@@ -5,11 +5,14 @@
 #include "GaitScheduler.h"
 #include "Utilities/MatrixUtils.h"
 
-
 double GaitScheduler::p(Side i, double t) {
+    if (_horizonClock == nullptr) {
+        throw std::runtime_error("GaitScheduler::p requires initialized HorizonClock");
+    }
+
     double phi = 0;
     if (i == Side::Left) phi = 0.5;
-    return fmod((t - _t0) / T_cycle + phi, 1);
+    return std::fmod((t - _horizonClock->t0()) / T_cycle + phi, 1.0);
 }
 
 bool GaitScheduler::c(Side i, double t) {
@@ -18,15 +21,15 @@ bool GaitScheduler::c(Side i, double t) {
     else return false;
 }
 
-void GaitScheduler::init(double t) {
-    if (t - _t0 >= T_cycle) _t0 = t;
-}
-
 void GaitScheduler::buildConstraintMatrices() {
+    if (_horizonClock == nullptr) {
+        throw std::runtime_error(
+            "GaitScheduler::buildConstraintMatrices requires initialized HorizonClock");
+    }
+
     D.resize(12*N, 12*N);
     C.resize(24*N, 12*N);
     C_bound.resize(24*N, 1);
-    double tk = _t0;
 
     Mat3<double> S_left, S_right;
     S_left  = S_right = Mat3<double>::Zero();
@@ -39,6 +42,7 @@ void GaitScheduler::buildConstraintMatrices() {
     C_left = C_right = Mat12<double>::Zero();
 
     for (int k = 0; k < N; ++k) {
+        const double tk = _horizonClock->tk(k);
         Ck_bound = Vec24<double>::Zero();
         if (c(Side::Left, tk) == 0) {  // swing
             S_left = Mat3<double>::Ones();
@@ -73,8 +77,6 @@ void GaitScheduler::buildConstraintMatrices() {
             C_result = blkdiag<double>({C_result, Ck});
         }
         C_bound_result.segment(24*k, 24) = Ck_bound;
-
-        tk += _dt;
     }
 
     D = D_result;

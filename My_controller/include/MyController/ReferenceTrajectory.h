@@ -1,7 +1,9 @@
 #ifndef REFERNCE_TRAJECTORY_H
 #define REFERNCE_TRAJECTORY_H
 
+#include "ControlParameters.h"
 #include "ControlFSM.h"
+#include "HorizonClock.h"
 #include "Utilities/UserCommand.h"
 #include "cppTypes.h"
 
@@ -31,11 +33,11 @@ public:
     ReferenceTrajectory(const UserCommand* userCommand,
                         const Vec13<double>& x0,
                         const DesiredFootPositions& desiredFootPositions,
-                        double t0)
+                        const HorizonClock* horizonClock)
         : _userCommand(userCommand),
           _x0(x0),
           _desiredFootPositions(desiredFootPositions),
-          _t0(t0) {}
+          _horizonClock(horizonClock) {}
 
     ReferenceTrajectoryOutput build() const;
 
@@ -43,7 +45,7 @@ private:
     const UserCommand* _userCommand = nullptr;
     Vec13<double> _x0 = Vec13<double>::Zero();
     DesiredFootPositions _desiredFootPositions;
-    double _t0{0.0};
+    const HorizonClock* _horizonClock = nullptr;
 };
 
 #endif  // REFERNCE_TRAJECTORY_H
