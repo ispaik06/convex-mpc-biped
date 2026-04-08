@@ -205,14 +205,14 @@ void ConvexMPC::buildQP() {
     const DVec<double>& C_bound = *_input.C_bound;
     const DMat<double>& D = *_input.D;
 
-    DMat<double> P_dense = B_qp.transpose() * L * B_qp + K;
-    P_dense = 2.0 * (0.5 * (P_dense + P_dense.transpose()));
-    const DVec<double> q_dense = 2.0 * B_qp.transpose() * L * (A_qp * x0 - X_ref);
+    DMat<double> H_dense = 2.0 * (B_qp.transpose() * L * B_qp + K);
+    H_dense = 0.5 * (H_dense + H_dense.transpose());
+    const DVec<double> g_dense = 2.0 * B_qp.transpose() * L * (A_qp * x0 - X_ref);
 
-    buildHessianMatrix(P_dense);
+    buildHessianMatrix(H_dense);
     buildConstraintMatrix(C, D);
 
-    _gradient = q_dense.cast<c_float>();
+    _gradient = g_dense.cast<c_float>();
     _lowerBound.head(kNumIneq).setConstant(-OsqpEigen::INFTY);
     _upperBound.head(kNumIneq) = C_bound.cast<c_float>();
     _lowerBound.tail(kNumEq).setZero();
@@ -258,7 +258,7 @@ void ConvexMPC::solve() {
     _lastSolution = solution;
     updateWarmStart();
     _hasPreviousSolution = true;
-    _optimalWrench = solution.template segment<12>(0).template cast<double>();
+    _optimalWrench = solution.segment(0, 12).cast<double>();
 }
 
 void ConvexMPC::validateInputDimensions(const ConvexMPCInputView& input) const {

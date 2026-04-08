@@ -61,11 +61,11 @@ private:
 
     Eigen::SparseMatrix<c_float> _hessian;
     Eigen::SparseMatrix<c_float> _constraintMatrix;
-    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _gradient;
-    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _lowerBound;
-    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _upperBound;
-    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _warmStart;
-    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _lastSolution;
+    DVec<c_float> _gradient;
+    DVec<c_float> _lowerBound;
+    DVec<c_float> _upperBound;
+    DVec<c_float> _warmStart;
+    DVec<c_float> _lastSolution;
     Vec12<double> _optimalWrench = Vec12<double>::Zero();
 };
 
