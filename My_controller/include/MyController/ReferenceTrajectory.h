@@ -8,14 +8,14 @@
 #include "cppTypes.h"
 
 struct ReferenceTrajectoryOutput {
-    DMat<double> X_ref;
+    DVec<double> X_ref;
     D3Mat<double> r_left;
     D3Mat<double> r_right;
     DVec<double> psi;
     DVec<double> tk;
 
     ReferenceTrajectoryOutput()
-        : X_ref(13, N),
+        : X_ref(13 * N),
           r_left(3, N),
           r_right(3, N),
           psi(N),

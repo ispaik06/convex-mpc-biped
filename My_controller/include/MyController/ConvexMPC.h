@@ -1,13 +1,17 @@
 #ifndef CONVEX_MPC_H
 #define CONVEX_MPC_H
 
+#include <Eigen/SparseCore>
+#include <OsqpEigen/OsqpEigen.h>
+
+#include "ControlParameters.h"
 #include "GaitScheduler.h"
 #include "MPCFormulation.h"
 
 struct ConvexMPCInputView {
     const DMat<double>* A_qp{nullptr};
     const DMat<double>* B_qp{nullptr};
-    const DMat<double>* X_ref{nullptr};
+    const DVec<double>* X_ref{nullptr};
     const Vec13<double>* x0{nullptr};
     const DMat<double>* C{nullptr};
     const DVec<double>* C_bound{nullptr};
@@ -21,7 +25,7 @@ struct ConvexMPCInputView {
 
 class ConvexMPC {
 public:
-    ConvexMPC() = default;
+    ConvexMPC();
 
     void updateInput(const GaitScheduler& gaitScheduler,
                      const MPCFormulationOutput& formulation,
@@ -32,16 +36,37 @@ public:
 
     const ConvexMPCInputView& input() const;
     bool hasInput() const;
+    const DMat<double>& L() const;
+    const DMat<double>& K() const;
+    const Vec12<double>& optimalWrench() const;
 
     void buildQP();
     void solve();
 
 private:
+    bool initializeSolver();
+    bool updateSolverData();
+    void buildHessianMatrix(const DMat<double>& P);
+    void buildConstraintMatrix(const DMat<double>& C, const DMat<double>& D);
+    void updateWarmStart();
     void validateInputDimensions(const ConvexMPCInputView& input) const;
 
     ConvexMPCInputView _input;
     bool _hasInput{false};
-    
+    bool _qpReady{false};
+    bool _solverInitialized{false};
+    bool _hasPreviousSolution{false};
+
+    OsqpEigen::Solver _solver;
+
+    Eigen::SparseMatrix<c_float> _hessian;
+    Eigen::SparseMatrix<c_float> _constraintMatrix;
+    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _gradient;
+    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _lowerBound;
+    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _upperBound;
+    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _warmStart;
+    Eigen::Matrix<c_float, Eigen::Dynamic, 1> _lastSolution;
+    Vec12<double> _optimalWrench = Vec12<double>::Zero();
 };
 
 #endif  // CONVEX_MPC_H

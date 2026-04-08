@@ -51,7 +51,7 @@ ReferenceTrajectoryOutput ReferenceTrajectory::build() const {
         x_ref_k.template segment<3>(9) = v_ref_W;
         x_ref_k[12] = gravity;
 
-        out.X_ref.col(k) = x_ref_k;
+        out.X_ref.segment(13 * k, 13) = x_ref_k;
     }
 
     return out;

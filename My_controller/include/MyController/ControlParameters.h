@@ -11,7 +11,7 @@ inline constexpr double T_swing = 0.4;
 inline constexpr double T_stance = 0.6;
 
 inline constexpr double T_horizon = 0.5;
-inline constexpr int N = 10;
+inline constexpr int N = 25;
 inline constexpr double dt_mpc = T_horizon / static_cast<double>(N);
 
 inline constexpr double mu = 0.1;
