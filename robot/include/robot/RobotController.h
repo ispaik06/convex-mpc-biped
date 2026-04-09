@@ -5,6 +5,14 @@
 #include "Utilities/UserCommand.h"
 
 class RobotRunner;
+template <typename T>
+class LegController;
+template <typename T>
+class ArmController;
+template <typename T>
+struct StateEstimate;
+template <typename T>
+struct RobotParams;
 
 class RobotController {
 public:
@@ -24,6 +32,10 @@ private:
 
 protected:
 	const UserCommand* _userCommand = nullptr;
+	const StateEstimate<double>* _stateEstimate = nullptr;
+	const RobotParams<double>* _robotParams = nullptr;
+	LegController<double>* _legController = nullptr;
+	ArmController<double>* _armController = nullptr;
 };
 
 #endif  // ROBOT_CONTROLLER_H

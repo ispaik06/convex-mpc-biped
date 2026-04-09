@@ -22,8 +22,11 @@ struct StateEstimate {
     Vec3<T> baseAngAcc = Vec3<T>::Zero();
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
+    WholeBodyDynamicsState<T> dynamics;
 
     void resize(const RobotParams<T>& params) {
+        dynamics.resize(params.nv);
+
         legs.resize(params.legs.size());
         for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
             const auto& joints = params.legs[leg].joints;
@@ -31,7 +34,7 @@ struct StateEstimate {
             const Eigen::Index qd_size = static_cast<Eigen::Index>(joints.qd_idx.size());
             const Eigen::Index tau_size = static_cast<Eigen::Index>(
                 joints.actuator_idx.empty() ? joints.qd_idx.size() : joints.actuator_idx.size());
-            legs[leg].resize(q_size, qd_size, tau_size);
+            legs[leg].resize(q_size, qd_size, tau_size, params.nv);
         }
 
         arms.resize(params.arms.size());
@@ -55,6 +58,7 @@ struct StateEstimate {
         baseAngAcc = cheater_state.baseAngAcc;
         legs = cheater_state.legs;
         arms = cheater_state.arms;
+        dynamics = cheater_state.dynamics;
     }
 };
 

@@ -14,6 +14,11 @@ void RobotRunner::init(RobotParams<double>* params, double timestep, const UserC
     _robotType = _params->roboType;
     _legController = std::make_unique<LegController<double>>(_model);
     _armController = std::make_unique<ArmController<double>>(_model);
+    _robot_ctrl->_robotModel = &_model;
+    _robot_ctrl->_robotType = _robotType;
+    _robot_ctrl->_robotParams = _params;
+    _robot_ctrl->_legController = _legController.get();
+    _robot_ctrl->_armController = _armController.get();
     _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 1.1, _tiemstep);
     _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 1.0, _tiemstep);
     initializeJointTrackingGains();
@@ -24,6 +29,7 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
         throw std::runtime_error("RobotRunner::init must be called before run");
     }
 
+    _robot_ctrl->_stateEstimate = &state;
     setupStep(state);
 
     const bool armPosInitialized = _armPosInitializer->IsInitialized(_armController.get());
@@ -101,6 +107,17 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
     _armController->zeroCommand();
     _armController->zeroData();
 
+    const Eigen::Index nv = _model.nv();
+    if (state.dynamics.qd.size() != nv || state.dynamics.bias.size() != nv ||
+        state.dynamics.massMatrix.rows() != nv ||
+        state.dynamics.massMatrix.cols() != nv) {
+        throw std::invalid_argument("StateEstimate whole-body dynamics size does not match RobotModel");
+    }
+    _legController->setWholeBodyDynamicsData(
+        state.dynamics.qd,
+        state.dynamics.bias,
+        state.dynamics.massMatrix);
+
     for (std::size_t leg = 0; leg < state.legs.size(); ++leg) {
         const auto& legState = state.legs[leg];
         const Eigen::Index q_size =
@@ -121,6 +138,15 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
         } else if (legState.tauEstimate.size() != 0) {
             throw std::invalid_argument(
                 "RobotLegState tauEstimate dimension does not match RobotModel");
+        }
+
+        if (legState.hasFootKinematics) {
+            _legController->setLegCartesianData(static_cast<int>(leg),
+                                                legState.footPosWorld,
+                                                legState.footVelWorld,
+                                                legState.JvWorld,
+                                                legState.JvDotWorld,
+\                                                legState.JwWorld);
         }
     }
 

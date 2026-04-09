@@ -1,6 +1,7 @@
 add_library(common
 	src/Controllers/ArmController.cpp
 	src/Controllers/LegController.cpp
+	src/Dynamics/OperationalSpaceDynamics.cpp
 	src/Robot/RobotModel.cpp
 	src/Estimator/StateEstimator.cpp
 	src/Utilities/KeyboardCommand.cpp

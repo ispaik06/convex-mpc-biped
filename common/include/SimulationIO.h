@@ -10,13 +10,34 @@ struct RobotLegState {
     DVec<T> tauEstimate;
     Vec3<T> footPosWorld = Vec3<T>::Zero();
     Vec3<T> footVelWorld = Vec3<T>::Zero();
+    DMat<T> JvWorld;
+    DMat<T> JvDotWorld;
+    DMat<T> JwWorld;
+    bool hasFootKinematics = false;
     bool contact = true;
 
-    void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) {
+    void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size, Eigen::Index nv) {
         q.resize(q_size);
         qd.resize(qd_size);
         tauEstimate.resize(tau_size);
+        JvWorld.setZero(3, nv);
+        JvDotWorld.setZero(3, nv);
+        JwWorld.setZero(3, nv);
+        hasFootKinematics = false;
         contact = true;
+    }
+};
+
+template <typename T>
+struct WholeBodyDynamicsState {
+    DVec<T> qd;
+    DVec<T> bias;
+    DMat<T> massMatrix;
+
+    void resize(Eigen::Index nv) {
+        qd.setZero(nv);
+        bias.setZero(nv);
+        massMatrix.setZero(nv, nv);
     }
 };
 
@@ -50,13 +71,11 @@ struct CheaterState {
     Vec3<T> baseAngAcc = Vec3<T>::Zero();
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
-
-    // TODO: Jacobians
-    DMat<T> jacobian;
-    DMat<T> jacobian_v;
-    DMat<T> jacobian_w;
+    WholeBodyDynamicsState<T> dynamics;
 
     void resize(const RobotParams<T>& params) {
+        dynamics.resize(params.nv);
+
         legs.resize(params.legs.size());
         for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
             const auto& joints = params.legs[leg].joints;
@@ -64,7 +83,7 @@ struct CheaterState {
             const Eigen::Index qd_size = static_cast<Eigen::Index>(joints.qd_idx.size());
             const Eigen::Index tau_size = static_cast<Eigen::Index>(
                 joints.actuator_idx.empty() ? joints.qd_idx.size() : joints.actuator_idx.size());
-            legs[leg].resize(q_size, qd_size, tau_size);
+            legs[leg].resize(q_size, qd_size, tau_size, params.nv);
         }
 
         arms.resize(params.arms.size());

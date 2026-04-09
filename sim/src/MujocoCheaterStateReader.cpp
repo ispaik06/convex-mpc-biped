@@ -1,10 +1,15 @@
 #include "MujocoCheaterStateReader.h"
 
 #include <stdexcept>
+#include <vector>
 
 #include <mujoco/mujoco.h>
 
 namespace {
+template <typename Scalar>
+using RowMajorMatrix =
+    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
+
 Vec3<double> readBodyPosition(const mjData* data, int body_id) {
     if (body_id < 0) {
         throw std::runtime_error("Invalid body id for world position query");
@@ -137,6 +142,64 @@ Vec3<double> readEndEffectorVelocity(const mjModel* model,
     return readBodyLinearVelocity(model, data, body_id);
 }
 
+void readBodyComJacobians(const mjModel* model,
+                          const mjData* data,
+                          int body_id,
+                          DMat<double>& JvWorld,
+                          DMat<double>& JwWorld) {
+    if (body_id < 0) {
+        throw std::runtime_error("Invalid body id for Jacobian query");
+    }
+
+    std::vector<mjtNum> jacp(3 * model->nv, mjtNum(0));
+    std::vector<mjtNum> jacr(3 * model->nv, mjtNum(0));
+    mj_jacBodyCom(model, data, jacp.data(), jacr.data(), body_id);
+
+    Eigen::Map<const RowMajorMatrix<mjtNum>> jacpMap(jacp.data(), 3, model->nv);
+    Eigen::Map<const RowMajorMatrix<mjtNum>> jacrMap(jacr.data(), 3, model->nv);
+    JvWorld = jacpMap.template cast<double>();
+    JwWorld = jacrMap.template cast<double>();
+}
+
+void readBodyComJacobianDot(const mjModel* model,
+                            const mjData* data,
+                            int body_id,
+                            DMat<double>& JvDotWorld) {
+    if (body_id < 0) {
+        throw std::runtime_error("Invalid body id for Jacobian-dot query");
+    }
+
+    const mjtNum point[3] = {
+        data->xipos[3 * body_id + 0],
+        data->xipos[3 * body_id + 1],
+        data->xipos[3 * body_id + 2],
+    };
+
+    std::vector<mjtNum> jacDotp(3 * model->nv, mjtNum(0));
+    mj_jacDot(model, data, jacDotp.data(), nullptr, point, body_id);
+
+    Eigen::Map<const RowMajorMatrix<mjtNum>> jacDotMap(jacDotp.data(), 3, model->nv);
+    JvDotWorld = jacDotMap.template cast<double>();
+}
+
+void readDenseMassMatrix(const mjModel* model, const mjData* data, DMat<double>& massMatrix) {
+    std::vector<mjtNum> rawMassMatrix(model->nv * model->nv, mjtNum(0));
+    mj_fullM(model, rawMassMatrix.data(), data->qM);
+
+    Eigen::Map<const RowMajorMatrix<mjtNum>> massMap(rawMassMatrix.data(), model->nv, model->nv);
+    massMatrix = massMap.template cast<double>();
+}
+
+void copyContiguous(const mjtNum* src, Eigen::Index size, DVec<double>& dst, const char* name) {
+    if (dst.size() != size) {
+        throw std::runtime_error(std::string(name) + " size does not match destination");
+    }
+
+    for (Eigen::Index i = 0; i < size; ++i) {
+        dst[i] = static_cast<double>(src[i]);
+    }
+}
+
 void copyIndexed(const mjtNum* src, const std::vector<int>& indices, DVec<double>& dst) {
     if (dst.size() != static_cast<Eigen::Index>(indices.size())) {
         throw std::runtime_error("CheaterState segment size does not match index count");
@@ -167,6 +230,9 @@ void fillCheaterState(const mjModel* model,
     cheater_state.baseAngVel = readBodyAngularVelocity(model, data, bindings.baseBodyId);
     cheater_state.baseLinAcc = readBodyLinearAcceleration(model, data, bindings.baseBodyId);
     cheater_state.baseAngAcc = readBodyAngularAcceleration(model, data, bindings.baseBodyId);
+    copyContiguous(data->qvel, model->nv, cheater_state.dynamics.qd, "qvel");
+    copyContiguous(data->qfrc_bias, model->nv, cheater_state.dynamics.bias, "qfrc_bias");
+    readDenseMassMatrix(model, data, cheater_state.dynamics.massMatrix);
 
     for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
         const auto& joints = params.legs[leg].joints;
@@ -179,8 +245,10 @@ void fillCheaterState(const mjModel* model,
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
         leg_state.footPosWorld = readBodyComPosition(data, foot.bodyId);
-        leg_state.footVelWorld =
-            readEndEffectorVelocity(model, data, foot.siteId, foot.bodyId);
+        readBodyComJacobians(model, data, foot.bodyId, leg_state.JvWorld, leg_state.JwWorld);
+        readBodyComJacobianDot(model, data, foot.bodyId, leg_state.JvDotWorld);
+        leg_state.footVelWorld = leg_state.JvWorld * cheater_state.dynamics.qd;
+        leg_state.hasFootKinematics = true;
     }
 
     for (std::size_t arm = 0; arm < params.arms.size(); ++arm) {
