@@ -51,6 +51,7 @@ void MPCFormulation::build(const ReferenceTrajectoryOutput& referenceTrajectory,
     //? Note: bodyInertia currently comes from the MuJoCo base body only.
     //? It is not the whole-robot inertia about the whole-robot COM yet.
     const Mat3<double>& I_body = _robotParams->bodyInertia;
+    const Mat3<double> I_body_inv = I_body.inverse();
     const Mat3<double> I3 = Mat3<double>::Identity();
 
     const int steps = horizonSteps();
@@ -66,8 +67,7 @@ void MPCFormulation::build(const ReferenceTrajectoryOutput& referenceTrajectory,
         const Vec3<double> r_right_k = referenceTrajectory.r_right.col(k);
 
         const Mat3<double> R_k = Rz(psi_k);
-        const Mat3<double> I_k = R_k * I_body * R_k.transpose();
-        const Mat3<double> I_k_inv = I_k.inverse();
+        const Mat3<double> I_k_inv = R_k * I_body_inv * R_k.transpose();
 
         Mat13d A_c_k = Mat13d::Zero();
         A_c_k.block<3, 3>(0, 6) = R_k.transpose();
