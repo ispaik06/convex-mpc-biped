@@ -50,6 +50,8 @@ void SimulationRunner::run() {
 	_keyboardCommand.start();
 
 	if (_headless) {
+		// Intentionally runs until the user interrupts it. Headless auto-stop
+		// criteria are deferred because this target is used for manual checking.
 		runPhysicsLoop(false, false);
 	} else {
 		_stopRequested = false;
@@ -106,13 +108,15 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 
 void SimulationRunner::runRobotControl() {
 	if (_firstControllerRun) {
-		//Todo: driverCommand, cheaterState, controlParameters, ....
 
 		const auto robotSetup = setupRobotParams<double>(_robot, model);
 		_params = robotSetup.params;
 		_bindings = robotSetup.bindings;
+		updateReducedBodyMassPropertiesFromData(model, data, _bindings, _params);
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
+		_legSwingDynamicsProvider =
+			std::make_unique<LegSwingDynamicsProvider>(_robot, model, _params, _bindings);
 		_robotRunner->init(&_params, model->opt.timestep, &_userCommand);
 		_firstControllerRun = false;
 		std::cout << model->opt.timestep << std::endl;
@@ -120,15 +124,18 @@ void SimulationRunner::runRobotControl() {
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
-	_userCommand = _keyboardCommand.getUserCommand();
-	if ((_iterations % 50) == 0) {
-		std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
-				  << "  y_dot: " << _userCommand.y_dot
-				  << "  psi_dot: " << _userCommand.psi_dot << '\n';
+	if (_legSwingDynamicsProvider) {
+		_legSwingDynamicsProvider->update(_stateEstimate);
+		}
+		_userCommand = _keyboardCommand.getUserCommand();
+		// if ((_iterations % 50) == 0) {
+		// 	std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
+		// 			  << "  y_dot: " << _userCommand.y_dot
+		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
+		// }
+		_robotRunner->run(_stateEstimate, _robotCommand);
+		applyRobotCommand();
 	}
-	_robotRunner->run(_stateEstimate, _robotCommand);
-	applyRobotCommand();
-}
 
 void SimulationRunner::applyRobotCommand() {
 	if (_robotCommand.tau.size() != model->nu) {

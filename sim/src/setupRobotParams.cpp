@@ -46,12 +46,11 @@ void fillBodyMassProperties(const mjModel* model,
                             RobotParams<T>& params,
                             MujocoRobotBindings& bindings) {
     params.bodyMass = T(0);
-    // for (int i = 1; i < model->nbody; ++i) {
-    //     params.bodyMass += static_cast<T>(model->body_mass[i]);
-    // }
+    for (int i = 1; i < model->nbody; ++i) {
+        params.bodyMass += static_cast<T>(model->body_mass[i]);
+    }
     const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
     bindings.baseBodyId = baseBodyId;
-    params.bodyMass += static_cast<T>(model->body_mass[baseBodyId]);
 
     params.bodyInertia.setZero();
     params.bodyInertia(0, 0) = static_cast<T>(model->body_inertia[3 * baseBodyId + 0]);
@@ -88,14 +87,19 @@ void fillJointGroup(const mjModel* model,
 }
 
 template <typename T>
-Vec3<T> firstJointLocationFromBase(const mjModel* model,
-                                   const std::vector<JointActuatorSpec>& jointSpecs) {
+int firstJointBodyId(const mjModel* model, const std::vector<JointActuatorSpec>& jointSpecs) {
     if (jointSpecs.empty()) {
         throw std::runtime_error("Limb spec has no joints");
     }
 
     const int jointId = requireId<T>(model, mjOBJ_JOINT, jointSpecs.front().joint, "joint");
-    const int bodyId = model->jnt_bodyid[jointId];
+    return model->jnt_bodyid[jointId];
+}
+
+template <typename T>
+Vec3<T> firstJointLocationFromBase(const mjModel* model,
+                                   const std::vector<JointActuatorSpec>& jointSpecs) {
+    const int bodyId = firstJointBodyId<T>(model, jointSpecs);
 
     Vec3<T> hip = Vec3<T>::Zero();
     hip << static_cast<T>(model->body_pos[3 * bodyId + 0]),
@@ -105,12 +109,34 @@ Vec3<T> firstJointLocationFromBase(const mjModel* model,
 }
 
 template <typename T>
+bool isDescendantOf(const mjModel* model, int bodyId, int ancestorId) {
+    while (bodyId > 0) {
+        if (bodyId == ancestorId) {
+            return true;
+        }
+        bodyId = model->body_parentid[bodyId];
+    }
+    return bodyId == ancestorId;
+}
+
+template <typename T>
+bool isInLegSubtree(const mjModel* model, const MujocoRobotBindings& bindings, const int bodyId) {
+    for (const auto& foot : bindings.feet) {
+        if (foot.rootBodyId >= 0 && isDescendantOf<T>(model, bodyId, foot.rootBodyId)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+template <typename T>
 void fillLeg(const mjModel* model,
              const LimbMujocoSpec& spec,
              LegParams<T>& leg,
              MujocoEndEffectorBinding& foot_binding) {
     leg.side = spec.side;
     fillJointGroup(model, spec.joints, leg.joints);
+    foot_binding.rootBodyId = firstJointBodyId<T>(model, spec.joints);
     foot_binding.bodyId = requireId<T>(model, mjOBJ_BODY, spec.endBody, "foot body");
     foot_binding.siteId = optionalId<T>(model, mjOBJ_SITE, spec.endSite);
     leg.hipLocation_from_body = firstJointLocationFromBase<T>(model, spec.joints);
@@ -123,8 +149,33 @@ void fillArm(const mjModel* model,
              MujocoEndEffectorBinding& hand_binding) {
     arm.side = spec.side;
     fillJointGroup(model, spec.joints, arm.joints);
+    hand_binding.rootBodyId = firstJointBodyId<T>(model, spec.joints);
     hand_binding.bodyId = requireId<T>(model, mjOBJ_BODY, spec.endBody, "hand body");
     hand_binding.siteId = optionalId<T>(model, mjOBJ_SITE, spec.endSite);
+}
+
+template <typename T>
+void fillReducedBodyMassProperties(const mjModel* model,
+                                   std::string_view baseBodyName,
+                                   const MujocoRobotBindings& bindings,
+                                   RobotParams<T>& params) {
+    const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
+
+    params.bodyMass = T(0);
+    for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
+        if (!isInLegSubtree<T>(model, bindings, bodyId)) {
+            params.bodyMass += static_cast<T>(model->body_mass[bodyId]);
+        }
+    }
+
+    // TODO: replace this torso-only inertia with a torso+arms composite inertia.
+    params.bodyInertia.setZero();
+    params.bodyInertia(0, 0) = static_cast<T>(model->body_inertia[3 * baseBodyId + 0]);
+    params.bodyInertia(1, 1) = static_cast<T>(model->body_inertia[3 * baseBodyId + 1]);
+    params.bodyInertia(2, 2) = static_cast<T>(model->body_inertia[3 * baseBodyId + 2]);
+    params.bodyComLocation << static_cast<T>(model->body_ipos[3 * baseBodyId + 0]),
+        static_cast<T>(model->body_ipos[3 * baseBodyId + 1]),
+        static_cast<T>(model->body_ipos[3 * baseBodyId + 2]);
 }
 
 template <typename T>
@@ -138,7 +189,8 @@ MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMu
     params.nu = model->nu;
 
     fillDefaultQpos(model, params);
-    fillBodyMassProperties(model, spec.baseBody, params, bindings);
+    const int baseBodyId = requireId<T>(model, mjOBJ_BODY, spec.baseBody, "base body");
+    bindings.baseBodyId = baseBodyId;
 
     params.legs.reserve(spec.legs.size());
     bindings.feet.reserve(spec.legs.size());
@@ -156,6 +208,8 @@ MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMu
         fillArm<T>(model, armSpec, params.arms.back(), bindings.hands.back());
     }
 
+    fillReducedBodyMassProperties(model, spec.baseBody, bindings, params);
+
     return setup;
 }
 }  // namespace
@@ -172,3 +226,102 @@ MujocoRobotSetup<T> setupRobotParams(const RobotType robotType, const mjModel_* 
 
 template MujocoRobotSetup<float> setupRobotParams<float>(RobotType, const mjModel_*);
 template MujocoRobotSetup<double> setupRobotParams<double>(RobotType, const mjModel_*);
+
+template <typename T>
+void updateReducedBodyMassPropertiesFromData(const mjModel_* modelPtr,
+                                             const mjData_* dataPtr,
+                                             const MujocoRobotBindings& bindings,
+                                             RobotParams<T>& params) {
+    const auto* model = reinterpret_cast<const mjModel*>(modelPtr);
+    const auto* data = reinterpret_cast<const mjData*>(dataPtr);
+    if (model == nullptr || data == nullptr) {
+        throw std::runtime_error("updateReducedBodyMassPropertiesFromData received null MuJoCo pointers");
+    }
+    if (bindings.baseBodyId < 0) {
+        throw std::runtime_error("updateReducedBodyMassPropertiesFromData requires a valid base body binding");
+    }
+
+    T reducedMass = T(0);
+    Vec3<T> reducedComWorld = Vec3<T>::Zero();
+
+    for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
+        if (isInLegSubtree<T>(model, bindings, bodyId)) {
+            continue;
+        }
+
+        const T bodyMass = static_cast<T>(model->body_mass[bodyId]);
+        if (bodyMass <= T(0)) {
+            continue;
+        }
+
+        Vec3<T> bodyComWorld = Vec3<T>::Zero();
+        for (int i = 0; i < 3; ++i) {
+            bodyComWorld[i] = static_cast<T>(data->xipos[3 * bodyId + i]);
+        }
+
+        reducedMass += bodyMass;
+        reducedComWorld += bodyMass * bodyComWorld;
+    }
+
+    if (reducedMass <= T(0)) {
+        throw std::runtime_error("Reduced-body mass must be positive");
+    }
+    reducedComWorld /= reducedMass;
+
+    Mat3<T> reducedInertiaWorld = Mat3<T>::Zero();
+    for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
+        if (isInLegSubtree<T>(model, bindings, bodyId)) {
+            continue;
+        }
+
+        const T bodyMass = static_cast<T>(model->body_mass[bodyId]);
+        if (bodyMass <= T(0)) {
+            continue;
+        }
+
+        Mat3<T> inertiaFrameRotation = Mat3<T>::Zero();
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                inertiaFrameRotation(row, col) =
+                    static_cast<T>(data->ximat[9 * bodyId + 3 * row + col]);
+            }
+        }
+
+        Mat3<T> bodyInertiaDiag = Mat3<T>::Zero();
+        bodyInertiaDiag(0, 0) = static_cast<T>(model->body_inertia[3 * bodyId + 0]);
+        bodyInertiaDiag(1, 1) = static_cast<T>(model->body_inertia[3 * bodyId + 1]);
+        bodyInertiaDiag(2, 2) = static_cast<T>(model->body_inertia[3 * bodyId + 2]);
+
+        const Mat3<T> bodyInertiaWorld =
+            inertiaFrameRotation * bodyInertiaDiag * inertiaFrameRotation.transpose();
+
+        Vec3<T> bodyComWorld = Vec3<T>::Zero();
+        for (int i = 0; i < 3; ++i) {
+            bodyComWorld[i] = static_cast<T>(data->xipos[3 * bodyId + i]);
+        }
+        const Vec3<T> offset = bodyComWorld - reducedComWorld;
+
+        reducedInertiaWorld += bodyInertiaWorld +
+            bodyMass * ((offset.squaredNorm() * Mat3<T>::Identity()) - (offset * offset.transpose()));
+    }
+
+    Mat3<T> baseRotationWorld = Mat3<T>::Zero();
+    Vec3<T> basePosWorld = Vec3<T>::Zero();
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            baseRotationWorld(row, col) =
+                static_cast<T>(data->xmat[9 * bindings.baseBodyId + 3 * row + col]);
+        }
+        basePosWorld[row] = static_cast<T>(data->xpos[3 * bindings.baseBodyId + row]);
+    }
+    const Mat3<T> baseRotationBody = baseRotationWorld.transpose();
+
+    params.bodyMass = reducedMass;
+    params.bodyInertia = baseRotationBody * reducedInertiaWorld * baseRotationWorld;
+    params.bodyComLocation = baseRotationBody * (reducedComWorld - basePosWorld);
+}
+
+template void updateReducedBodyMassPropertiesFromData<float>(
+    const mjModel_*, const mjData_*, const MujocoRobotBindings&, RobotParams<float>&);
+template void updateReducedBodyMassPropertiesFromData<double>(
+    const mjModel_*, const mjData_*, const MujocoRobotBindings&, RobotParams<double>&);

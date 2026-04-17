@@ -1,0 +1,38 @@
+# Restart the simulator after editing this file.
+
+timing:
+  cycle: 1.0
+  swing: 0.4
+  stance: 0.6
+  horizon: 0.5
+  horizon_steps: 20
+
+model:
+  gravity: 9.81
+
+mpc:
+  friction_coefficient: 0.1
+  foot_half_length: 0.065
+  foot_half_width: 0.01
+  torsional_friction_scale: 0.0657
+  normal_force_max: 200.0
+  normal_force_min: 10.0
+  iterations_between_solve: 10
+  state_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  input_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+swing:
+  kp_diag: [300.0, 300.0, 220.0]
+  kd_diag: [15.0, 15.0, 18.0]
+  height: 0.06
+  min_remaining_time: 0.001
+
+foot_placement:
+  velocity_feedback_gain: 0.03
+  placement_clamp: 0.3
+  touchdown_height: -0.003
+  nominal_lateral_offset: 0.065
+  swing_bias: 0.0
+
+logging:
+  gait_status_interval: 50

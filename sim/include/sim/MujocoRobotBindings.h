@@ -4,6 +4,7 @@
 #include <vector>
 
 struct MujocoEndEffectorBinding {
+    int rootBodyId{-1};
     int bodyId{-1};
     int siteId{-1};
 };

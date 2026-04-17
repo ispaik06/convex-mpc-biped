@@ -142,48 +142,9 @@ Vec3<double> readEndEffectorVelocity(const mjModel* model,
     return readBodyLinearVelocity(model, data, body_id);
 }
 
-void readBodyComJacobians(const mjModel* model,
-                          const mjData* data,
-                          int body_id,
-                          DMat<double>& JvWorld,
-                          DMat<double>& JwWorld) {
-    if (body_id < 0) {
-        throw std::runtime_error("Invalid body id for Jacobian query");
-    }
-
-    std::vector<mjtNum> jacp(3 * model->nv, mjtNum(0));
-    std::vector<mjtNum> jacr(3 * model->nv, mjtNum(0));
-    mj_jacBodyCom(model, data, jacp.data(), jacr.data(), body_id);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacpMap(jacp.data(), 3, model->nv);
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacrMap(jacr.data(), 3, model->nv);
-    JvWorld = jacpMap.template cast<double>();
-    JwWorld = jacrMap.template cast<double>();
-}
-
-void readBodyComJacobianDot(const mjModel* model,
-                            const mjData* data,
-                            int body_id,
-                            DMat<double>& JvDotWorld) {
-    if (body_id < 0) {
-        throw std::runtime_error("Invalid body id for Jacobian-dot query");
-    }
-
-    const mjtNum point[3] = {
-        data->xipos[3 * body_id + 0],
-        data->xipos[3 * body_id + 1],
-        data->xipos[3 * body_id + 2],
-    };
-
-    std::vector<mjtNum> jacDotp(3 * model->nv, mjtNum(0));
-    mj_jacDot(model, data, jacDotp.data(), nullptr, point, body_id);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacDotMap(jacDotp.data(), 3, model->nv);
-    JvDotWorld = jacDotMap.template cast<double>();
-}
-
 void readDenseMassMatrix(const mjModel* model, const mjData* data, DMat<double>& massMatrix) {
-    std::vector<mjtNum> rawMassMatrix(model->nv * model->nv, mjtNum(0));
+    thread_local std::vector<mjtNum> rawMassMatrix;
+    rawMassMatrix.resize(static_cast<std::size_t>(model->nv * model->nv));
     mj_fullM(model, rawMassMatrix.data(), data->qM);
 
     Eigen::Map<const RowMajorMatrix<mjtNum>> massMap(rawMassMatrix.data(), model->nv, model->nv);
@@ -223,7 +184,6 @@ void fillCheaterState(const mjModel* model,
     }
 
     cheater_state.time = data->time;
-    cheater_state.resize(params);
     cheater_state.basePos = readBodyPosition(data, bindings.baseBodyId);
     cheater_state.baseQuat = readBodyQuaternion(data, bindings.baseBodyId);
     cheater_state.baseLinVel = readBodyLinearVelocity(model, data, bindings.baseBodyId);
@@ -245,10 +205,9 @@ void fillCheaterState(const mjModel* model,
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
         leg_state.footPosWorld = readBodyComPosition(data, foot.bodyId);
-        readBodyComJacobians(model, data, foot.bodyId, leg_state.JvWorld, leg_state.JwWorld);
-        readBodyComJacobianDot(model, data, foot.bodyId, leg_state.JvDotWorld);
-        leg_state.footVelWorld = leg_state.JvWorld * cheater_state.dynamics.qd;
+        leg_state.footVelWorld = readBodyLinearVelocity(model, data, foot.bodyId);
         leg_state.hasFootKinematics = true;
+        leg_state.hasLegDynamics = false;
     }
 
     for (std::size_t arm = 0; arm < params.arms.size(); ++arm) {

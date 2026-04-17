@@ -55,29 +55,29 @@ Eigen::Index LegControllerCommand<T>::dof() const {
 }
 
 template <typename T>
-LegControllerData<T>::LegControllerData(Eigen::Index dof, Eigen::Index nv) {
-    resize(dof, nv);
+LegControllerData<T>::LegControllerData(Eigen::Index dof) {
+    resize(dof);
 }
 
 template <typename T>
-void LegControllerData<T>::resize(Eigen::Index dof, Eigen::Index nv) {
+void LegControllerData<T>::resize(Eigen::Index dof) {
     if (dof < 0) {
         throw std::invalid_argument("LegControllerData dof must be non-negative");
-    }
-    if (nv < 0) {
-        throw std::invalid_argument("LegControllerData nv must be non-negative");
     }
 
     q.setZero(dof);
     qd.setZero(dof);
     tauEstimate.setZero(dof);
-    JvWorld.setZero(3, nv);
-    JvDotWorld.setZero(3, nv);
-    JwWorld.setZero(3, nv);
+    JvWorld.setZero(3, dof);
+    JvDotWorld.setZero(3, dof);
+    JwWorld.setZero(3, dof);
+    massMatrix.setZero(dof, dof);
+    bias.setZero(dof);
 
     pWorld.setZero();
     vWorld.setZero();
     hasFootData = false;
+    hasDynamicsData = false;
 }
 
 template <typename T>
@@ -88,10 +88,13 @@ void LegControllerData<T>::zero() {
     JvWorld.setZero(JvWorld.rows(), JvWorld.cols());
     JvDotWorld.setZero(JvDotWorld.rows(), JvDotWorld.cols());
     JwWorld.setZero(JwWorld.rows(), JwWorld.cols());
+    massMatrix.setZero(massMatrix.rows(), massMatrix.cols());
+    bias.setZero(bias.size());
 
     pWorld.setZero();
     vWorld.setZero();
     hasFootData = false;
+    hasDynamicsData = false;
 }
 
 template <typename T>
@@ -137,7 +140,6 @@ void LegController<T>::zeroData() {
     for (auto& data : datas) {
         data.zero();
     }
-    clearWholeBodyDynamicsData();
 }
 
 template <typename T>
@@ -193,11 +195,11 @@ void LegController<T>::setLegCartesianData(int leg,
                                            const DMat<T>& JwWorld) {
     checkLegIndex(leg);
     const std::size_t idx = static_cast<std::size_t>(leg);
-    const Eigen::Index nv = _robotModel->nv();
+    const Eigen::Index dof = datas[idx].dof();
 
     if (JvWorld.rows() != 3 || JvDotWorld.rows() != 3 || JwWorld.rows() != 3 ||
-        JvWorld.cols() != nv || JvDotWorld.cols() != nv || JwWorld.cols() != nv) {
-        throw std::invalid_argument("Leg Jacobians must be 3 x full nv");
+        JvWorld.cols() != dof || JvDotWorld.cols() != dof || JwWorld.cols() != dof) {
+        throw std::invalid_argument("Leg Jacobians must be 3 x leg dof");
     }
 
     datas[idx].pWorld = pWorld;
@@ -206,6 +208,21 @@ void LegController<T>::setLegCartesianData(int leg,
     datas[idx].JvDotWorld = JvDotWorld;
     datas[idx].JwWorld = JwWorld;
     datas[idx].hasFootData = true;
+}
+
+template <typename T>
+void LegController<T>::setLegDynamicsData(int leg, const DMat<T>& massMatrix, const DVec<T>& bias) {
+    checkLegIndex(leg);
+    const std::size_t idx = static_cast<std::size_t>(leg);
+    const Eigen::Index dof = datas[idx].dof();
+
+    if (massMatrix.rows() != dof || massMatrix.cols() != dof || bias.size() != dof) {
+        throw std::invalid_argument("Leg dynamics data size does not match leg dof");
+    }
+
+    datas[idx].massMatrix = massMatrix;
+    datas[idx].bias = bias;
+    datas[idx].hasDynamicsData = true;
 }
 
 template <typename T>
@@ -221,28 +238,12 @@ void LegController<T>::clearLegCartesianData(int leg) {
 }
 
 template <typename T>
-void LegController<T>::setWholeBodyDynamicsData(const DVec<T>& qdFull,
-                                                const DVec<T>& biasFull,
-                                                const DMat<T>& massMatrixFull) {
-    const Eigen::Index nv = _robotModel->nv();
-    if (qdFull.size() != nv || biasFull.size() != nv ||
-        massMatrixFull.rows() != nv || massMatrixFull.cols() != nv) {
-        throw std::invalid_argument("Whole-body dynamics data size does not match RobotModel nv");
-    }
-
-    _qdFull = qdFull;
-    _biasFull = biasFull;
-    _massMatrixFull = massMatrixFull;
-    _hasWholeBodyDynamics = true;
-}
-
-template <typename T>
-void LegController<T>::clearWholeBodyDynamicsData() {
-    const Eigen::Index nv = _robotModel->nv();
-    _qdFull.setZero(nv);
-    _biasFull.setZero(nv);
-    _massMatrixFull.setZero(nv, nv);
-    _hasWholeBodyDynamics = false;
+void LegController<T>::clearLegDynamicsData(int leg) {
+    checkLegIndex(leg);
+    const std::size_t idx = static_cast<std::size_t>(leg);
+    datas[idx].massMatrix.setZero(datas[idx].massMatrix.rows(), datas[idx].massMatrix.cols());
+    datas[idx].bias.setZero(datas[idx].bias.size());
+    datas[idx].hasDynamicsData = false;
 }
 
 template <typename T>
@@ -262,18 +263,20 @@ DVec<T> LegController<T>::computeSwingLegTorque(int leg) const {
     checkLegIndex(leg);
     const std::size_t idx = static_cast<std::size_t>(leg);
     validateLegShape(idx);
-    validateWholeBodyDynamics();
 
     if (!datas[idx].hasFootData) {
         throw std::runtime_error("Swing leg control requires foot operational-space data");
     }
+    if (!datas[idx].hasDynamicsData) {
+        throw std::runtime_error("Swing leg control requires leg joint-space dynamics data");
+    }
 
-    DVec<T> generalizedForce = computeSwingLegGeneralizedForce(
+    DVec<T> legTorque = computeSwingLegJointTorque(
         datas[idx].JvWorld,
         datas[idx].JvDotWorld,
-        _massMatrixFull,
-        _qdFull,
-        _biasFull,
+        datas[idx].massMatrix,
+        datas[idx].qd,
+        datas[idx].bias,
         commands[idx].pDes,
         commands[idx].vDes,
         commands[idx].aDes,
@@ -283,10 +286,6 @@ DVec<T> LegController<T>::computeSwingLegTorque(int leg) const {
         commands[idx].kdCartesian,
         commands[idx].forceFeedForward);
 
-    DVec<T> legTorque = extractIndexed(
-        generalizedForce,
-        _robotModel->legQdIndices(leg),
-        "leg generalized force");
     legTorque += commands[idx].tauFeedForward;
     return legTorque;
 }
@@ -301,16 +300,12 @@ DVec<T> LegController<T>::computeStanceLegTorque(int leg) const {
         throw std::runtime_error("Stance leg control requires foot operational-space data");
     }
 
-    const DVec<T> generalizedForce = computeStanceLegGeneralizedForce(
+    DVec<T> legTorque = computeStanceLegJointTorque(
         datas[idx].JvWorld,
         datas[idx].JwWorld,
         commands[idx].forceFeedForward,
         commands[idx].momentFeedForward);
 
-    DVec<T> legTorque = extractIndexed(
-        generalizedForce,
-        _robotModel->legQdIndices(leg),
-        "leg generalized force");
     legTorque += commands[idx].tauFeedForward;
     return legTorque;
 }
@@ -373,8 +368,6 @@ void LegController<T>::resizeFromModel() {
 
     commands.reserve(_robotModel->numLegs());
     datas.reserve(_robotModel->numLegs());
-    const Eigen::Index nv = _robotModel->nv();
-
     for (std::size_t leg = 0; leg < _robotModel->numLegs(); ++leg) {
         const auto qCount =
             static_cast<Eigen::Index>(_robotModel->legQIndices(static_cast<int>(leg)).size());
@@ -393,10 +386,8 @@ void LegController<T>::resizeFromModel() {
         }
 
         commands.emplace_back(qCount);
-        datas.emplace_back(qCount, nv);
+        datas.emplace_back(qCount);
     }
-
-    clearWholeBodyDynamicsData();
 }
 
 template <typename T>
@@ -409,7 +400,6 @@ void LegController<T>::checkLegIndex(int leg) const {
 template <typename T>
 void LegController<T>::validateLegShape(std::size_t leg) const {
     const Eigen::Index dof = datas[leg].dof();
-    const Eigen::Index nv = _robotModel->nv();
 
     if (commands[leg].tauFeedForward.size() != dof || commands[leg].qDes.size() != dof ||
         commands[leg].qdDes.size() != dof) {
@@ -428,22 +418,15 @@ void LegController<T>::validateLegShape(std::size_t leg) const {
 
     if (datas[leg].hasFootData &&
         (datas[leg].JvWorld.rows() != 3 || datas[leg].JvDotWorld.rows() != 3 ||
-         datas[leg].JwWorld.rows() != 3 || datas[leg].JvWorld.cols() != nv ||
-         datas[leg].JvDotWorld.cols() != nv || datas[leg].JwWorld.cols() != nv)) {
-        throw std::invalid_argument("Leg Jacobian size does not match RobotModel nv");
-    }
-}
-
-template <typename T>
-void LegController<T>::validateWholeBodyDynamics() const {
-    const Eigen::Index nv = _robotModel->nv();
-    if (!_hasWholeBodyDynamics) {
-        throw std::runtime_error("Whole-body dynamics data is required for swing leg control");
+         datas[leg].JwWorld.rows() != 3 || datas[leg].JvWorld.cols() != dof ||
+         datas[leg].JvDotWorld.cols() != dof || datas[leg].JwWorld.cols() != dof)) {
+        throw std::invalid_argument("Leg Jacobian size does not match leg dof");
     }
 
-    if (_qdFull.size() != nv || _biasFull.size() != nv ||
-        _massMatrixFull.rows() != nv || _massMatrixFull.cols() != nv) {
-        throw std::invalid_argument("Whole-body dynamics data size does not match RobotModel nv");
+    if (datas[leg].hasDynamicsData &&
+        (datas[leg].massMatrix.rows() != dof || datas[leg].massMatrix.cols() != dof ||
+         datas[leg].bias.size() != dof)) {
+        throw std::invalid_argument("Leg dynamics size does not match leg dof");
     }
 }
 

@@ -21,6 +21,8 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		return EXIT_FAILURE;
 	}
 	if(argc == 2) {
+		// TODO: Revisit the single-argument CLI once the non-MIT robot flows are
+		// finalized. For now, the existing personal workflow keeps this narrow.
 		if(argv[1][0] == 'm' || argv[1][0] == 'g') headless = false;
 		else {
 			printUsage();

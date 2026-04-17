@@ -3,6 +3,13 @@
 
 #include "RobotRunner.h"
 
+namespace {
+Vec3<double> reducedBodyComWorld(const StateEstimate<double>& state,
+                                 const RobotParams<double>& params) {
+    return state.basePos + state.baseQuat.toRotationMatrix() * params.bodyComLocation;
+}
+}  // namespace
+
 void RobotRunner::init(RobotParams<double>* params, double timestep, const UserCommand* userCommand) {
     _params = params;
     _model = RobotModel<double>(_params);
@@ -37,10 +44,15 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
         _armJointTrackingGains.applyTo(armCommand);
     }
 
-    if(1 | !_legPosInitializer->IsInitialized(_legController.get())) {
+    if(!_legPosInitializer->IsInitialized(_legController.get())) {
         // Initial pose control
         for (auto& legCommand : _legController->commands) {
             _legJointTrackingGains.applyTo(legCommand);
+        }
+
+        if ((_iterations % 50) == 0 && _params != nullptr) {
+            const double reducedComZ = reducedBodyComWorld(state, *_params)[2];
+            std::cout << "[LegPosInitializer] SRB COM z (world): " << reducedComZ << std::endl;
         }
     }
     else {
@@ -107,17 +119,6 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
     _armController->zeroCommand();
     _armController->zeroData();
 
-    const Eigen::Index nv = _model.nv();
-    if (state.dynamics.qd.size() != nv || state.dynamics.bias.size() != nv ||
-        state.dynamics.massMatrix.rows() != nv ||
-        state.dynamics.massMatrix.cols() != nv) {
-        throw std::invalid_argument("StateEstimate whole-body dynamics size does not match RobotModel");
-    }
-    _legController->setWholeBodyDynamicsData(
-        state.dynamics.qd,
-        state.dynamics.bias,
-        state.dynamics.massMatrix);
-
     for (std::size_t leg = 0; leg < state.legs.size(); ++leg) {
         const auto& legState = state.legs[leg];
         const Eigen::Index q_size =
@@ -146,7 +147,13 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
                                                 legState.footVelWorld,
                                                 legState.JvWorld,
                                                 legState.JvDotWorld,
-\                                                legState.JwWorld);
+                                                legState.JwWorld);
+        }
+
+        if (legState.hasLegDynamics) {
+            _legController->setLegDynamicsData(static_cast<int>(leg),
+                                               legState.massMatrix,
+                                               legState.bias);
         }
     }
 

@@ -4,7 +4,7 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "ControlParameters.h"
+#include "ControllerConfig.h"
 
 class HorizonClock {
 public:
@@ -20,8 +20,8 @@ public:
             throw std::runtime_error("HorizonClock::sync received non-finite time");
         }
 
-        while (t - _t0 >= T_cycle) {
-            _t0 += T_cycle;
+        while (t - _t0 >= cycleTime()) {
+            _t0 += cycleTime();
         }
     }
 
@@ -30,7 +30,7 @@ public:
     }
 
     double tk(const int k) const {
-        return _t0 + static_cast<double>(k) * dt_mpc;
+        return _t0 + static_cast<double>(k) * dtMpc();
     }
 
 private:

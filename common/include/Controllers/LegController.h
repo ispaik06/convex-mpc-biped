@@ -47,9 +47,9 @@ struct LegControllerData {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     LegControllerData() = delete;
-    LegControllerData(Eigen::Index dof, Eigen::Index nv);
+    explicit LegControllerData(Eigen::Index dof);
 
-    void resize(Eigen::Index dof, Eigen::Index nv);
+    void resize(Eigen::Index dof);
     void zero();
 
     Eigen::Index dof() const;
@@ -62,9 +62,12 @@ struct LegControllerData {
     DMat<T> JvWorld;
     DMat<T> JvDotWorld;
     DMat<T> JwWorld;
+    DMat<T> massMatrix;
+    DVec<T> bias;
 
     DVec<T> tauEstimate;
     bool hasFootData = false;
+    bool hasDynamicsData = false;
 };
 
 template <typename T>
@@ -94,11 +97,9 @@ public:
                              const DMat<T>& JvWorld,
                              const DMat<T>& JvDotWorld,
                              const DMat<T>& JwWorld);
+    void setLegDynamicsData(int leg, const DMat<T>& massMatrix, const DVec<T>& bias);
     void clearLegCartesianData(int leg);
-    void setWholeBodyDynamicsData(const DVec<T>& qdFull,
-                                  const DVec<T>& biasFull,
-                                  const DMat<T>& massMatrixFull);
-    void clearWholeBodyDynamicsData();
+    void clearLegDynamicsData(int leg);
 
     DVec<T> computeLegTorque(int leg) const;
     DVec<T> computeJointPdTorque(int leg) const;
@@ -119,13 +120,8 @@ private:
     void resizeFromModel();
     void checkLegIndex(int leg) const;
     void validateLegShape(std::size_t leg) const;
-    void validateWholeBodyDynamics() const;
 
     const RobotModel<T>* _robotModel = nullptr;
-    DVec<T> _qdFull;
-    DVec<T> _biasFull;
-    DMat<T> _massMatrixFull;
-    bool _hasWholeBodyDynamics = false;
     bool _legsEnabled = false;
 };
 

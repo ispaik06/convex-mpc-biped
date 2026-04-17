@@ -31,7 +31,7 @@ void validateStanceInputs(const DMat<T>& JvWorld, const DMat<T>& JwWorld) {
 }  // namespace
 
 template <typename T>
-Mat3<T> computeApparentInertia(const DMat<T>& JvWorld, const DMat<T>& massMatrix) {
+DMat<T> computeApparentInertia(const DMat<T>& JvWorld, const DMat<T>& massMatrix) {
     const DMat<T> zeroJvDot = DMat<T>::Zero(3, JvWorld.cols());
     const DVec<T> zeroQd = DVec<T>::Zero(JvWorld.cols());
     const DVec<T> zeroBias = DVec<T>::Zero(JvWorld.cols());
@@ -39,32 +39,32 @@ Mat3<T> computeApparentInertia(const DMat<T>& JvWorld, const DMat<T>& massMatrix
 
     const Eigen::LDLT<DMat<T>> massSolver(massMatrix);
     const DMat<T> minvJt = massSolver.solve(JvWorld.transpose());
-    Mat3<T> lambdaInv = JvWorld * minvJt;
+    DMat<T> lambdaInv = JvWorld * minvJt;
 
     lambdaInv.diagonal().array() += T(1e-9);
-    return lambdaInv.ldlt().solve(Mat3<T>::Identity());
+    return lambdaInv.ldlt().solve(DMat<T>::Identity(lambdaInv.rows(), lambdaInv.cols()));
 }
 
 template <typename T>
-DVec<T> computeSwingLegGeneralizedForce(const DMat<T>& JvWorld,
-                                        const DMat<T>& JvDotWorld,
-                                        const DMat<T>& massMatrix,
-                                        const DVec<T>& qd,
-                                        const DVec<T>& bias,
-                                        const Vec3<T>& pDes,
-                                        const Vec3<T>& vDes,
-                                        const Vec3<T>& aDes,
-                                        const Vec3<T>& pWorld,
-                                        const Vec3<T>& vWorld,
-                                        const Mat3<T>& kp,
-                                        const Mat3<T>& kd,
-                                        const Vec3<T>& forceFeedForward) {
+DVec<T> computeSwingLegJointTorque(const DMat<T>& JvWorld,
+                                   const DMat<T>& JvDotWorld,
+                                   const DMat<T>& massMatrix,
+                                   const DVec<T>& qd,
+                                   const DVec<T>& bias,
+                                   const Vec3<T>& pDes,
+                                   const Vec3<T>& vDes,
+                                   const Vec3<T>& aDes,
+                                   const Vec3<T>& pWorld,
+                                   const Vec3<T>& vWorld,
+                                   const Mat3<T>& kp,
+                                   const Mat3<T>& kd,
+                                   const Vec3<T>& forceFeedForward) {
     validateSwingInputs(JvWorld, JvDotWorld, massMatrix, qd, bias);
 
     const Vec3<T> feedbackForce =
         forceFeedForward + kp * (pDes - pWorld) + kd * (vDes - vWorld);
     const Vec3<T> taskAccelerationResidual = aDes - JvDotWorld * qd;
-    const Mat3<T> lambda = computeApparentInertia(JvWorld, massMatrix);
+    const DMat<T> lambda = computeApparentInertia(JvWorld, massMatrix);
 
     return JvWorld.transpose() * feedbackForce
          + JvWorld.transpose() * (lambda * taskAccelerationResidual)
@@ -72,50 +72,50 @@ DVec<T> computeSwingLegGeneralizedForce(const DMat<T>& JvWorld,
 }
 
 template <typename T>
-DVec<T> computeStanceLegGeneralizedForce(const DMat<T>& JvWorld,
-                                         const DMat<T>& JwWorld,
-                                         const Vec3<T>& forceWorld,
-                                         const Vec3<T>& momentWorld) {
+DVec<T> computeStanceLegJointTorque(const DMat<T>& JvWorld,
+                                    const DMat<T>& JwWorld,
+                                    const Vec3<T>& forceWorld,
+                                    const Vec3<T>& momentWorld) {
     validateStanceInputs(JvWorld, JwWorld);
 
     return JvWorld.transpose() * forceWorld + JwWorld.transpose() * momentWorld;
 }
 
-template Mat3<float> computeApparentInertia(const DMat<float>&, const DMat<float>&);
-template Mat3<double> computeApparentInertia(const DMat<double>&, const DMat<double>&);
+template DMat<float> computeApparentInertia(const DMat<float>&, const DMat<float>&);
+template DMat<double> computeApparentInertia(const DMat<double>&, const DMat<double>&);
 
-template DVec<float> computeSwingLegGeneralizedForce(const DMat<float>&,
-                                                     const DMat<float>&,
-                                                     const DMat<float>&,
-                                                     const DVec<float>&,
-                                                     const DVec<float>&,
-                                                     const Vec3<float>&,
-                                                     const Vec3<float>&,
-                                                     const Vec3<float>&,
-                                                     const Vec3<float>&,
-                                                     const Vec3<float>&,
-                                                     const Mat3<float>&,
-                                                     const Mat3<float>&,
-                                                     const Vec3<float>&);
-template DVec<double> computeSwingLegGeneralizedForce(const DMat<double>&,
-                                                      const DMat<double>&,
-                                                      const DMat<double>&,
-                                                      const DVec<double>&,
-                                                      const DVec<double>&,
-                                                      const Vec3<double>&,
-                                                      const Vec3<double>&,
-                                                      const Vec3<double>&,
-                                                      const Vec3<double>&,
-                                                      const Vec3<double>&,
-                                                      const Mat3<double>&,
-                                                      const Mat3<double>&,
-                                                      const Vec3<double>&);
+template DVec<float> computeSwingLegJointTorque(const DMat<float>&,
+                                                const DMat<float>&,
+                                                const DMat<float>&,
+                                                const DVec<float>&,
+                                                const DVec<float>&,
+                                                const Vec3<float>&,
+                                                const Vec3<float>&,
+                                                const Vec3<float>&,
+                                                const Vec3<float>&,
+                                                const Vec3<float>&,
+                                                const Mat3<float>&,
+                                                const Mat3<float>&,
+                                                const Vec3<float>&);
+template DVec<double> computeSwingLegJointTorque(const DMat<double>&,
+                                                 const DMat<double>&,
+                                                 const DMat<double>&,
+                                                 const DVec<double>&,
+                                                 const DVec<double>&,
+                                                 const Vec3<double>&,
+                                                 const Vec3<double>&,
+                                                 const Vec3<double>&,
+                                                 const Vec3<double>&,
+                                                 const Vec3<double>&,
+                                                 const Mat3<double>&,
+                                                 const Mat3<double>&,
+                                                 const Vec3<double>&);
 
-template DVec<float> computeStanceLegGeneralizedForce(const DMat<float>&,
-                                                      const DMat<float>&,
-                                                      const Vec3<float>&,
-                                                      const Vec3<float>&);
-template DVec<double> computeStanceLegGeneralizedForce(const DMat<double>&,
-                                                       const DMat<double>&,
-                                                       const Vec3<double>&,
-                                                       const Vec3<double>&);
+template DVec<float> computeStanceLegJointTorque(const DMat<float>&,
+                                                 const DMat<float>&,
+                                                 const Vec3<float>&,
+                                                 const Vec3<float>&);
+template DVec<double> computeStanceLegJointTorque(const DMat<double>&,
+                                                  const DMat<double>&,
+                                                  const Vec3<double>&,
+                                                  const Vec3<double>&);

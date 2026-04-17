@@ -16,5 +16,11 @@ struct MujocoRobotSetup {
 template <typename T>
 MujocoRobotSetup<T> setupRobotParams(const RobotType, const mjModel_*);
 
+template <typename T>
+void updateReducedBodyMassPropertiesFromData(const mjModel_* model,
+                                             const mjData_* data,
+                                             const MujocoRobotBindings& bindings,
+                                             RobotParams<T>& params);
+
 
 #endif  // SETUP_ROBOT_PARAMS_H

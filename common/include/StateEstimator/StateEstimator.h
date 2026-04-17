@@ -5,7 +5,7 @@
 
 enum class StateEstimatorMode {
     Cheater,
-    Estimated,  // TODO: Implement non-cheater estimator modes.
+    Estimated,  // TODO: Implement non-cheater estimator modes when sensors are wired in.
 };
 
 template <typename T>
@@ -34,7 +34,7 @@ struct StateEstimate {
             const Eigen::Index qd_size = static_cast<Eigen::Index>(joints.qd_idx.size());
             const Eigen::Index tau_size = static_cast<Eigen::Index>(
                 joints.actuator_idx.empty() ? joints.qd_idx.size() : joints.actuator_idx.size());
-            legs[leg].resize(q_size, qd_size, tau_size, params.nv);
+            legs[leg].resize(q_size, qd_size, tau_size);
         }
 
         arms.resize(params.arms.size());

@@ -6,11 +6,6 @@
 #include <vector>
 
 namespace {
-constexpr int kNumVars = 12 * N;
-constexpr int kNumIneq = 24 * N;
-constexpr int kNumEq = 12 * N;
-constexpr int kNumCons = kNumIneq + kNumEq;
-
 template <typename T>
 void requireNonNull(const T* ptr, const char* name) {
     if (ptr == nullptr) {
@@ -114,18 +109,46 @@ void fillConstraintValues(const DMat<double>& C,
 }  // namespace
 
 ConvexMPC::ConvexMPC()
-    : _hessian(makeUpperTriangularPattern(kNumVars)),
-      _constraintMatrix(makeFullPattern(kNumCons, kNumVars)),
-      _gradient(kNumVars),
-      _lowerBound(kNumCons),
-      _upperBound(kNumCons),
-      _warmStart(kNumVars),
-      _lastSolution(kNumVars) {
+    : _hessian(makeUpperTriangularPattern(12 * horizonSteps())),
+      _constraintMatrix(makeFullPattern(36 * horizonSteps(), 12 * horizonSteps())),
+      _gradient(12 * horizonSteps()),
+      _lowerBound(36 * horizonSteps()),
+      _upperBound(36 * horizonSteps()),
+      _warmStart(12 * horizonSteps()),
+      _lastSolution(12 * horizonSteps()),
+      _hessianDense(12 * horizonSteps(), 12 * horizonSteps()),
+      _weightedB(13 * horizonSteps(), 12 * horizonSteps()),
+      _gradientDense(12 * horizonSteps()),
+      _statePrediction(13 * horizonSteps()),
+      _stateError(13 * horizonSteps()),
+      _weightedStateError(13 * horizonSteps()) {
     _gradient.setZero();
     _lowerBound.setZero();
     _upperBound.setZero();
     _warmStart.setZero();
     _lastSolution.setZero();
+    _hessianDense.setZero();
+    _weightedB.setZero();
+    _gradientDense.setZero();
+    _statePrediction.setZero();
+    _stateError.setZero();
+    _weightedStateError.setZero();
+}
+
+int ConvexMPC::numVars() const {
+    return 12 * horizonSteps();
+}
+
+int ConvexMPC::numIneq() const {
+    return 24 * horizonSteps();
+}
+
+int ConvexMPC::numEq() const {
+    return 12 * horizonSteps();
+}
+
+int ConvexMPC::numCons() const {
+    return numIneq() + numEq();
 }
 
 ConvexMPCInputView ConvexMPCInputView::from(const GaitScheduler& gaitScheduler,
@@ -194,9 +217,6 @@ void ConvexMPC::buildQP() {
         throw std::runtime_error("ConvexMPC::buildQP requires initialized input");
     }
 
-    const DMat<double>& L = getL();
-    const DMat<double>& K = getK();
-
     const DMat<double>& A_qp = *_input.A_qp;
     const DMat<double>& B_qp = *_input.B_qp;
     const DVec<double>& X_ref = *_input.X_ref;
@@ -204,19 +224,40 @@ void ConvexMPC::buildQP() {
     const DMat<double>& C = *_input.C;
     const DVec<double>& C_bound = *_input.C_bound;
     const DMat<double>& D = *_input.D;
+    const StateWeightMat& stateWeight = getControllerConfig().mpc.stateWeight;
+    const InputWeightMat& inputWeight = getControllerConfig().mpc.inputWeight;
+    const int steps = horizonSteps();
 
-    DMat<double> H_dense = 2.0 * (B_qp.transpose() * L * B_qp + K);
-    H_dense = 0.5 * (H_dense + H_dense.transpose());
-    const DVec<double> g_dense = 2.0 * B_qp.transpose() * L * (A_qp * x0 - X_ref);
+    _statePrediction.noalias() = A_qp * x0;
+    _stateError = _statePrediction;
+    _stateError -= X_ref;
 
-    buildHessianMatrix(H_dense);
+    for (int k = 0; k < steps; ++k) {
+        const Eigen::Index stateOffset = static_cast<Eigen::Index>(13 * k);
+
+        _weightedB.middleRows(stateOffset, 13).noalias() =
+            stateWeight * B_qp.middleRows(stateOffset, 13);
+        _weightedStateError.segment(stateOffset, 13).noalias() =
+            stateWeight * _stateError.segment(stateOffset, 13);
+    }
+
+    _hessianDense.noalias() = 2.0 * (B_qp.transpose() * _weightedB);
+    for (int k = 0; k < steps; ++k) {
+        const Eigen::Index inputOffset = static_cast<Eigen::Index>(12 * k);
+        _hessianDense.block(inputOffset, inputOffset, 12, 12) += 2.0 * inputWeight;
+    }
+    _hessianDense = 0.5 * (_hessianDense + _hessianDense.transpose());
+
+    _gradientDense.noalias() = 2.0 * (B_qp.transpose() * _weightedStateError);
+
+    buildHessianMatrix(_hessianDense);
     buildConstraintMatrix(C, D);
 
-    _gradient = g_dense.cast<c_float>();
-    _lowerBound.head(kNumIneq).setConstant(-OsqpEigen::INFTY);
-    _upperBound.head(kNumIneq) = C_bound.cast<c_float>();
-    _lowerBound.tail(kNumEq).setZero();
-    _upperBound.tail(kNumEq).setZero();
+    _gradient = _gradientDense.cast<c_float>();
+    _lowerBound.head(numIneq()).setConstant(-OsqpEigen::INFTY);
+    _upperBound.head(numIneq()) = C_bound.cast<c_float>();
+    _lowerBound.tail(numEq()).setZero();
+    _upperBound.tail(numEq()).setZero();
 
     const bool success = _solverInitialized ? updateSolverData() : initializeSolver();
     if (!success) {
@@ -251,7 +292,7 @@ void ConvexMPC::solve() {
     }
 
     const auto& solution = _solver.getSolution();
-    if (solution.size() != kNumVars) {
+    if (solution.size() != numVars()) {
         throw std::runtime_error("ConvexMPC received solution with unexpected dimension");
     }
 
@@ -270,13 +311,16 @@ void ConvexMPC::validateInputDimensions(const ConvexMPCInputView& input) const {
     requireNonNull(input.C_bound, "C_bound");
     requireNonNull(input.D, "D");
 
-    requireShape(input.A_qp->rows(), input.A_qp->cols(), 13 * N, 13, "A_qp");
-    requireShape(input.B_qp->rows(), input.B_qp->cols(), 13 * N, 12 * N, "B_qp");
-    requireSize(input.X_ref->size(), 13 * N, "X_ref");
+    requireShape(input.A_qp->rows(), input.A_qp->cols(), 13 * horizonSteps(), 13, "A_qp");
+    requireShape(input.B_qp->rows(), input.B_qp->cols(),
+                 13 * horizonSteps(), 12 * horizonSteps(), "B_qp");
+    requireSize(input.X_ref->size(), 13 * horizonSteps(), "X_ref");
     requireSize(input.x0->size(), 13, "x0");
-    requireShape(input.C->rows(), input.C->cols(), 24 * N, 12 * N, "C");
-    requireSize(input.C_bound->size(), 24 * N, "C_bound");
-    requireShape(input.D->rows(), input.D->cols(), 12 * N, 12 * N, "D");
+    requireShape(input.C->rows(), input.C->cols(),
+                 24 * horizonSteps(), 12 * horizonSteps(), "C");
+    requireSize(input.C_bound->size(), 24 * horizonSteps(), "C_bound");
+    requireShape(input.D->rows(), input.D->cols(),
+                 12 * horizonSteps(), 12 * horizonSteps(), "D");
 }
 
 bool ConvexMPC::initializeSolver() {
@@ -290,8 +334,8 @@ bool ConvexMPC::initializeSolver() {
     _solver.settings()->setMaxIteration(200);
     _solver.settings()->setAdaptiveRho(true);
 
-    _solver.data()->setNumberOfVariables(kNumVars);
-    _solver.data()->setNumberOfConstraints(kNumCons);
+    _solver.data()->setNumberOfVariables(numVars());
+    _solver.data()->setNumberOfConstraints(numCons());
 
     if (!_solver.data()->setHessianMatrix(_hessian) ||
         !_solver.data()->setGradient(_gradient) ||
@@ -330,10 +374,10 @@ void ConvexMPC::buildConstraintMatrix(const DMat<double>& C, const DMat<double>&
 }
 
 void ConvexMPC::updateWarmStart() {
-    if (_lastSolution.size() != kNumVars) {
+    if (_lastSolution.size() != numVars()) {
         throw std::runtime_error("ConvexMPC warm start dimension mismatch");
     }
 
-    _warmStart.head(kNumVars - 12) = _lastSolution.segment(12, kNumVars - 12);
+    _warmStart.head(numVars() - 12) = _lastSolution.segment(12, numVars() - 12);
     _warmStart.tail(12) = _lastSolution.tail(12);
 }

@@ -13,17 +13,42 @@ struct RobotLegState {
     DMat<T> JvWorld;
     DMat<T> JvDotWorld;
     DMat<T> JwWorld;
+    DMat<T> massMatrix;
+    DVec<T> bias;
     bool hasFootKinematics = false;
+    bool hasLegDynamics = false;
     bool contact = true;
 
-    void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size, Eigen::Index nv) {
+    bool matchesLayout(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) const {
+        return q.size() == q_size &&
+               qd.size() == qd_size &&
+               tauEstimate.size() == tau_size &&
+               JvWorld.rows() == 3 &&
+               JvWorld.cols() == qd_size &&
+               JvDotWorld.rows() == 3 &&
+               JvDotWorld.cols() == qd_size &&
+               JwWorld.rows() == 3 &&
+               JwWorld.cols() == qd_size &&
+               massMatrix.rows() == qd_size &&
+               massMatrix.cols() == qd_size &&
+               bias.size() == qd_size;
+    }
+
+    void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) {
+        if (matchesLayout(q_size, qd_size, tau_size)) {
+            return;
+        }
+
         q.resize(q_size);
         qd.resize(qd_size);
         tauEstimate.resize(tau_size);
-        JvWorld.setZero(3, nv);
-        JvDotWorld.setZero(3, nv);
-        JwWorld.setZero(3, nv);
+        JvWorld.setZero(3, qd_size);
+        JvDotWorld.setZero(3, qd_size);
+        JwWorld.setZero(3, qd_size);
+        massMatrix.setZero(qd_size, qd_size);
+        bias.setZero(qd_size);
         hasFootKinematics = false;
+        hasLegDynamics = false;
         contact = true;
     }
 };
@@ -34,7 +59,16 @@ struct WholeBodyDynamicsState {
     DVec<T> bias;
     DMat<T> massMatrix;
 
+    bool matchesLayout(Eigen::Index nv) const {
+        return qd.size() == nv && bias.size() == nv &&
+               massMatrix.rows() == nv && massMatrix.cols() == nv;
+    }
+
     void resize(Eigen::Index nv) {
+        if (matchesLayout(nv)) {
+            return;
+        }
+
         qd.setZero(nv);
         bias.setZero(nv);
         massMatrix.setZero(nv, nv);
@@ -50,7 +84,15 @@ struct RobotArmState {
     Vec3<T> handVelWorld = Vec3<T>::Zero();
     bool contact = true;
 
+    bool matchesLayout(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) const {
+        return q.size() == q_size && qd.size() == qd_size && tauEstimate.size() == tau_size;
+    }
+
     void resize(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) {
+        if (matchesLayout(q_size, qd_size, tau_size)) {
+            return;
+        }
+
         q.resize(q_size);
         qd.resize(qd_size);
         tauEstimate.resize(tau_size);
@@ -83,7 +125,7 @@ struct CheaterState {
             const Eigen::Index qd_size = static_cast<Eigen::Index>(joints.qd_idx.size());
             const Eigen::Index tau_size = static_cast<Eigen::Index>(
                 joints.actuator_idx.empty() ? joints.qd_idx.size() : joints.actuator_idx.size());
-            legs[leg].resize(q_size, qd_size, tau_size, params.nv);
+            legs[leg].resize(q_size, qd_size, tau_size);
         }
 
         arms.resize(params.arms.size());

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "StateEstimator/StateEstimator.h"
+#include "LegSwingDynamicsProvider.h"
 #include "MujocoRobotBindings.h"
 #include "main_thread.h"
 #include "RobotController.h"
@@ -44,6 +45,7 @@ private:
 	StateEstimator<double> _stateEstimator{StateEstimatorMode::Cheater};
 	RobotCommand<double> _robotCommand;
 	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
+	std::unique_ptr<LegSwingDynamicsProvider> _legSwingDynamicsProvider = nullptr;
 	bool _firstControllerRun = true;
 	std::string _modelPath;
 	u64 _iterations = 0;

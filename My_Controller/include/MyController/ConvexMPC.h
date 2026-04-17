@@ -4,7 +4,7 @@
 #include <Eigen/SparseCore>
 #include <OsqpEigen/OsqpEigen.h>
 
-#include "ControlParameters.h"
+#include "ControllerConfig.h"
 #include "GaitScheduler.h"
 #include "MPCFormulation.h"
 
@@ -44,6 +44,11 @@ public:
     void solve();
 
 private:
+    int numVars() const;
+    int numIneq() const;
+    int numEq() const;
+    int numCons() const;
+
     bool initializeSolver();
     bool updateSolverData();
     void buildHessianMatrix(const DMat<double>& P);
@@ -66,6 +71,12 @@ private:
     DVec<c_float> _upperBound;
     DVec<c_float> _warmStart;
     DVec<c_float> _lastSolution;
+    DMat<double> _hessianDense;
+    DMat<double> _weightedB;
+    DVec<double> _gradientDense;
+    DVec<double> _statePrediction;
+    DVec<double> _stateError;
+    DVec<double> _weightedStateError;
     Vec12<double> _optimalWrench = Vec12<double>::Zero();
 };
 

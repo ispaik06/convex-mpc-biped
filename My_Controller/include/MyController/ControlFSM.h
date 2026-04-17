@@ -16,7 +16,7 @@ class ControlFSM {
 public:
     ControlFSM(GaitScheduler* gaitScheduler,
                HorizonClock* horizonClock,
-               StateEstimate<double>* stateEstimate,
+               const StateEstimate<double>* stateEstimate,
                const RobotParams<double>* robotParams,
                const UserCommand* userCommand)
         : _gaitScheduler(gaitScheduler),
@@ -32,7 +32,7 @@ public:
 private:
     GaitScheduler* _gaitScheduler = nullptr;
     HorizonClock* _horizonClock = nullptr;
-    StateEstimate<double>* _stateEstimate = nullptr;
+    const StateEstimate<double>* _stateEstimate = nullptr;
     const RobotParams<double>* _robotParams = nullptr;
     const UserCommand* _userCommand = nullptr;
 };

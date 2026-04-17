@@ -1,0 +1,66 @@
+#ifndef MY_CONTROLLER_H
+#define MY_CONTROLLER_H
+
+#include <memory>
+#include <vector>
+
+#include "Controllers/ControlGains.h"
+#include "ControlFSM.h"
+#include "ConvexMPC.h"
+#include "GaitScheduler.h"
+#include "HorizonClock.h"
+#include "MPCFormulation.h"
+#include "RobotController.h"
+#include "SwingFootTrajectory.h"
+
+class MyController : public RobotController {
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+	MyController() = default;
+	virtual ~MyController() {}
+
+	virtual void initializeController();
+
+	virtual void runController();
+
+private:
+	struct LegRuntimeState {
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+		SwingFootTrajectory swingTrajectory;
+		bool wasInStance{true};
+	};
+
+	static Mat3<double> makeDiagonal(double x, double y, double z);
+
+	void initializeRuntimeObjects();
+	int findLegIndex(Side side) const;
+	Vec13<double> buildCurrentMpcState() const;
+	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
+	void maybeUpdateMpc(const Vec13<double>& x0,
+		                   const DesiredFootPositions& desiredFootPositions);
+	void writeLegCommands();
+	void maybePrintGaitScheduler() const;
+
+	bool _initialized{false};
+	u64 _iteration{0};
+	u64 _lastMpcIteration{0};
+	double _lastControlTime{0.0};
+	Vec12<double> _stanceWrenchWorld = Vec12<double>::Zero();
+	vectorAligned<LegRuntimeState> _legRuntime;
+	std::unique_ptr<HorizonClock> _horizonClock;
+	std::unique_ptr<GaitScheduler> _gaitScheduler;
+	std::unique_ptr<ControlFSM> _controlFSM;
+	std::unique_ptr<MPCFormulation> _mpcFormulation;
+	std::unique_ptr<ConvexMPC> _convexMPC;
+	ReferenceTrajectoryOutput _referenceTrajectoryOutput;
+	MPCFormulationOutput _mpcFormulationOutput;
+	Mat3<double> _swingKp = Mat3<double>::Zero();
+	Mat3<double> _swingKd = Mat3<double>::Zero();
+	double _swingHeight{0.0};
+	u64 _iterationsBetweenMpc{10};
+
+};
+
+#endif  // MY_CONTROLLER_H

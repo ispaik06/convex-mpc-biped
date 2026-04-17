@@ -13,7 +13,8 @@ void StateEstimator<T>::update(const CheaterState<T>& cheater_state,
             updateCheater(cheater_state, state_estimate);
             break;
         case StateEstimatorMode::Estimated:
-            // TODO: Implement non-cheater estimator modes.
+            // TODO: Cheater mode is the only supported path for now.
+            // Implement non-cheater estimator modes once the sensor pipeline exists.
             break;
     }
 }

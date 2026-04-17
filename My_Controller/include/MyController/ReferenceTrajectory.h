@@ -1,7 +1,7 @@
-#ifndef REFERNCE_TRAJECTORY_H
-#define REFERNCE_TRAJECTORY_H
+#ifndef REFERENCE_TRAJECTORY_H
+#define REFERENCE_TRAJECTORY_H
 
-#include "ControlParameters.h"
+#include "ControllerConfig.h"
 #include "ControlFSM.h"
 #include "HorizonClock.h"
 #include "Utilities/UserCommand.h"
@@ -15,11 +15,32 @@ struct ReferenceTrajectoryOutput {
     DVec<double> tk;
 
     ReferenceTrajectoryOutput()
-        : X_ref(13 * N),
-          r_left(3, N),
-          r_right(3, N),
-          psi(N),
-          tk(N) {
+        : X_ref(13 * horizonSteps()),
+          r_left(3, horizonSteps()),
+          r_right(3, horizonSteps()),
+          psi(horizonSteps()),
+          tk(horizonSteps()) {
+        setZero();
+    }
+
+    void resizeIfNeeded() {
+        const int steps = horizonSteps();
+        if (X_ref.size() == 13 * steps &&
+            r_left.cols() == steps &&
+            r_right.cols() == steps &&
+            psi.size() == steps &&
+            tk.size() == steps) {
+            return;
+        }
+
+        X_ref.resize(13 * steps);
+        r_left.resize(3, steps);
+        r_right.resize(3, steps);
+        psi.resize(steps);
+        tk.resize(steps);
+    }
+
+    void setZero() {
         X_ref.setZero();
         r_left.setZero();
         r_right.setZero();
@@ -39,7 +60,7 @@ public:
           _desiredFootPositions(desiredFootPositions),
           _horizonClock(horizonClock) {}
 
-    ReferenceTrajectoryOutput build() const;
+    void build(ReferenceTrajectoryOutput& out) const;
 
 private:
     const UserCommand* _userCommand = nullptr;
@@ -48,4 +69,4 @@ private:
     const HorizonClock* _horizonClock = nullptr;
 };
 
-#endif  // REFERNCE_TRAJECTORY_H
+#endif  // REFERENCE_TRAJECTORY_H

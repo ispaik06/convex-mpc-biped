@@ -1,0 +1,91 @@
+#include <sstream>
+#include <stdexcept>
+#include <cmath>
+
+#include "GaitScheduler.h"
+
+void GaitScheduler::rebuildContactConstraintTemplate() {
+    const auto& mpc = getControllerConfig().mpc;
+    C_unit <<
+         1, 0, -mpc.frictionCoefficient, 0, 0, 0,
+        -1, 0, -mpc.frictionCoefficient, 0, 0, 0,
+         0, 1, -mpc.frictionCoefficient, 0, 0, 0,
+         0, -1, -mpc.frictionCoefficient, 0, 0, 0,
+         0, 0, 1, 0, 0, 0,
+         0, 0, -1, 0, 0, 0,
+         0, 0, -mpc.footHalfWidth, 1, 0, 0,
+         0, 0, -mpc.footHalfWidth, -1, 0, 0,
+         0, 0, -mpc.footHalfLength, 0, 1, 0,
+         0, 0, -mpc.footHalfLength, 0, -1, 0,
+         0, 0, -mpc.torsionalFrictionScale * mpc.frictionCoefficient, 0, 0, 1,
+         0, 0, -mpc.torsionalFrictionScale * mpc.frictionCoefficient, 0, 0, -1;
+}
+
+double GaitScheduler::p(Side i, double t) const {
+    if (_horizonClock == nullptr) {
+        throw std::runtime_error("GaitScheduler::p requires initialized HorizonClock");
+    }
+
+    double phi = 0;
+    if (i == Side::Left) phi = 0.5;
+    return std::fmod((t - _horizonClock->t0()) / cycleTime() + phi, 1.0);
+}
+
+bool GaitScheduler::c(Side i, double t) const {
+    const double phase = p(i, t);
+    const double stanceFraction = stanceTime() / cycleTime();
+    return (0.0 <= phase && phase < stanceFraction);
+}
+
+void GaitScheduler::buildConstraintMatrices() {
+    if (_horizonClock == nullptr) {
+        throw std::runtime_error(
+            "GaitScheduler::buildConstraintMatrices requires initialized HorizonClock");
+    }
+
+    const int steps = horizonSteps();
+    const auto& mpc = getControllerConfig().mpc;
+
+    D.setZero(12 * steps, 12 * steps);
+    C.setZero(24 * steps, 12 * steps);
+    C_bound.setZero(24 * steps);
+
+    for (int k = 0; k < steps; ++k) {
+        const double tk = _horizonClock->tk(k);
+        Ck_bound = Vec24<double>::Zero();
+        Mat3<double> S_left = Mat3<double>::Zero();
+        Mat3<double> S_right = Mat3<double>::Zero();
+        Mat12<double> C_left = Mat12<double>::Zero();
+        Mat12<double> C_right = Mat12<double>::Zero();
+        if (c(Side::Left, tk) == 0) {  // swing
+            S_left = Mat3<double>::Identity();
+        }
+        else {  // stance
+            C_left << C_unit, DMat<double>::Zero(12, 6);
+            Ck_bound(4) = mpc.normalForceMax;
+            Ck_bound(5) = -mpc.normalForceMin;
+        }
+
+        if (c(Side::Right, tk) == 0) {  // swing
+            S_right = Mat3<double>::Identity();
+        }
+        else {  // stance
+            C_right << DMat<double>::Zero(12, 6), C_unit;
+            Ck_bound(16) = mpc.normalForceMax;
+            Ck_bound(17) = -mpc.normalForceMin;
+        }
+
+        Mat12<double> Dk = Mat12<double>::Zero();
+        Dk.block<3, 3>(0, 0) = S_left;
+        Dk.block<3, 3>(3, 3) = S_right;
+        Dk.block<3, 3>(6, 6) = S_left;
+        Dk.block<3, 3>(9, 9) = S_right;
+
+        const Eigen::Index dOffset = static_cast<Eigen::Index>(12 * k);
+        const Eigen::Index cOffset = static_cast<Eigen::Index>(24 * k);
+        D.block(dOffset, dOffset, 12, 12) = Dk;
+        C.block(cOffset + 0, dOffset, 12, 12) = C_left;
+        C.block(cOffset + 12, dOffset, 12, 12) = C_right;
+        C_bound.segment(cOffset, 24) = Ck_bound;
+    }
+}

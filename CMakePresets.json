@@ -1,0 +1,50 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "17",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_PREFIX_PATH": "$env{CMAKE_PREFIX_PATH};$env{HOME}/.local/mujoco;$env{HOME}/.local/osqp;$env{HOME}/.local/osqp-eigen;$env{HOME}/.local/yaml-cpp"
+      }
+    },
+    {
+      "name": "dev",
+      "inherits": "base",
+      "displayName": "Development",
+      "description": "RelWithDebInfo build with local dependency prefixes appended to CMAKE_PREFIX_PATH",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "displayName": "Debug",
+      "description": "Debug build with local dependency prefixes appended to CMAKE_PREFIX_PATH",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug"
+    }
+  ]
+}

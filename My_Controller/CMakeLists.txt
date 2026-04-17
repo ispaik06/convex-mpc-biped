@@ -1,24 +1,17 @@
 add_library(My_Controller
 	src/My_Controller.cpp
-	src/ControlParameters.cpp
+	src/ControllerConfig.cpp
+	src/GaitScheduler.cpp
 	src/ControlFSM.cpp
 	src/ReferenceTrajectory.cpp
+	src/SwingFootTrajectory.cpp
 	src/MPCFormulation.cpp
 	src/ConvexMPC.cpp
-	# src/GaitScheduler.cpp
-	# src/ControlFSM.cpp
 )
-
-if(NOT DEFINED osqp_DIR)
-	set(osqp_DIR "$ENV{HOME}/.local/osqp/lib/cmake/osqp")
-endif()
-
-if(NOT OsqpEigen_DIR OR OsqpEigen_DIR STREQUAL "OsqpEigen_DIR-NOTFOUND")
-	set(OsqpEigen_DIR "$ENV{HOME}/.local/osqp-eigen/lib/cmake/OsqpEigen" CACHE PATH "Path to OsqpEigenConfig.cmake" FORCE)
-endif()
 
 find_package(osqp CONFIG REQUIRED)
 find_package(OsqpEigen REQUIRED)
+find_package(yaml-cpp CONFIG REQUIRED)
 
 
 target_include_directories(My_Controller PUBLIC
@@ -31,4 +24,10 @@ target_link_libraries(My_Controller PUBLIC
 	robot
 	osqp::osqp
 	OsqpEigen::OsqpEigen
+	yaml-cpp::yaml-cpp
+)
+
+target_compile_definitions(My_Controller
+	PRIVATE
+		PROJECT_ROOT_DIR="${PROJECT_SOURCE_DIR}"
 )
