@@ -1,8 +1,11 @@
 add_library(robot
 	src/ArmPosInitializer.cpp
+	src/InitialPoseConfig.cpp
 	src/LegPosInitializer.cpp
 	src/RobotRunner.cpp
 )
+
+find_package(yaml-cpp CONFIG REQUIRED)
 
 target_include_directories(robot
 	PUBLIC
@@ -11,4 +14,13 @@ target_include_directories(robot
 
 target_link_libraries(robot PUBLIC
 	common
+)
+
+target_link_libraries(robot PRIVATE
+	yaml-cpp::yaml-cpp
+)
+
+target_compile_definitions(robot
+	PRIVATE
+		PROJECT_ROOT_DIR="${PROJECT_SOURCE_DIR}"
 )

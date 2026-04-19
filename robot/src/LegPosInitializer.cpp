@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "InitialPoseConfig.h"
+
 template <typename T>
 LegPosInitializer<T>::LegPosInitializer(const RobotParams<T>* params, T end_time, float dt)
     : _params(params),
@@ -83,27 +85,11 @@ void LegPosInitializer<T>::initializeSpline(const LegController<T>& leg_ctrl) {
             ++joint_idx;
         }
     }
-    std::size_t flat_idx = 0;
-    for (const auto& leg : _params->legs) {
-        const std::size_t leg_dof = leg.joints.q_idx.size();
-        if (leg_dof > 1) {
-            fin[flat_idx + 1] += (flat_idx==0 ? 0.015 : 0.0);
-            mid_storage[flat_idx + 1] = fin[flat_idx + 1];
-        }
-        if (leg_dof > 2) {
-            fin[flat_idx + 2] -= 0.65;
-            mid_storage[flat_idx + 2] = fin[flat_idx + 2];
-        }
-        if (leg_dof > 3) {
-            fin[flat_idx + 3] += 0.70;
-            mid_storage[flat_idx + 3]  = fin[flat_idx + 3];
-        }
-        if (leg_dof > 4) {
-            fin[flat_idx + 4] -= 0.432;
-            mid_storage[flat_idx + 4] = fin[flat_idx + 4];
-        }
-        flat_idx += leg_dof;
-    }
+
+    applyConfiguredJointOffsets(fin,
+                                mid_storage,
+                                _params->legs,
+                                getInitialPoseConfig().legJointOffsets);
 
     if (!_jpos_trj.SetParam(ini.data(), fin.data(), mid, _end_time)) {
         throw std::runtime_error("LegPosInitializer failed to initialize joint spline");

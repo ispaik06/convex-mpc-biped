@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "InitialPoseConfig.h"
+
 template <typename T>
 ArmPosInitializer<T>::ArmPosInitializer(const RobotParams<T>* params, T end_time, float dt)
     : _params(params),
@@ -84,15 +86,10 @@ void ArmPosInitializer<T>::initializeSpline(const ArmController<T>& arm_ctrl) {
         }
     }
 
-    std::size_t flat_idx = 0;
-    for (const auto& arm : _params->arms) {
-        const std::size_t arm_dof = arm.joints.q_idx.size();
-        if (arm_dof > 3) {
-            fin[flat_idx + 3] -= 0.66;
-            mid_storage[flat_idx + 3] -= 0.66;
-        }
-        flat_idx += arm_dof;
-    }
+    applyConfiguredJointOffsets(fin,
+                                mid_storage,
+                                _params->arms,
+                                getInitialPoseConfig().armJointOffsets);
 
     if (!_jpos_trj.SetParam(ini.data(), fin.data(), mid, _end_time)) {
         throw std::runtime_error("ArmPosInitializer failed to initialize joint spline");
