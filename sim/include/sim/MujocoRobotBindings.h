@@ -10,7 +10,7 @@ struct MujocoEndEffectorBinding {
 };
 
 struct MujocoRobotBindings {
-    int baseBodyId{-1};
+    int torsoBodyId{-1};
     std::vector<MujocoEndEffectorBinding> feet;
     std::vector<MujocoEndEffectorBinding> hands;
 };

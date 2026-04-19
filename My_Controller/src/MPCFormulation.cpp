@@ -48,8 +48,7 @@ void MPCFormulation::build(const ReferenceTrajectoryOutput& referenceTrajectory,
 
     const double dt = dtMpc();
     const double mass = _robotParams->bodyMass;
-    //? Note: bodyInertia currently comes from the MuJoCo base body only.
-    //? It is not the whole-robot inertia about the whole-robot COM yet.
+    // Reduced-body inertia is maintained in the yaw-aligned SRB frame.
     const Mat3<double>& I_body = _robotParams->bodyInertia;
     const Mat3<double> I_body_inv = I_body.inverse();
     const Mat3<double> I3 = Mat3<double>::Identity();

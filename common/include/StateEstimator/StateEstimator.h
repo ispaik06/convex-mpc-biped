@@ -13,13 +13,13 @@ struct StateEstimate {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     double time{0.0};
-    Vec3<T> basePos = Vec3<T>::Zero();
-    Quat<T> baseQuat = Quat<T>::Identity();
+    Vec3<T> torsoPos_W = Vec3<T>::Zero();
+    Quat<T> torsoQuat_W = Quat<T>::Identity();
     T psi{0};
-    Vec3<T> baseLinVel = Vec3<T>::Zero();
-    Vec3<T> baseAngVel = Vec3<T>::Zero();
-    Vec3<T> baseLinAcc = Vec3<T>::Zero();
-    Vec3<T> baseAngAcc = Vec3<T>::Zero();
+    Vec3<T> torsoLinVel_W = Vec3<T>::Zero();
+    Vec3<T> torsoAngVel_W = Vec3<T>::Zero();
+    Vec3<T> torsoLinAcc_W = Vec3<T>::Zero();
+    Vec3<T> torsoAngAcc_W = Vec3<T>::Zero();
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
     WholeBodyDynamicsState<T> dynamics;
@@ -50,12 +50,12 @@ struct StateEstimate {
 
     void copyFrom(const CheaterState<T>& cheater_state) {
         time = cheater_state.time;
-        basePos = cheater_state.basePos;
-        baseQuat = cheater_state.baseQuat;
-        baseLinVel = cheater_state.baseLinVel;
-        baseAngVel = cheater_state.baseAngVel;
-        baseLinAcc = cheater_state.baseLinAcc;
-        baseAngAcc = cheater_state.baseAngAcc;
+        torsoPos_W = cheater_state.torsoPos_W;
+        torsoQuat_W = cheater_state.torsoQuat_W;
+        torsoLinVel_W = cheater_state.torsoLinVel_W;
+        torsoAngVel_W = cheater_state.torsoAngVel_W;
+        torsoLinAcc_W = cheater_state.torsoLinAcc_W;
+        torsoAngAcc_W = cheater_state.torsoAngAcc_W;
         legs = cheater_state.legs;
         arms = cheater_state.arms;
         dynamics = cheater_state.dynamics;

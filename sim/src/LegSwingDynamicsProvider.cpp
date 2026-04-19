@@ -1,5 +1,3 @@
-#include "LegSwingDynamicsProvider.h"
-
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -7,6 +5,7 @@
 
 #include <mujoco/mujoco.h>
 
+#include "LegSwingDynamicsProvider.h"
 #include "models/RobotMujocoSpec.h"
 
 namespace {
@@ -62,17 +61,17 @@ std::string freeJointName(const mjModel* fullModel) {
 }
 
 void assignBasePose(mjModel* model,
-                    const int baseBodyId,
-                    const Vec3<double>& basePos,
-                    const Quat<double>& baseQuat) {
+                    const int torsoBodyId,
+                    const Vec3<double>& torsoPos_W,
+                    const Quat<double>& torsoQuat_W) {
     for (int i = 0; i < 3; ++i) {
-        model->body_pos[3 * baseBodyId + i] = static_cast<mjtNum>(basePos[i]);
+        model->body_pos[3 * torsoBodyId + i] = static_cast<mjtNum>(torsoPos_W[i]);
     }
 
-    model->body_quat[4 * baseBodyId + 0] = static_cast<mjtNum>(baseQuat.w());
-    model->body_quat[4 * baseBodyId + 1] = static_cast<mjtNum>(baseQuat.x());
-    model->body_quat[4 * baseBodyId + 2] = static_cast<mjtNum>(baseQuat.y());
-    model->body_quat[4 * baseBodyId + 3] = static_cast<mjtNum>(baseQuat.z());
+    model->body_quat[4 * torsoBodyId + 0] = static_cast<mjtNum>(torsoQuat_W.w());
+    model->body_quat[4 * torsoBodyId + 1] = static_cast<mjtNum>(torsoQuat_W.x());
+    model->body_quat[4 * torsoBodyId + 2] = static_cast<mjtNum>(torsoQuat_W.y());
+    model->body_quat[4 * torsoBodyId + 3] = static_cast<mjtNum>(torsoQuat_W.z());
 }
 
 Vec3<double> readBodyComPosition(const mjData* data, const int bodyId) {
@@ -88,21 +87,21 @@ void readBodyComJacobians(const mjModel* model,
                           const int bodyId,
                           std::vector<mjtNum>& jacpScratch,
                           std::vector<mjtNum>& jacrScratch,
-                          DMat<double>& JvWorld,
-                          DMat<double>& JwWorld) {
+                          DMat<double>& Jv_W,
+                          DMat<double>& Jw_W) {
     mj_jacBodyCom(model, data, jacpScratch.data(), jacrScratch.data(), bodyId);
 
     Eigen::Map<const RowMajorMatrix<mjtNum>> jacpMap(jacpScratch.data(), 3, model->nv);
     Eigen::Map<const RowMajorMatrix<mjtNum>> jacrMap(jacrScratch.data(), 3, model->nv);
-    JvWorld = jacpMap.template cast<double>();
-    JwWorld = jacrMap.template cast<double>();
+    Jv_W = jacpMap.template cast<double>();
+    Jw_W = jacrMap.template cast<double>();
 }
 
 void readBodyComJacobianDot(const mjModel* model,
                             const mjData* data,
                             const int bodyId,
                             std::vector<mjtNum>& jacDotpScratch,
-                            DMat<double>& JvDotWorld) {
+                            DMat<double>& JvDot_W) {
     const mjtNum point[3] = {
         data->xipos[3 * bodyId + 0],
         data->xipos[3 * bodyId + 1],
@@ -112,7 +111,7 @@ void readBodyComJacobianDot(const mjModel* model,
     mj_jacDot(model, data, jacDotpScratch.data(), nullptr, point, bodyId);
 
     Eigen::Map<const RowMajorMatrix<mjtNum>> jacDotMap(jacDotpScratch.data(), 3, model->nv);
-    JvDotWorld = jacDotMap.template cast<double>();
+    JvDot_W = jacDotMap.template cast<double>();
 }
 
 void readDenseMassMatrix(const mjModel* model,
@@ -195,16 +194,16 @@ LegSwingDynamicsProvider::LegSwingDynamicsProvider(const RobotType robotType,
             throw std::runtime_error("Failed to allocate auxiliary leg mjData");
         }
 
-        auxModel.baseBodyId = mj_name2id(auxModel.model, mjOBJ_BODY, std::string(robotSpec.baseBody).c_str());
+        auxModel.torsoBodyId = mj_name2id(auxModel.model, mjOBJ_BODY, std::string(robotSpec.baseBody).c_str());
         auxModel.footBodyId =
             mj_name2id(auxModel.model, mjOBJ_BODY, std::string(robotSpec.legs[leg].endBody).c_str());
-        if (auxModel.baseBodyId < 0 || auxModel.footBodyId < 0) {
+        if (auxModel.torsoBodyId < 0 || auxModel.footBodyId < 0) {
             destroy(auxModel);
             throw std::runtime_error("Auxiliary leg model is missing required base or foot body");
         }
 
-        auxModel.qposAdr.reserve(robotSpec.legs[leg].joints.size());
-        auxModel.qvelAdr.reserve(robotSpec.legs[leg].joints.size());
+        auxModel.qposIndex.reserve(robotSpec.legs[leg].joints.size());
+        auxModel.qvelIndex.reserve(robotSpec.legs[leg].joints.size());
         for (const auto& jointSpec : robotSpec.legs[leg].joints) {
             const int jointId = mj_name2id(auxModel.model, mjOBJ_JOINT, std::string(jointSpec.joint).c_str());
             if (jointId < 0) {
@@ -212,8 +211,8 @@ LegSwingDynamicsProvider::LegSwingDynamicsProvider(const RobotType robotType,
                 throw std::runtime_error("Auxiliary leg model is missing required leg joint");
             }
 
-            auxModel.qposAdr.push_back(auxModel.model->jnt_qposadr[jointId]);
-            auxModel.qvelAdr.push_back(auxModel.model->jnt_dofadr[jointId]);
+            auxModel.qposIndex.push_back(auxModel.model->jnt_qposadr[jointId]);
+            auxModel.qvelIndex.push_back(auxModel.model->jnt_dofadr[jointId]);
         }
 
         auxModel.jacpScratch.resize(static_cast<std::size_t>(3 * auxModel.model->nv));
@@ -239,36 +238,39 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
         auto& auxModel = _auxiliaryLegModels[leg];
         auto& legState = stateEstimate.legs[leg];
 
-        assignBasePose(auxModel.model, auxModel.baseBodyId, stateEstimate.basePos, stateEstimate.baseQuat);
+        assignBasePose(auxModel.model,
+                       auxModel.torsoBodyId,
+                       stateEstimate.torsoPos_W,
+                       stateEstimate.torsoQuat_W);
 
-        if (legState.q.size() != static_cast<Eigen::Index>(auxModel.qposAdr.size()) ||
-            legState.qd.size() != static_cast<Eigen::Index>(auxModel.qvelAdr.size())) {
+        if (legState.q.size() != static_cast<Eigen::Index>(auxModel.qposIndex.size()) ||
+            legState.qd.size() != static_cast<Eigen::Index>(auxModel.qvelIndex.size())) {
             throw std::runtime_error("LegSwingDynamicsProvider leg state dimension mismatch");
         }
 
         for (Eigen::Index i = 0; i < legState.q.size(); ++i) {
-            auxModel.data->qpos[auxModel.qposAdr[static_cast<std::size_t>(i)]] =
+            auxModel.data->qpos[auxModel.qposIndex[static_cast<std::size_t>(i)]] =
                 static_cast<mjtNum>(legState.q[i]);
-            auxModel.data->qvel[auxModel.qvelAdr[static_cast<std::size_t>(i)]] =
+            auxModel.data->qvel[auxModel.qvelIndex[static_cast<std::size_t>(i)]] =
                 static_cast<mjtNum>(legState.qd[i]);
         }
 
         mj_forward(auxModel.model, auxModel.data);
 
-        legState.footPosWorld = readBodyComPosition(auxModel.data, auxModel.footBodyId);
+        legState.footPos_W = readBodyComPosition(auxModel.data, auxModel.footBodyId);
         readBodyComJacobians(auxModel.model,
                              auxModel.data,
                              auxModel.footBodyId,
                              auxModel.jacpScratch,
                              auxModel.jacrScratch,
-                             legState.JvWorld,
-                             legState.JwWorld);
+                             legState.Jv_W,
+                             legState.Jw_W);
         readBodyComJacobianDot(auxModel.model,
                                auxModel.data,
                                auxModel.footBodyId,
                                auxModel.jacDotpScratch,
-                               legState.JvDotWorld);
-        legState.footVelWorld = legState.JvWorld * legState.qd;
+                               legState.JvDot_W);
+        legState.footVel_W = legState.Jv_W * legState.qd;
         readDenseMassMatrix(auxModel.model,
                             auxModel.data,
                             auxModel.denseMassScratch,
@@ -294,10 +296,10 @@ void LegSwingDynamicsProvider::destroy(AuxiliaryLegModel& auxModel) {
         mj_deleteModel(auxModel.model);
         auxModel.model = nullptr;
     }
-    auxModel.baseBodyId = -1;
+    auxModel.torsoBodyId = -1;
     auxModel.footBodyId = -1;
-    auxModel.qposAdr.clear();
-    auxModel.qvelAdr.clear();
+    auxModel.qposIndex.clear();
+    auxModel.qvelIndex.clear();
     auxModel.jacpScratch.clear();
     auxModel.jacrScratch.clear();
     auxModel.jacDotpScratch.clear();

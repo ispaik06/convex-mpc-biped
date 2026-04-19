@@ -24,16 +24,8 @@ void StateEstimator<T>::updateCheater(const CheaterState<T>& cheater_state,
                                       StateEstimate<T>& state_estimate) const {
     state_estimate.copyFrom(cheater_state);
 
-    Quat<T> baseQuat = state_estimate.baseQuat;
-    baseQuat.normalize();
-
-    const T w = baseQuat.w();
-    const T x = baseQuat.x();
-    const T y = baseQuat.y();
-    const T z = baseQuat.z();
-
-    state_estimate.psi =
-        std::atan2(T(2) * (w * z + x * y), T(1) - T(2) * (y * y + z * z));
+    const Mat3<T> R_WT = state_estimate.torsoQuat_W.toRotationMatrix();
+    state_estimate.psi = std::atan2(R_WT(1, 0), R_WT(0, 0));
 }
 
 template class StateEstimator<float>;

@@ -32,10 +32,10 @@ private:
     struct AuxiliaryLegModel {
         mjModel* model{nullptr};
         mjData* data{nullptr};
-        int baseBodyId{-1};
+        int torsoBodyId{-1};
         int footBodyId{-1};
-        std::vector<int> qposAdr;
-        std::vector<int> qvelAdr;
+        std::vector<int> qposIndex;
+        std::vector<int> qvelIndex;
         std::vector<mjtNum> jacpScratch;
         std::vector<mjtNum> jacrScratch;
         std::vector<mjtNum> jacDotpScratch;

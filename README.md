@@ -31,6 +31,18 @@ flowchart TD
     O --> P["MuJoCo actuator ctrl"]
 ```
 
+## 프레임 표기
+
+이 프로젝트는 frame 이름을 짧게 적고, 회전행렬과 위치벡터는 접미사로 기준을 드러낸다.
+
+- `R_WT`: world 기준 torso frame
+- `R_WB`: world 기준 SRB body frame, yaw-only virtual frame
+- `R_BW`: `R_WB.transpose()`
+- `p_WX`: world에서 본 위치
+- `p_BX`: SRB body frame에서 본 위치
+
+SRB body frame은 `torso + arms`의 reduced COM을 원점으로 하고, orientation은 torso heading의 yaw만 반영한다. `LegSwingDynamicsProvider`는 이 frame을 쓰지 않고 world frame 출력을 유지한다.
+
 ## 디렉터리 구조
 
 ```text
@@ -130,6 +142,7 @@ ConvexMPC/
   - MuJoCo의 body pose, velocity, actuator force 등을 읽어 `CheaterState`를 만든다.
 - `LegSwingDynamicsProvider`
   - 각 다리만 남긴 보조 MuJoCo 모델을 따로 만들어 스윙 발 Jacobian, Jacobian dot, 질량행렬, bias를 계산한다.
+  - 출력은 world frame 기준으로 유지하고, SRB frame 변환은 상위 제어층에서 맡는다.
   - 이 값들이 `LegController`의 작업공간 스윙 제어에 사용된다.
 - `main_thread`
   - MuJoCo의 `simulate.h` viewer 루프를 감싼다.
@@ -229,6 +242,8 @@ ConvexMPC/
   - 속도 피드백 기반 touchdown 위치 보정 항
 - `logging`
   - gait 상태 출력 간격
+
+코드에서는 `R_WT`, `R_WB`, `p_W`, `p_B`처럼 frame을 접미사로 표시해서, world/torso/SRB body 기준이 섞이지 않게 맞추는 편이 좋다.
 
 이 파일을 바꾸면 README 기준 현재 구현상 시뮬레이터를 재시작해야 반영된다.
 

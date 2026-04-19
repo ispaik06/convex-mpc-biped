@@ -211,7 +211,7 @@ void RobotModel<T>::setArmTau(int arm, const DVec<T>& tau_arm, DVec<T>& tau_all)
 
 template <typename T>
 const Vec3<T>& RobotModel<T>::hipLocationFromBody(int leg) const {
-    return checkedLeg(_params, leg).hipLocation_from_body;
+    return checkedLeg(_params, leg).hipLocationFromBody;
 }
 
 template class RobotModel<float>;

@@ -22,11 +22,11 @@ void LegControllerCommand<T>::resize(Eigen::Index dof) {
     kpJoint.setZero(dof, dof);
     kdJoint.setZero(dof, dof);
 
-    forceFeedForward.setZero();
-    momentFeedForward.setZero();
-    pDes.setZero();
-    vDes.setZero();
-    aDes.setZero();
+    forceFeedForward_W.setZero();
+    momentFeedForward_W.setZero();
+    pDes_W.setZero();
+    vDes_W.setZero();
+    aDes_W.setZero();
     kpCartesian.setZero();
     kdCartesian.setZero();
 }
@@ -40,11 +40,11 @@ void LegControllerCommand<T>::zero() {
     kpJoint.setZero(kpJoint.rows(), kpJoint.cols());
     kdJoint.setZero(kdJoint.rows(), kdJoint.cols());
 
-    forceFeedForward.setZero();
-    momentFeedForward.setZero();
-    pDes.setZero();
-    vDes.setZero();
-    aDes.setZero();
+    forceFeedForward_W.setZero();
+    momentFeedForward_W.setZero();
+    pDes_W.setZero();
+    vDes_W.setZero();
+    aDes_W.setZero();
     kpCartesian.setZero();
     kdCartesian.setZero();
 }
@@ -68,14 +68,14 @@ void LegControllerData<T>::resize(Eigen::Index dof) {
     q.setZero(dof);
     qd.setZero(dof);
     tauEstimate.setZero(dof);
-    JvWorld.setZero(3, dof);
-    JvDotWorld.setZero(3, dof);
-    JwWorld.setZero(3, dof);
+    Jv_W.setZero(3, dof);
+    JvDot_W.setZero(3, dof);
+    Jw_W.setZero(3, dof);
     massMatrix.setZero(dof, dof);
     bias.setZero(dof);
 
-    pWorld.setZero();
-    vWorld.setZero();
+    p_W.setZero();
+    v_W.setZero();
     hasFootData = false;
     hasDynamicsData = false;
 }
@@ -85,14 +85,14 @@ void LegControllerData<T>::zero() {
     q.setZero(q.size());
     qd.setZero(qd.size());
     tauEstimate.setZero(tauEstimate.size());
-    JvWorld.setZero(JvWorld.rows(), JvWorld.cols());
-    JvDotWorld.setZero(JvDotWorld.rows(), JvDotWorld.cols());
-    JwWorld.setZero(JwWorld.rows(), JwWorld.cols());
+    Jv_W.setZero(Jv_W.rows(), Jv_W.cols());
+    JvDot_W.setZero(JvDot_W.rows(), JvDot_W.cols());
+    Jw_W.setZero(Jw_W.rows(), Jw_W.cols());
     massMatrix.setZero(massMatrix.rows(), massMatrix.cols());
     bias.setZero(bias.size());
 
-    pWorld.setZero();
-    vWorld.setZero();
+    p_W.setZero();
+    v_W.setZero();
     hasFootData = false;
     hasDynamicsData = false;
 }
@@ -188,25 +188,25 @@ void LegController<T>::setLegTauEstimate(int leg, const DVec<T>& tauEstimate) {
 
 template <typename T>
 void LegController<T>::setLegCartesianData(int leg,
-                                           const Vec3<T>& pWorld,
-                                           const Vec3<T>& vWorld,
-                                           const DMat<T>& JvWorld,
-                                           const DMat<T>& JvDotWorld,
-                                           const DMat<T>& JwWorld) {
+                             const Vec3<T>& p_W,
+                             const Vec3<T>& v_W,
+                             const DMat<T>& Jv_W,
+                             const DMat<T>& JvDot_W,
+                             const DMat<T>& Jw_W) {
     checkLegIndex(leg);
     const std::size_t idx = static_cast<std::size_t>(leg);
     const Eigen::Index dof = datas[idx].dof();
 
-    if (JvWorld.rows() != 3 || JvDotWorld.rows() != 3 || JwWorld.rows() != 3 ||
-        JvWorld.cols() != dof || JvDotWorld.cols() != dof || JwWorld.cols() != dof) {
+    if (Jv_W.rows() != 3 || JvDot_W.rows() != 3 || Jw_W.rows() != 3 ||
+        Jv_W.cols() != dof || JvDot_W.cols() != dof || Jw_W.cols() != dof) {
         throw std::invalid_argument("Leg Jacobians must be 3 x leg dof");
     }
 
-    datas[idx].pWorld = pWorld;
-    datas[idx].vWorld = vWorld;
-    datas[idx].JvWorld = JvWorld;
-    datas[idx].JvDotWorld = JvDotWorld;
-    datas[idx].JwWorld = JwWorld;
+    datas[idx].p_W = p_W;
+    datas[idx].v_W = v_W;
+    datas[idx].Jv_W = Jv_W;
+    datas[idx].JvDot_W = JvDot_W;
+    datas[idx].Jw_W = Jw_W;
     datas[idx].hasFootData = true;
 }
 
@@ -229,11 +229,11 @@ template <typename T>
 void LegController<T>::clearLegCartesianData(int leg) {
     checkLegIndex(leg);
     const std::size_t idx = static_cast<std::size_t>(leg);
-    datas[idx].pWorld.setZero();
-    datas[idx].vWorld.setZero();
-    datas[idx].JvWorld.setZero(datas[idx].JvWorld.rows(), datas[idx].JvWorld.cols());
-    datas[idx].JvDotWorld.setZero(datas[idx].JvDotWorld.rows(), datas[idx].JvDotWorld.cols());
-    datas[idx].JwWorld.setZero(datas[idx].JwWorld.rows(), datas[idx].JwWorld.cols());
+    datas[idx].p_W.setZero();
+    datas[idx].v_W.setZero();
+    datas[idx].Jv_W.setZero(datas[idx].Jv_W.rows(), datas[idx].Jv_W.cols());
+    datas[idx].JvDot_W.setZero(datas[idx].JvDot_W.rows(), datas[idx].JvDot_W.cols());
+    datas[idx].Jw_W.setZero(datas[idx].Jw_W.rows(), datas[idx].Jw_W.cols());
     datas[idx].hasFootData = false;
 }
 
@@ -272,19 +272,19 @@ DVec<T> LegController<T>::computeSwingLegTorque(int leg) const {
     }
 
     DVec<T> legTorque = computeSwingLegJointTorque(
-        datas[idx].JvWorld,
-        datas[idx].JvDotWorld,
+        datas[idx].Jv_W,
+        datas[idx].JvDot_W,
         datas[idx].massMatrix,
         datas[idx].qd,
         datas[idx].bias,
-        commands[idx].pDes,
-        commands[idx].vDes,
-        commands[idx].aDes,
-        datas[idx].pWorld,
-        datas[idx].vWorld,
+        commands[idx].pDes_W,
+        commands[idx].vDes_W,
+        commands[idx].aDes_W,
+        datas[idx].p_W,
+        datas[idx].v_W,
         commands[idx].kpCartesian,
         commands[idx].kdCartesian,
-        commands[idx].forceFeedForward);
+        commands[idx].forceFeedForward_W);
 
     legTorque += commands[idx].tauFeedForward;
     return legTorque;
@@ -301,10 +301,10 @@ DVec<T> LegController<T>::computeStanceLegTorque(int leg) const {
     }
 
     DVec<T> legTorque = computeStanceLegJointTorque(
-        datas[idx].JvWorld,
-        datas[idx].JwWorld,
-        commands[idx].forceFeedForward,
-        commands[idx].momentFeedForward);
+        datas[idx].Jv_W,
+        datas[idx].Jw_W,
+        commands[idx].forceFeedForward_W,
+        commands[idx].momentFeedForward_W);
 
     legTorque += commands[idx].tauFeedForward;
     return legTorque;
@@ -417,9 +417,9 @@ void LegController<T>::validateLegShape(std::size_t leg) const {
     }
 
     if (datas[leg].hasFootData &&
-        (datas[leg].JvWorld.rows() != 3 || datas[leg].JvDotWorld.rows() != 3 ||
-         datas[leg].JwWorld.rows() != 3 || datas[leg].JvWorld.cols() != dof ||
-         datas[leg].JvDotWorld.cols() != dof || datas[leg].JwWorld.cols() != dof)) {
+        (datas[leg].Jv_W.rows() != 3 || datas[leg].JvDot_W.rows() != 3 ||
+         datas[leg].Jw_W.rows() != 3 || datas[leg].Jv_W.cols() != dof ||
+         datas[leg].JvDot_W.cols() != dof || datas[leg].Jw_W.cols() != dof)) {
         throw std::invalid_argument("Leg Jacobian size does not match leg dof");
     }
 

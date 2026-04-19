@@ -3,6 +3,7 @@
 
 #include <initializer_list>
 #include <stdexcept>
+#include <vector>
 
 #include "Types.h"
 
@@ -20,6 +21,12 @@ struct JointPdGains {
     }
 
     void set(std::initializer_list<T> kp_values, std::initializer_list<T> kd_values) {
+        kp = _makeVector(kp_values);
+        kd = _makeVector(kd_values);
+        _validate();
+    }
+
+    void set(const std::vector<T>& kp_values, const std::vector<T>& kd_values) {
         kp = _makeVector(kp_values);
         kd = _makeVector(kd_values);
         _validate();
@@ -71,6 +78,14 @@ private:
         Eigen::Index idx = 0;
         for (const T value : values) {
             result[idx++] = value;
+        }
+        return result;
+    }
+
+    static DVec<T> _makeVector(const std::vector<T>& values) {
+        DVec<T> result(static_cast<Eigen::Index>(values.size()));
+        for (Eigen::Index idx = 0; idx < result.size(); ++idx) {
+            result[idx] = values[static_cast<std::size_t>(idx)];
         }
         return result;
     }

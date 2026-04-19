@@ -2,18 +2,43 @@
 #include <iostream>
 
 #include "RobotRunner.h"
+#include "JointTrackingConfig.h"
+#include "Utilities/MatrixUtils.h"
 
 namespace {
 Vec3<double> reducedBodyComWorld(const StateEstimate<double>& state,
                                  const RobotParams<double>& params) {
-    return state.basePos + state.baseQuat.toRotationMatrix() * params.bodyComLocation;
+    return state.torsoPos_W + Rz(state.psi) * params.bodyComLocation;
+}
+
+void applyConfiguredJointTrackingGains(const char* limbName,
+                                       const std::vector<double>& kp,
+                                       const std::vector<double>& kd,
+                                       const Eigen::Index expectedDof,
+                                       JointPdGains<double>& gains) {
+    if (kp.empty() || kd.empty()) {
+        throw std::runtime_error(std::string("Missing joint_tracking.") + limbName +
+                                 " kp/kd configuration");
+    }
+
+    if (kp.size() != kd.size()) {
+        throw std::runtime_error(std::string("Configured ") + limbName +
+                                 " joint tracking gains have mismatched kp/kd lengths");
+    }
+
+    if (static_cast<Eigen::Index>(kp.size()) != expectedDof) {
+        throw std::runtime_error(std::string("Configured ") + limbName +
+                                 " joint tracking gains do not match limb dof");
+    }
+
+    gains.set(kp, kd);
 }
 }  // namespace
 
 void RobotRunner::init(RobotParams<double>* params, double timestep, const UserCommand* userCommand) {
     _params = params;
     _model = RobotModel<double>(_params);
-    _tiemstep = timestep;
+    _timestep = timestep;
     _robot_ctrl->_userCommand = userCommand;
     if(!_model.validate()) {
         throw std::runtime_error("Invalid RobotParams");
@@ -26,8 +51,8 @@ void RobotRunner::init(RobotParams<double>* params, double timestep, const UserC
     _robot_ctrl->_robotParams = _params;
     _robot_ctrl->_legController = _legController.get();
     _robot_ctrl->_armController = _armController.get();
-    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 1.1, _tiemstep);
-    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 1.0, _tiemstep);
+    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 1.1, _timestep);
+    _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 1.0, _timestep);
     initializeJointTrackingGains();
 }
 
@@ -40,20 +65,25 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
     setupStep(state);
 
     const bool armPosInitialized = _armPosInitializer->IsInitialized(_armController.get());
+    _armInitializationComplete = armPosInitialized;
     for (auto& armCommand : _armController->commands) {
         _armJointTrackingGains.applyTo(armCommand);
     }
 
-    if(!_legPosInitializer->IsInitialized(_legController.get())) {
+    const bool legPosInitialized = _legPosInitializer->IsInitialized(_legController.get());
+    _legInitializationComplete = legPosInitialized;
+
+    if(!legPosInitialized) {
         // Initial pose control
         for (auto& legCommand : _legController->commands) {
             _legJointTrackingGains.applyTo(legCommand);
+            legCommand.mode = LegControlMode::JointPd;
         }
 
-        if ((_iterations % 50) == 0 && _params != nullptr) {
-            const double reducedComZ = reducedBodyComWorld(state, *_params)[2];
-            std::cout << "[LegPosInitializer] SRB COM z (world): " << reducedComZ << std::endl;
-        }
+        // if ((_iterations % 50) == 0 && _params != nullptr) {
+        //     const double reducedComZ = reducedBodyComWorld(state, *_params)[2];
+        //     std::cout << "[LegPosInitializer] SRB COM z (world): " << reducedComZ << std::endl;
+        // }
     }
     else {
         // Run main Controller
@@ -78,31 +108,26 @@ void RobotRunner::initializeJointTrackingGains() {
         throw std::runtime_error("RobotRunner::init must set RobotParams before gains");
     }
 
-    switch (_robotType) {
-        case RobotType::MIT_HUMANOID:
-            // Order follows sim/src/MitHumanoidSpec.cpp:
-            // [hip_yaw, hip_abad, hip_pitch, knee, ankle]
-            _legJointTrackingGains.set({60.0, 50.0, 55.0, 60.0, 40.0},
-                                       {15.0, 10.0, 7.0, 9.0, 10.0});
-            // _legJointTrackingGains.setConstant(
-            //     static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()), 50.0, 20.0);
-            // Order follows sim/src/MitHumanoidSpec.cpp:
-            // [shoulder_pitch, shoulder_abad, shoulder_yaw, elbow]
-            _armJointTrackingGains.set({30.0, 8.0, 8.0, 2.0},
-                                       {5.0, 1., 1.0, 0.75});
-            break;
-        case RobotType::UNITREE_G1:
-        case RobotType::UNITREE_H1:
-            if (_params->legs.empty() || _params->arms.empty()) {
-                throw std::runtime_error("RobotParams is missing limb data for gain initialization");
-            }
-            _legJointTrackingGains.setConstant(
-                static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()), 20.0, 16.0);
-            _armJointTrackingGains.setConstant(
-                static_cast<Eigen::Index>(_params->arms.front().joints.q_idx.size()), 3.0, 2.0);
-            break;
-        default:
-            throw std::runtime_error("Unsupported robot type for joint tracking gains");
+    const auto& config = getJointTrackingConfig();
+
+    if (!_params->legs.empty()) {
+        applyConfiguredJointTrackingGains("leg",
+                                          config.legKp,
+                                          config.legKd,
+                                          static_cast<Eigen::Index>(_params->legs.front().joints.q_idx.size()),
+                                          _legJointTrackingGains);
+    } else if (config.hasLegGains()) {
+        throw std::runtime_error("joint_tracking.leg configured, but robot has no legs");
+    }
+
+    if (!_params->arms.empty()) {
+        applyConfiguredJointTrackingGains("arm",
+                                          config.armKp,
+                                          config.armKd,
+                                          static_cast<Eigen::Index>(_params->arms.front().joints.q_idx.size()),
+                                          _armJointTrackingGains);
+    } else if (config.hasArmGains()) {
+        throw std::runtime_error("joint_tracking.arm configured, but robot has no arms");
     }
 }
 
@@ -143,11 +168,11 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
 
         if (legState.hasFootKinematics) {
             _legController->setLegCartesianData(static_cast<int>(leg),
-                                                legState.footPosWorld,
-                                                legState.footVelWorld,
-                                                legState.JvWorld,
-                                                legState.JvDotWorld,
-                                                legState.JwWorld);
+                                                legState.footPos_W,
+                                                legState.footVel_W,
+                                                legState.Jv_W,
+                                                legState.JvDot_W,
+                                                legState.Jw_W);
         }
 
         if (legState.hasLegDynamics) {
@@ -183,4 +208,16 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
 
 void RobotRunner::finalizeStep() {
     _iterations++;
+}
+
+bool RobotRunner::legInitializationComplete() const {
+    return _legInitializationComplete;
+}
+
+bool RobotRunner::armInitializationComplete() const {
+    return _armInitializationComplete;
+}
+
+bool RobotRunner::initializationComplete() const {
+    return _legInitializationComplete && _armInitializationComplete;
 }

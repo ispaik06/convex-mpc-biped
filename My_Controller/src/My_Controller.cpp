@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "Controllers/LegController.h"
+#include "Utilities/MatrixUtils.h"
 
 namespace {
 double clampUnit(const double value) {
@@ -44,18 +45,19 @@ Vec2<double> quaternionToRollPitch(Quat<double> quat) {
 
 Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
                                     const RobotParams<double>& robotParams) {
-    return stateEstimate.baseQuat.toRotationMatrix() * robotParams.bodyComLocation;
+    return Rz(stateEstimate.psi) * robotParams.bodyComLocation;
 }
 
 Vec3<double> reducedBodyComWorld(const StateEstimate<double>& stateEstimate,
                                  const RobotParams<double>& robotParams) {
-    return stateEstimate.basePos + reducedBodyOffsetWorld(stateEstimate, robotParams);
+    return stateEstimate.torsoPos_W + reducedBodyOffsetWorld(stateEstimate, robotParams);
 }
 
 Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstimate,
                                          const RobotParams<double>& robotParams) {
     const Vec3<double> offsetWorld = reducedBodyOffsetWorld(stateEstimate, robotParams);
-    return stateEstimate.baseLinVel + stateEstimate.baseAngVel.cross(offsetWorld);
+    const Vec3<double> yawAngularVelocityWorld(0.0, 0.0, stateEstimate.torsoAngVel_W.z());
+    return stateEstimate.torsoLinVel_W + yawAngularVelocityWorld.cross(offsetWorld);
 }
 }  // namespace
 
@@ -128,7 +130,7 @@ Vec13<double> MyController::buildCurrentMpcState() const {
         throw std::runtime_error("MyController::buildCurrentMpcState requires state estimate");
     }
 
-    const Vec2<double> rollPitch = quaternionToRollPitch(_stateEstimate->baseQuat);
+    const Vec2<double> rollPitch = quaternionToRollPitch(_stateEstimate->torsoQuat_W);
     const Vec3<double> comWorld = reducedBodyComWorld(*_stateEstimate, *_robotParams);
     const Vec3<double> comVelocityWorld =
         reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams);
@@ -138,7 +140,7 @@ Vec13<double> MyController::buildCurrentMpcState() const {
     x0[1] = rollPitch[1];
     x0[2] = _stateEstimate->psi;
     x0.template segment<3>(3) = comWorld;
-    x0.template segment<3>(6) = _stateEstimate->baseAngVel;
+    x0.template segment<3>(6) = _stateEstimate->torsoAngVel_W;
     x0.template segment<3>(9) = comVelocityWorld;
     x0[12] = getControllerConfig().model.gravity;
     return x0;
@@ -166,7 +168,7 @@ void MyController::updateSwingTrajectories(
             continue;
         }
 
-        const Vec3<double>& currentFootPosition = _stateEstimate->legs[leg].footPosWorld;
+        const Vec3<double>& currentFootPosition = _stateEstimate->legs[leg].footPos_W;
         const Vec3<double> touchdownTarget = desiredFootPositionForSide(desiredFootPositions, side);
         const double timeRemaining =
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
@@ -277,12 +279,12 @@ void MyController::writeLegCommands() {
 
             switch (side) {
                 case Side::Left:
-                    command.forceFeedForward = _stanceWrenchWorld.template segment<3>(0);
-                    command.momentFeedForward = _stanceWrenchWorld.template segment<3>(6);
+                    command.forceFeedForward_W = _stanceWrenchWorld.template segment<3>(0);
+                    command.momentFeedForward_W = _stanceWrenchWorld.template segment<3>(6);
                     break;
                 case Side::Right:
-                    command.forceFeedForward = _stanceWrenchWorld.template segment<3>(3);
-                    command.momentFeedForward = _stanceWrenchWorld.template segment<3>(9);
+                    command.forceFeedForward_W = _stanceWrenchWorld.template segment<3>(3);
+                    command.momentFeedForward_W = _stanceWrenchWorld.template segment<3>(9);
                     break;
                 default:
                     throw std::runtime_error(
@@ -292,9 +294,9 @@ void MyController::writeLegCommands() {
         }
 
         command.mode = LegControlMode::SwingFoot;
-        command.pDes = _legRuntime[leg].swingTrajectory.position();
-        command.vDes = _legRuntime[leg].swingTrajectory.velocity();
-        command.aDes = _legRuntime[leg].swingTrajectory.acceleration();
+        command.pDes_W = _legRuntime[leg].swingTrajectory.position();
+        command.vDes_W = _legRuntime[leg].swingTrajectory.velocity();
+        command.aDes_W = _legRuntime[leg].swingTrajectory.acceleration();
         command.kpCartesian = _swingKp;
         command.kdCartesian = _swingKd;
     }

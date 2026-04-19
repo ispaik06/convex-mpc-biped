@@ -20,19 +20,6 @@
 //     constexpr size_t num_leg_joint = 5;
 // }  // namespace MIT humanoid
 
-// /*!
-//  * Basic parameters for UNITREE G1
-//  */
-// namespace UnitreeG1 {
-//     constexpr size_t num_act_joint = 23;
-//     constexpr size_t num_q = 24;
-//     constexpr size_t num_v = 23;
-//     constexpr size_t num_leg = 2;
-//     constexpr size_t num_arm = 2;
-//     constexpr size_t num_arm_joint = 4;
-//     constexpr size_t num_leg_joint = 6;
-// }
-
 enum class Side { Left, Right, FL, FR, BL, BR };
 
 template <typename T>
@@ -53,7 +40,7 @@ struct LegParams {
     Side side{Side::Left};
     JointGroupParams<T> joints;
 
-    Vec3<T> hipLocation_from_body = Vec3<T>::Zero();
+    Vec3<T> hipLocationFromBody = Vec3<T>::Zero();
 
     vectorAligned<Vec3<T>> jointLocation_offsets;
 };
@@ -77,8 +64,8 @@ struct RobotParams {
   int nu{0};
 
   T bodyMass{0.0};
-  Mat3<T> bodyInertia = Mat3<T>::Zero();
-  Vec3<T> bodyComLocation = Vec3<T>::Zero();
+  Mat3<T> bodyInertia = Mat3<T>::Zero();  // reduced-body frame, yaw aligned
+  Vec3<T> bodyComLocation = Vec3<T>::Zero();  // torso root -> reduced COM, yaw aligned
 
   DVec<T> default_qpos;
 

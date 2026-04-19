@@ -1,4 +1,4 @@
-#include "FixedBaseSwingTestRunner.h"
+#include "LockedTorsoSwingRunner.h"
 
 #include <algorithm>
 #include <array>
@@ -12,14 +12,14 @@
 #include "MujocoCheaterStateReader.h"
 #include "setupRobotParams.h"
 
-FixedBaseSwingTestRunner::FixedBaseSwingTestRunner(const RobotType robotType,
-                                                   RobotController* controller,
-                                                   const bool headless)
+LockedTorsoSwingRunner::LockedTorsoSwingRunner(const RobotType robotType,
+                                               RobotController* controller,
+                                               const bool headless)
     : _robotType(robotType),
       _robotRunner(std::make_unique<RobotRunner>(controller)),
       _headless(headless) {}
 
-FixedBaseSwingTestRunner::~FixedBaseSwingTestRunner() {
+LockedTorsoSwingRunner::~LockedTorsoSwingRunner() {
     if (_data != nullptr) {
         mj_deleteData(_data);
         _data = nullptr;
@@ -30,7 +30,7 @@ FixedBaseSwingTestRunner::~FixedBaseSwingTestRunner() {
     }
 }
 
-void FixedBaseSwingTestRunner::init() {
+void LockedTorsoSwingRunner::init() {
     _modelPath = std::string(PROJECT_ROOT_DIR) + "/models/mit_humanoid/scene.xml";
 
     if (mjVERSION_HEADER != mj_version()) {
@@ -54,38 +54,31 @@ void FixedBaseSwingTestRunner::init() {
     _model->opt.timestep = 0.002;
     _model->opt.integrator = mjINT_IMPLICITFAST;
 
-    cacheFloatingBaseState();
-    clampFloatingBase();
+    locateFloatingBase();
 
     std::cout << "Loaded MuJoCo model: " << _modelPath << '\n';
     std::cout << "nq=" << _model->nq
               << ", nv=" << _model->nv
               << ", nu=" << _model->nu << '\n';
-    std::cout << "[SwingLegTest] fixed-base mode enabled" << std::endl;
 }
 
-void FixedBaseSwingTestRunner::run() {
-    _keyboardCommand.start();
-
+void LockedTorsoSwingRunner::run() {
     if (_headless) {
-        // Intentionally unbounded in headless mode for manual inspection runs.
         runPhysicsLoop(false, false);
-        _keyboardCommand.stop();
         return;
     }
 
     _stopRequested = false;
     _mainThread.init();
 
-    std::thread physicsThread(&FixedBaseSwingTestRunner::runPhysicsLoop, this, true, true);
+    std::thread physicsThread(&LockedTorsoSwingRunner::runPhysicsLoop, this, true, true);
     _mainThread.run();
 
     _stopRequested = true;
     physicsThread.join();
-    _keyboardCommand.stop();
 }
 
-void FixedBaseSwingTestRunner::runPhysicsLoop(const bool throttleRealtime, const bool syncViewer) {
+void LockedTorsoSwingRunner::runPhysicsLoop(const bool throttleRealtime, const bool syncViewer) {
     const auto wallStart = std::chrono::steady_clock::now();
     const double simStart = _data->time;
 
@@ -95,9 +88,22 @@ void FixedBaseSwingTestRunner::runPhysicsLoop(const bool throttleRealtime, const
     }
 
     while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
+        if (_torsoLocked) {
+            clampFloatingBase();
+        }
+
         runRobotControl();
+
+        if (_torsoLocked) {
+            clampFloatingBase();
+        }
+
         mj_step(_model, _data);
-        clampFloatingBase();
+
+        if (_torsoLocked) {
+            clampFloatingBase();
+        }
+
         ++_iterations;
 
         if (syncViewer) {
@@ -120,7 +126,7 @@ void FixedBaseSwingTestRunner::runPhysicsLoop(const bool throttleRealtime, const
               << " steps, sim time=" << _data->time << " sec" << "\n\n";
 }
 
-void FixedBaseSwingTestRunner::runRobotControl() {
+void LockedTorsoSwingRunner::runRobotControl() {
     if (_firstControllerRun) {
         const auto robotSetup = setupRobotParams<double>(_robotType, _model);
         _params = robotSetup.params;
@@ -132,7 +138,6 @@ void FixedBaseSwingTestRunner::runRobotControl() {
             std::make_unique<LegSwingDynamicsProvider>(_robotType, _model, _params, _bindings);
         _robotRunner->init(&_params, _model->opt.timestep, &_userCommand);
         _firstControllerRun = false;
-        std::cout << _model->opt.timestep << std::endl;
     }
 
     fillCheaterState(_model, _data, _params, _bindings, _cheaterState);
@@ -141,13 +146,18 @@ void FixedBaseSwingTestRunner::runRobotControl() {
         _legSwingDynamicsProvider->update(_stateEstimate);
     }
 
-    _userCommand = _keyboardCommand.getUserCommand();
-
     _robotRunner->run(_stateEstimate, _robotCommand);
     applyRobotCommand();
+
+    if (!_torsoLocked && _robotRunner->initializationComplete()) {
+        cacheLockedBasePose();
+        _torsoLocked = true;
+        clampFloatingBase();
+        std::cout << "[LeftSwingHoldTest] torso lock engaged after initial pose convergence" << std::endl;
+    }
 }
 
-void FixedBaseSwingTestRunner::applyRobotCommand() {
+void LockedTorsoSwingRunner::applyRobotCommand() {
     if (_robotCommand.tau.size() != _model->nu) {
         throw std::runtime_error("RobotCommand torque dimension does not match model->nu");
     }
@@ -164,9 +174,10 @@ void FixedBaseSwingTestRunner::applyRobotCommand() {
     }
 }
 
-void FixedBaseSwingTestRunner::cacheFloatingBaseState() {
+void LockedTorsoSwingRunner::locateFloatingBase() {
     _freeJointQposIndex = -1;
     _freeJointQvelIndex = -1;
+
     for (int jointId = 0; jointId < _model->njnt; ++jointId) {
         if (_model->jnt_type[jointId] == mjJNT_FREE) {
             _freeJointQposIndex = _model->jnt_qposadr[jointId];
@@ -176,23 +187,21 @@ void FixedBaseSwingTestRunner::cacheFloatingBaseState() {
     }
 
     if (_freeJointQposIndex < 0 || _freeJointQvelIndex < 0) {
-        return;
+        throw std::runtime_error("LockedTorsoSwingRunner could not find a floating base joint");
     }
+}
 
+void LockedTorsoSwingRunner::cacheLockedBasePose() {
     for (int i = 0; i < 7; ++i) {
-        _fixedBaseQpos[static_cast<std::size_t>(i)] =
+        _lockedBaseQpos[static_cast<std::size_t>(i)] =
             static_cast<double>(_data->qpos[_freeJointQposIndex + i]);
     }
 }
 
-void FixedBaseSwingTestRunner::clampFloatingBase() {
-    if (_freeJointQposIndex < 0 || _freeJointQvelIndex < 0) {
-        return;
-    }
-
+void LockedTorsoSwingRunner::clampFloatingBase() {
     for (int i = 0; i < 7; ++i) {
         _data->qpos[_freeJointQposIndex + i] =
-            static_cast<mjtNum>(_fixedBaseQpos[static_cast<std::size_t>(i)]);
+            static_cast<mjtNum>(_lockedBaseQpos[static_cast<std::size_t>(i)]);
     }
     for (int i = 0; i < 6; ++i) {
         _data->qvel[_freeJointQvelIndex + i] = mjtNum(0);

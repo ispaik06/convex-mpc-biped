@@ -49,6 +49,11 @@ struct LoggingParameters {
     int gaitStatusInterval{50};
 };
 
+struct InitialPoseParameters {
+    std::vector<double> legJointOffsets{0.0, 0.0, -0.65, 0.80, -0.35};
+    std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
+};
+
 struct ControllerConfig {
     TimingParameters timing;
     ModelParameters model;
@@ -56,6 +61,7 @@ struct ControllerConfig {
     SwingParameters swing;
     FootPlacementParameters footPlacement;
     LoggingParameters logging;
+    InitialPoseParameters initialPose;
 };
 
 const ControllerConfig& getControllerConfig();

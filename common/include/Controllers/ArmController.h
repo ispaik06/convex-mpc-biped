@@ -20,12 +20,12 @@ struct ArmControllerCommand {
     Eigen::Index dof() const;
 
     DVec<T> tauFeedForward;
-    Vec3<T> forceFeedForward = Vec3<T>::Zero();
+    Vec3<T> forceFeedForward_W = Vec3<T>::Zero();
 
     DVec<T> qDes;
     DVec<T> qdDes;
-    Vec3<T> pDes = Vec3<T>::Zero();
-    Vec3<T> vDes = Vec3<T>::Zero();
+    Vec3<T> pDes_W = Vec3<T>::Zero();
+    Vec3<T> vDes_W = Vec3<T>::Zero();
 
     Mat3<T> kpCartesian = Mat3<T>::Zero();
     Mat3<T> kdCartesian = Mat3<T>::Zero();
@@ -48,9 +48,9 @@ struct ArmControllerData {
     DVec<T> q;
     DVec<T> qd;
 
-    Vec3<T> p = Vec3<T>::Zero();
-    Vec3<T> v = Vec3<T>::Zero();
-    DMat<T> J;
+    Vec3<T> p_W = Vec3<T>::Zero();
+    Vec3<T> v_W = Vec3<T>::Zero();
+    DMat<T> J_W;
 
     DVec<T> tauEstimate;
     bool hasCartesianData = false;
@@ -77,7 +77,7 @@ public:
 
     void setArmJointData(int arm, const DVec<T>& q, const DVec<T>& qd);
     void setArmTauEstimate(int arm, const DVec<T>& tauEstimate);
-    void setArmCartesianData(int arm, const Vec3<T>& p, const Vec3<T>& v, const DMat<T>& J);
+    void setArmCartesianData(int arm, const Vec3<T>& p_W, const Vec3<T>& v_W, const DMat<T>& J_W);
     void clearArmCartesianData(int arm);
 
     DVec<T> computeArmTorque(int arm) const;

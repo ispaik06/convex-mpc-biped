@@ -20,9 +20,9 @@ void ArmControllerCommand<T>::resize(Eigen::Index dof) {
     kpJoint.setZero(dof, dof);
     kdJoint.setZero(dof, dof);
 
-    forceFeedForward.setZero();
-    pDes.setZero();
-    vDes.setZero();
+    forceFeedForward_W.setZero();
+    pDes_W.setZero();
+    vDes_W.setZero();
     kpCartesian.setZero();
     kdCartesian.setZero();
 }
@@ -35,9 +35,9 @@ void ArmControllerCommand<T>::zero() {
     kpJoint.setZero(kpJoint.rows(), kpJoint.cols());
     kdJoint.setZero(kdJoint.rows(), kdJoint.cols());
 
-    forceFeedForward.setZero();
-    pDes.setZero();
-    vDes.setZero();
+    forceFeedForward_W.setZero();
+    pDes_W.setZero();
+    vDes_W.setZero();
     kpCartesian.setZero();
     kdCartesian.setZero();
 }
@@ -61,10 +61,10 @@ void ArmControllerData<T>::resize(Eigen::Index dof) {
     q.setZero(dof);
     qd.setZero(dof);
     tauEstimate.setZero(dof);
-    J.setZero(3, dof);
+    J_W.setZero(3, dof);
 
-    p.setZero();
-    v.setZero();
+    p_W.setZero();
+    v_W.setZero();
     hasCartesianData = false;
 }
 
@@ -73,10 +73,10 @@ void ArmControllerData<T>::zero() {
     q.setZero(q.size());
     qd.setZero(qd.size());
     tauEstimate.setZero(tauEstimate.size());
-    J.setZero(J.rows(), J.cols());
+    J_W.setZero(J_W.rows(), J_W.cols());
 
-    p.setZero();
-    v.setZero();
+    p_W.setZero();
+    v_W.setZero();
     hasCartesianData = false;
 }
 
@@ -171,20 +171,20 @@ void ArmController<T>::setArmTauEstimate(int arm, const DVec<T>& tauEstimate) {
 
 template <typename T>
 void ArmController<T>::setArmCartesianData(int arm,
-                                           const Vec3<T>& p,
-                                           const Vec3<T>& v,
-                                           const DMat<T>& J) {
+                                           const Vec3<T>& p_W,
+                                           const Vec3<T>& v_W,
+                                           const DMat<T>& J_W) {
     checkArmIndex(arm);
     const std::size_t idx = static_cast<std::size_t>(arm);
     const Eigen::Index dof = datas[idx].dof();
 
-    if (J.rows() != 3 || J.cols() != dof) {
+    if (J_W.rows() != 3 || J_W.cols() != dof) {
         throw std::invalid_argument("Arm Jacobian must be 3 x arm dof");
     }
 
-    datas[idx].p = p;
-    datas[idx].v = v;
-    datas[idx].J = J;
+    datas[idx].p_W = p_W;
+    datas[idx].v_W = v_W;
+    datas[idx].J_W = J_W;
     datas[idx].hasCartesianData = true;
 }
 
@@ -194,9 +194,9 @@ void ArmController<T>::clearArmCartesianData(int arm) {
     const std::size_t idx = static_cast<std::size_t>(arm);
     const Eigen::Index dof = datas[idx].dof();
 
-    datas[idx].p.setZero();
-    datas[idx].v.setZero();
-    datas[idx].J.setZero(3, dof);
+    datas[idx].p_W.setZero();
+    datas[idx].v_W.setZero();
+    datas[idx].J_W.setZero(3, dof);
     datas[idx].hasCartesianData = false;
 }
 
@@ -211,10 +211,10 @@ DVec<T> ArmController<T>::computeArmTorque(int arm) const {
     armTorque += commands[idx].kdJoint * (commands[idx].qdDes - datas[idx].qd);
 
     if (datas[idx].hasCartesianData) {
-        Vec3<T> handForce = commands[idx].forceFeedForward;
-        handForce += commands[idx].kpCartesian * (commands[idx].pDes - datas[idx].p);
-        handForce += commands[idx].kdCartesian * (commands[idx].vDes - datas[idx].v);
-        armTorque += datas[idx].J.transpose() * handForce;
+        Vec3<T> handForce_W = commands[idx].forceFeedForward_W;
+        handForce_W += commands[idx].kpCartesian * (commands[idx].pDes_W - datas[idx].p_W);
+        handForce_W += commands[idx].kdCartesian * (commands[idx].vDes_W - datas[idx].v_W);
+        armTorque += datas[idx].J_W.transpose() * handForce_W;
     }
 
     return armTorque;
@@ -310,7 +310,8 @@ void ArmController<T>::validateArmShape(std::size_t arm) const {
         throw std::invalid_argument("Arm data vector size does not match arm dof");
     }
 
-    if (datas[arm].hasCartesianData && (datas[arm].J.rows() != 3 || datas[arm].J.cols() != dof)) {
+    if (datas[arm].hasCartesianData &&
+        (datas[arm].J_W.rows() != 3 || datas[arm].J_W.cols() != dof)) {
         throw std::invalid_argument("Arm Jacobian size does not match Cartesian task shape");
     }
 }

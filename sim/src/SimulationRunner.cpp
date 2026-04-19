@@ -109,29 +109,32 @@ void SimulationRunner::runRobotControl() {
 		const auto robotSetup = setupRobotParams<double>(_robot, model);
 		_params = robotSetup.params;
 		_bindings = robotSetup.bindings;
-		updateReducedBodyMassPropertiesFromData(model, data, _bindings, _params);
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
 		_legSwingDynamicsProvider =
 			std::make_unique<LegSwingDynamicsProvider>(_robot, model, _params, _bindings);
 		_robotRunner->init(&_params, model->opt.timestep, &_userCommand);
 		_firstControllerRun = false;
+
 		std::cout << model->opt.timestep << std::endl;
 	}
+
+	// 매 제어 주기마다 동적인 상체 자세(팔 스윙 등)를 반영하여 SRB 모델 파라미터 업데이트
+	updateReducedBodyMassPropertiesFromData(model, data, _bindings, _params);
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
 	if (_legSwingDynamicsProvider) {
 		_legSwingDynamicsProvider->update(_stateEstimate);
-		}
-		_userCommand = _keyboardCommand.getUserCommand();
+	}
+	_userCommand = _keyboardCommand.getUserCommand();
 		// if ((_iterations % 50) == 0) {
 		// 	std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
 		// 			  << "  y_dot: " << _userCommand.y_dot
 		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
 		// }
-		_robotRunner->run(_stateEstimate, _robotCommand);
-		applyRobotCommand();
+	_robotRunner->run(_stateEstimate, _robotCommand);
+	applyRobotCommand();
 }
 
 void SimulationRunner::applyRobotCommand() {

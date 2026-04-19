@@ -23,6 +23,9 @@ public:
     void composeCommand(RobotCommand<double>& command) const;
     void run(const StateEstimate<double>& state, RobotCommand<double>& command);
     void finalizeStep();
+    bool legInitializationComplete() const;
+    bool armInitializationComplete() const;
+    bool initializationComplete() const;
 
     virtual ~RobotRunner() = default;
 
@@ -40,7 +43,9 @@ private:
     std::unique_ptr<ArmPosInitializer<double>> _armPosInitializer;
     JointPdGains<double> _legJointTrackingGains;
     JointPdGains<double> _armJointTrackingGains;
-    double _tiemstep;
+    bool _legInitializationComplete = false;
+    bool _armInitializationComplete = false;
+    double _timestep;
     u64 _iterations = 0;
 };
 

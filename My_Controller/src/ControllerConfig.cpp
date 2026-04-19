@@ -14,6 +14,24 @@ void readScalarIfPresent(const YAML::Node& node, const char* key, T& value) {
     }
 }
 
+template <typename T>
+void readVectorIfPresent(const YAML::Node& node, const char* key, std::vector<T>& values) {
+    if (!node || !node[key]) {
+        return;
+    }
+
+    const YAML::Node valuesNode = node[key];
+    if (!valuesNode.IsSequence()) {
+        throw std::runtime_error(std::string("Expected YAML sequence for key ") + key);
+    }
+
+    values.clear();
+    values.reserve(valuesNode.size());
+    for (std::size_t idx = 0; idx < valuesNode.size(); ++idx) {
+        values.push_back(valuesNode[idx].as<T>());
+    }
+}
+
 template <typename Derived>
 void fillDiagonal(Eigen::MatrixBase<Derived>& matrix,
                   const YAML::Node& diagonalNode,
@@ -105,6 +123,10 @@ ControllerConfig loadControllerConfigFromYaml() {
 
     const YAML::Node logging = config["logging"];
     readScalarIfPresent(logging, "gait_status_interval", params.logging.gaitStatusInterval);
+
+    const YAML::Node initialPose = config["initial_pose"];
+    readVectorIfPresent(initialPose, "leg_joint_offsets", params.initialPose.legJointOffsets);
+    readVectorIfPresent(initialPose, "arm_joint_offsets", params.initialPose.armJointOffsets);
 
     if (params.timing.cycle <= 0.0 || params.timing.swing <= 0.0 || params.timing.stance <= 0.0 ||
         params.timing.horizon <= 0.0 || params.timing.horizonSteps <= 0) {

@@ -27,14 +27,14 @@ struct LegControllerCommand {
 
     LegControlMode mode = LegControlMode::JointPd;
     DVec<T> tauFeedForward;
-    Vec3<T> forceFeedForward = Vec3<T>::Zero();
-    Vec3<T> momentFeedForward = Vec3<T>::Zero();
+    Vec3<T> forceFeedForward_W = Vec3<T>::Zero();
+    Vec3<T> momentFeedForward_W = Vec3<T>::Zero();
 
     DVec<T> qDes;
     DVec<T> qdDes;
-    Vec3<T> pDes = Vec3<T>::Zero();
-    Vec3<T> vDes = Vec3<T>::Zero();
-    Vec3<T> aDes = Vec3<T>::Zero();
+    Vec3<T> pDes_W = Vec3<T>::Zero();
+    Vec3<T> vDes_W = Vec3<T>::Zero();
+    Vec3<T> aDes_W = Vec3<T>::Zero();
 
     Mat3<T> kpCartesian = Mat3<T>::Zero();
     Mat3<T> kdCartesian = Mat3<T>::Zero();
@@ -57,11 +57,11 @@ struct LegControllerData {
     DVec<T> q;
     DVec<T> qd;
 
-    Vec3<T> pWorld = Vec3<T>::Zero();
-    Vec3<T> vWorld = Vec3<T>::Zero();
-    DMat<T> JvWorld;
-    DMat<T> JvDotWorld;
-    DMat<T> JwWorld;
+    Vec3<T> p_W = Vec3<T>::Zero();
+    Vec3<T> v_W = Vec3<T>::Zero();
+    DMat<T> Jv_W;
+    DMat<T> JvDot_W;
+    DMat<T> Jw_W;
     DMat<T> massMatrix;
     DVec<T> bias;
 
@@ -92,11 +92,11 @@ public:
     void setLegJointData(int leg, const DVec<T>& q, const DVec<T>& qd);
     void setLegTauEstimate(int leg, const DVec<T>& tauEstimate);
     void setLegCartesianData(int leg,
-                             const Vec3<T>& pWorld,
-                             const Vec3<T>& vWorld,
-                             const DMat<T>& JvWorld,
-                             const DMat<T>& JvDotWorld,
-                             const DMat<T>& JwWorld);
+                             const Vec3<T>& p_W,
+                             const Vec3<T>& v_W,
+                             const DMat<T>& Jv_W,
+                             const DMat<T>& JvDot_W,
+                             const DMat<T>& Jw_W);
     void setLegDynamicsData(int leg, const DMat<T>& massMatrix, const DVec<T>& bias);
     void clearLegCartesianData(int leg);
     void clearLegDynamicsData(int leg);

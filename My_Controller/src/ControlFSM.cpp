@@ -32,11 +32,11 @@ DesiredFootPositions ControlFSM::SwingFootDesPos() {
     const Mat3<double> R_WB = Rz(psi);
     const Mat3<double> R_BW = R_WB.transpose();
 
-    const Vec3<double> bodyComOffset_W =
-        _stateEstimate->baseQuat.toRotationMatrix() * _robotParams->bodyComLocation;
-    const Vec3<double> p_com_W = _stateEstimate->basePos + bodyComOffset_W;
+    const Vec3<double> bodyComOffset_W = R_WB * _robotParams->bodyComLocation;
+    const Vec3<double> p_com_W = _stateEstimate->torsoPos_W + bodyComOffset_W;
+    const Vec3<double> yawAngularVelocityWorld(0.0, 0.0, _stateEstimate->torsoAngVel_W.z());
     const Vec3<double> v_com_W =
-        _stateEstimate->baseLinVel + _stateEstimate->baseAngVel.cross(bodyComOffset_W);
+        _stateEstimate->torsoLinVel_W + yawAngularVelocityWorld.cross(bodyComOffset_W);
     const Vec3<double> u_com_B = R_BW * v_com_W;
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const double z_com = p_com_W[2];
@@ -55,14 +55,17 @@ DesiredFootPositions ControlFSM::SwingFootDesPos() {
         }
 
         if (_gaitScheduler->c(side, time)) {
-            return _stateEstimate->legs[legIndex].footPosWorld;
+            return _stateEstimate->legs[legIndex].footPos_W;
         }
 
         const double phase = _gaitScheduler->p(side, time);
         const double T_rem = std::max(cycleTime() * (1.0 - phase), 0.0);
 
-        Vec3<double> p_nom_B =
-            _robotParams->legs[legIndex].hipLocation_from_body - _robotParams->bodyComLocation;
+        const Vec3<double> hipWorld =
+            _stateEstimate->torsoPos_W +
+            _stateEstimate->torsoQuat_W.toRotationMatrix() *
+                _robotParams->legs[legIndex].hipLocationFromBody;
+        Vec3<double> p_nom_B = R_BW * (hipWorld - p_com_W);
         p_nom_B[1] += (side == Side::Left ? 1.0 : -1.0) * footPlacement.nominalLateralOffset;
 
         const double yaw_correction = psi_dot * stanceTime() / 2.0;

@@ -184,12 +184,12 @@ void fillCheaterState(const mjModel* model,
     }
 
     cheater_state.time = data->time;
-    cheater_state.basePos = readBodyPosition(data, bindings.baseBodyId);
-    cheater_state.baseQuat = readBodyQuaternion(data, bindings.baseBodyId);
-    cheater_state.baseLinVel = readBodyLinearVelocity(model, data, bindings.baseBodyId);
-    cheater_state.baseAngVel = readBodyAngularVelocity(model, data, bindings.baseBodyId);
-    cheater_state.baseLinAcc = readBodyLinearAcceleration(model, data, bindings.baseBodyId);
-    cheater_state.baseAngAcc = readBodyAngularAcceleration(model, data, bindings.baseBodyId);
+    cheater_state.torsoPos_W = readBodyPosition(data, bindings.torsoBodyId);
+    cheater_state.torsoQuat_W = readBodyQuaternion(data, bindings.torsoBodyId);
+    cheater_state.torsoLinVel_W = readBodyLinearVelocity(model, data, bindings.torsoBodyId);
+    cheater_state.torsoAngVel_W = readBodyAngularVelocity(model, data, bindings.torsoBodyId);
+    cheater_state.torsoLinAcc_W = readBodyLinearAcceleration(model, data, bindings.torsoBodyId);
+    cheater_state.torsoAngAcc_W = readBodyAngularAcceleration(model, data, bindings.torsoBodyId);
     copyContiguous(data->qvel, model->nv, cheater_state.dynamics.qd, "qvel");
     copyContiguous(data->qfrc_bias, model->nv, cheater_state.dynamics.bias, "qfrc_bias");
     readDenseMassMatrix(model, data, cheater_state.dynamics.massMatrix);
@@ -204,8 +204,8 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
-        leg_state.footPosWorld = readBodyComPosition(data, foot.bodyId);
-        leg_state.footVelWorld = readBodyLinearVelocity(model, data, foot.bodyId);
+        leg_state.footPos_W = readBodyComPosition(data, foot.bodyId);
+        leg_state.footVel_W = readBodyLinearVelocity(model, data, foot.bodyId);
         leg_state.hasFootKinematics = true;
         leg_state.hasLegDynamics = false;
     }
@@ -220,8 +220,8 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, arm_state.tauEstimate);
-        arm_state.handPosWorld = readEndEffectorPosition(data, hand.siteId, hand.bodyId);
-        arm_state.handVelWorld =
+        arm_state.handPos_W = readEndEffectorPosition(data, hand.siteId, hand.bodyId);
+        arm_state.handVel_W =
             readEndEffectorVelocity(model, data, hand.siteId, hand.bodyId);
     }
 }

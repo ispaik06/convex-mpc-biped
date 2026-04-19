@@ -42,7 +42,7 @@ void SwingLegTestController::initializeRuntime() {
     _legs.resize(_robotParams->legs.size());
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
         auto& runtime = _legs[leg];
-        runtime.centerFootPosition = _stateEstimate->legs[leg].footPosWorld;
+        runtime.centerFootPosition = _stateEstimate->legs[leg].footPos_W;
         runtime.nominalFootFromCom = runtime.centerFootPosition - comWorld;
     }
     resetTrajectories();
@@ -59,7 +59,7 @@ Vec3<double> SwingLegTestController::reducedBodyComWorld() const {
         throw std::runtime_error("SwingLegTestController requires state and params for reduced COM");
     }
 
-    return _stateEstimate->basePos + _stateEstimate->baseQuat.toRotationMatrix() * _robotParams->bodyComLocation;
+    return _stateEstimate->torsoPos_W + Rz(_stateEstimate->psi) * _robotParams->bodyComLocation;
 }
 
 Vec3<double> SwingLegTestController::touchdownTargetWorld(const std::size_t legIndex) const {
@@ -89,7 +89,7 @@ Vec3<double> SwingLegTestController::touchdownTargetWorld(const std::size_t legI
 
 void SwingLegTestController::resetTrajectories() {
     for (std::size_t leg = 0; leg < _legs.size(); ++leg) {
-        const Vec3<double>& currentFootPosition = _stateEstimate->legs[leg].footPosWorld;
+        const Vec3<double>& currentFootPosition = _stateEstimate->legs[leg].footPos_W;
         _legs[leg].trajectory.reset(
             currentFootPosition, touchdownTargetWorld(leg), _swingHeight, _swingDuration);
     }
@@ -101,11 +101,11 @@ void SwingLegTestController::configureSwingLeg(const std::size_t legIndex) {
 
     command.mode = LegControlMode::SwingFoot;
     command.tauFeedForward.setZero(command.dof());
-    command.forceFeedForward.setZero();
-    command.momentFeedForward.setZero();
-    command.pDes = runtime.trajectory.position();
-    command.vDes = runtime.trajectory.velocity();
-    command.aDes = runtime.trajectory.acceleration();
+    command.forceFeedForward_W.setZero();
+    command.momentFeedForward_W.setZero();
+    command.pDes_W = runtime.trajectory.position();
+    command.vDes_W = runtime.trajectory.velocity();
+    command.aDes_W = runtime.trajectory.acceleration();
     command.kpCartesian = _swingKp;
     command.kdCartesian = _swingKd;
 }
@@ -122,7 +122,7 @@ void SwingLegTestController::printStatus() const {
 
     for (std::size_t leg = 0; leg < _legs.size(); ++leg) {
         const auto& desired = _legs[leg].trajectory.position();
-        const auto& actual = _stateEstimate->legs[leg].footPosWorld;
+        const auto& actual = _stateEstimate->legs[leg].footPos_W;
         std::cout << "  leg " << leg
                   << " p_des: " << desired.transpose()
                   << " | p_act: " << actual.transpose() << std::endl;
@@ -145,7 +145,7 @@ void SwingLegTestController::runController() {
         auto& runtime = _legs[leg];
         if (!runtime.trajectory.active()) {
             runtime.trajectory.reset(
-                _stateEstimate->legs[leg].footPosWorld,
+                _stateEstimate->legs[leg].footPos_W,
                 touchdownTargetWorld(leg),
                 _swingHeight,
                 _swingDuration);

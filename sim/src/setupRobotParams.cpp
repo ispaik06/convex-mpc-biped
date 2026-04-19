@@ -7,6 +7,7 @@
 
 #include "setupRobotParams.h"
 #include "models/RobotMujocoSpec.h"
+#include "Utilities/MatrixUtils.h"
 
 namespace {
 std::string asString(std::string_view value) {
@@ -42,23 +43,23 @@ void fillDefaultQpos(const mjModel* model, RobotParams<T>& params) {
 
 template <typename T>
 void fillBodyMassProperties(const mjModel* model,
-                            std::string_view baseBodyName,
+                            std::string_view torsoBodyName,
                             RobotParams<T>& params,
                             MujocoRobotBindings& bindings) {
     params.bodyMass = T(0);
     for (int i = 1; i < model->nbody; ++i) {
         params.bodyMass += static_cast<T>(model->body_mass[i]);
     }
-    const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
-    bindings.baseBodyId = baseBodyId;
+    const int torsoBodyId = requireId<T>(model, mjOBJ_BODY, torsoBodyName, "base body");
+    bindings.torsoBodyId = torsoBodyId;
 
     params.bodyInertia.setZero();
-    params.bodyInertia(0, 0) = static_cast<T>(model->body_inertia[3 * baseBodyId + 0]);
-    params.bodyInertia(1, 1) = static_cast<T>(model->body_inertia[3 * baseBodyId + 1]);
-    params.bodyInertia(2, 2) = static_cast<T>(model->body_inertia[3 * baseBodyId + 2]);
-    params.bodyComLocation << static_cast<T>(model->body_ipos[3 * baseBodyId + 0]),
-        static_cast<T>(model->body_ipos[3 * baseBodyId + 1]),
-        static_cast<T>(model->body_ipos[3 * baseBodyId + 2]);
+    params.bodyInertia(0, 0) = static_cast<T>(model->body_inertia[3 * torsoBodyId + 0]);
+    params.bodyInertia(1, 1) = static_cast<T>(model->body_inertia[3 * torsoBodyId + 1]);
+    params.bodyInertia(2, 2) = static_cast<T>(model->body_inertia[3 * torsoBodyId + 2]);
+    params.bodyComLocation << static_cast<T>(model->body_ipos[3 * torsoBodyId + 0]),
+        static_cast<T>(model->body_ipos[3 * torsoBodyId + 1]),
+        static_cast<T>(model->body_ipos[3 * torsoBodyId + 2]);
 }
 
 template <typename T>
@@ -139,7 +140,7 @@ void fillLeg(const mjModel* model,
     foot_binding.rootBodyId = firstJointBodyId<T>(model, spec.joints);
     foot_binding.bodyId = requireId<T>(model, mjOBJ_BODY, spec.endBody, "foot body");
     foot_binding.siteId = optionalId<T>(model, mjOBJ_SITE, spec.endSite);
-    leg.hipLocation_from_body = firstJointLocationFromBase<T>(model, spec.joints);
+    leg.hipLocationFromBody = firstJointLocationFromBase<T>(model, spec.joints);
 }
 
 template <typename T>
@@ -156,26 +157,122 @@ void fillArm(const mjModel* model,
 
 template <typename T>
 void fillReducedBodyMassProperties(const mjModel* model,
-                                   std::string_view baseBodyName,
+                                   std::string_view torsoBodyName,
                                    const MujocoRobotBindings& bindings,
                                    RobotParams<T>& params) {
-    const int baseBodyId = requireId<T>(model, mjOBJ_BODY, baseBodyName, "base body");
+    const int torsoBodyId = requireId<T>(model, mjOBJ_BODY, torsoBodyName, "base body");
 
-    params.bodyMass = T(0);
+    T upperBodyMass = T(0);
+    Vec3<T> upperBodyCom_B = Vec3<T>::Zero();
+
+    // Sum torso + arms in the torso-root frame at q = 0.
     for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
-        if (!isInLegSubtree<T>(model, bindings, bodyId)) {
-            params.bodyMass += static_cast<T>(model->body_mass[bodyId]);
+        if (isInLegSubtree<T>(model, bindings, bodyId)) {
+            continue;
         }
+
+        const T mass = static_cast<T>(model->body_mass[bodyId]);
+        if (mass <= T(0)) {
+            continue;
+        }
+
+        // 기구학 트리를 거슬러 올라가며 기본(q=0) 상태에서의 Base 대비 상대 변환(Transform) 계산
+        Vec3<T> offsetBody = Vec3<T>::Zero();
+        Mat3<T> rotBody = Mat3<T>::Identity();
+        int curr = bodyId;
+        while (curr > 0 && curr != torsoBodyId) {
+            Vec3<T> p(static_cast<T>(model->body_pos[3 * curr + 0]),
+                      static_cast<T>(model->body_pos[3 * curr + 1]),
+                      static_cast<T>(model->body_pos[3 * curr + 2]));
+            Quat<T> q(static_cast<T>(model->body_quat[4 * curr + 0]),
+                      static_cast<T>(model->body_quat[4 * curr + 1]),
+                      static_cast<T>(model->body_quat[4 * curr + 2]),
+                      static_cast<T>(model->body_quat[4 * curr + 3]));
+            Mat3<T> R = q.toRotationMatrix();
+
+            offsetBody = p + R * offsetBody;
+            rotBody = R * rotBody;
+
+            curr = model->body_parentid[curr];
+        }
+
+        Vec3<T> ipos(static_cast<T>(model->body_ipos[3 * bodyId + 0]),
+                     static_cast<T>(model->body_ipos[3 * bodyId + 1]),
+                     static_cast<T>(model->body_ipos[3 * bodyId + 2]));
+
+        const Vec3<T> comBody_B = offsetBody + rotBody * ipos;
+
+        upperBodyMass += mass;
+        upperBodyCom_B += mass * comBody_B;
     }
 
-    // TODO: replace this torso-only inertia with a torso+arms composite inertia.
-    params.bodyInertia.setZero();
-    params.bodyInertia(0, 0) = static_cast<T>(model->body_inertia[3 * baseBodyId + 0]);
-    params.bodyInertia(1, 1) = static_cast<T>(model->body_inertia[3 * baseBodyId + 1]);
-    params.bodyInertia(2, 2) = static_cast<T>(model->body_inertia[3 * baseBodyId + 2]);
-    params.bodyComLocation << static_cast<T>(model->body_ipos[3 * baseBodyId + 0]),
-        static_cast<T>(model->body_ipos[3 * baseBodyId + 1]),
-        static_cast<T>(model->body_ipos[3 * baseBodyId + 2]);
+    if (upperBodyMass > T(0)) {
+        upperBodyCom_B /= upperBodyMass;
+    }
+
+    Mat3<T> upperBodyInertia_B = Mat3<T>::Zero();
+
+    for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
+        if (isInLegSubtree<T>(model, bindings, bodyId)) {
+            continue;
+        }
+
+        const T mass = static_cast<T>(model->body_mass[bodyId]);
+        if (mass <= T(0)) {
+            continue;
+        }
+
+        Vec3<T> offsetBody = Vec3<T>::Zero();
+        Mat3<T> rotBody = Mat3<T>::Identity();
+        int curr = bodyId;
+        while (curr > 0 && curr != torsoBodyId) {
+            Vec3<T> p(static_cast<T>(model->body_pos[3 * curr + 0]),
+                      static_cast<T>(model->body_pos[3 * curr + 1]),
+                      static_cast<T>(model->body_pos[3 * curr + 2]));
+            Quat<T> q(static_cast<T>(model->body_quat[4 * curr + 0]),
+                      static_cast<T>(model->body_quat[4 * curr + 1]),
+                      static_cast<T>(model->body_quat[4 * curr + 2]),
+                      static_cast<T>(model->body_quat[4 * curr + 3]));
+            Mat3<T> R = q.toRotationMatrix();
+
+            offsetBody = p + R * offsetBody;
+            rotBody = R * rotBody;
+
+            curr = model->body_parentid[curr];
+        }
+
+        Vec3<T> ipos(static_cast<T>(model->body_ipos[3 * bodyId + 0]),
+                     static_cast<T>(model->body_ipos[3 * bodyId + 1]),
+                     static_cast<T>(model->body_ipos[3 * bodyId + 2]));
+        Quat<T> iquat(static_cast<T>(model->body_iquat[4 * bodyId + 0]),
+                      static_cast<T>(model->body_iquat[4 * bodyId + 1]),
+                      static_cast<T>(model->body_iquat[4 * bodyId + 2]),
+                      static_cast<T>(model->body_iquat[4 * bodyId + 3]));
+
+        const Vec3<T> comBody_B = offsetBody + rotBody * ipos;
+        const Mat3<T> R_i = rotBody * iquat.toRotationMatrix();
+
+        Mat3<T> I_diag = Mat3<T>::Zero();
+        I_diag(0, 0) = static_cast<T>(model->body_inertia[3 * bodyId + 0]);
+        I_diag(1, 1) = static_cast<T>(model->body_inertia[3 * bodyId + 1]);
+        I_diag(2, 2) = static_cast<T>(model->body_inertia[3 * bodyId + 2]);
+
+        const Mat3<T> I_body_B = R_i * I_diag * R_i.transpose();
+        const Vec3<T> offset_B = comBody_B - upperBodyCom_B;
+
+        // Parallel axis theorem about the reduced COM in the torso-root frame.
+        upperBodyInertia_B += I_body_B +
+            mass * ((offset_B.squaredNorm() * Mat3<T>::Identity()) - (offset_B * offset_B.transpose()));
+    }
+
+    params.bodyMass = upperBodyMass;
+    params.bodyComLocation = upperBodyCom_B;
+    params.bodyInertia = upperBodyInertia_B;
+}
+
+template <typename T>
+T yawFromRotationMatrix(const Mat3<T>& R_WT) {
+    return std::atan2(R_WT(1, 0), R_WT(0, 0));
 }
 
 template <typename T>
@@ -189,8 +286,8 @@ MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMu
     params.nu = model->nu;
 
     fillDefaultQpos(model, params);
-    const int baseBodyId = requireId<T>(model, mjOBJ_BODY, spec.baseBody, "base body");
-    bindings.baseBodyId = baseBodyId;
+    const int torsoBodyId = requireId<T>(model, mjOBJ_BODY, spec.baseBody, "base body");
+    bindings.torsoBodyId = torsoBodyId;
 
     params.legs.reserve(spec.legs.size());
     bindings.feet.reserve(spec.legs.size());
@@ -237,12 +334,12 @@ void updateReducedBodyMassPropertiesFromData(const mjModel_* modelPtr,
     if (model == nullptr || data == nullptr) {
         throw std::runtime_error("updateReducedBodyMassPropertiesFromData received null MuJoCo pointers");
     }
-    if (bindings.baseBodyId < 0) {
+    if (bindings.torsoBodyId < 0) {
         throw std::runtime_error("updateReducedBodyMassPropertiesFromData requires a valid base body binding");
     }
 
-    T reducedMass = T(0);
-    Vec3<T> reducedComWorld = Vec3<T>::Zero();
+    T upperBodyMass = T(0);
+    Vec3<T> upperBodyCom_W = Vec3<T>::Zero();
 
     for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
         if (isInLegSubtree<T>(model, bindings, bodyId)) {
@@ -259,16 +356,16 @@ void updateReducedBodyMassPropertiesFromData(const mjModel_* modelPtr,
             bodyComWorld[i] = static_cast<T>(data->xipos[3 * bodyId + i]);
         }
 
-        reducedMass += bodyMass;
-        reducedComWorld += bodyMass * bodyComWorld;
+        upperBodyMass += bodyMass;
+        upperBodyCom_W += bodyMass * bodyComWorld;
     }
 
-    if (reducedMass <= T(0)) {
+    if (upperBodyMass <= T(0)) {
         throw std::runtime_error("Reduced-body mass must be positive");
     }
-    reducedComWorld /= reducedMass;
+    upperBodyCom_W /= upperBodyMass;
 
-    Mat3<T> reducedInertiaWorld = Mat3<T>::Zero();
+    Mat3<T> upperBodyInertia_W = Mat3<T>::Zero();
     for (int bodyId = 1; bodyId < model->nbody; ++bodyId) {
         if (isInLegSubtree<T>(model, bindings, bodyId)) {
             continue;
@@ -299,26 +396,28 @@ void updateReducedBodyMassPropertiesFromData(const mjModel_* modelPtr,
         for (int i = 0; i < 3; ++i) {
             bodyComWorld[i] = static_cast<T>(data->xipos[3 * bodyId + i]);
         }
-        const Vec3<T> offset = bodyComWorld - reducedComWorld;
+        const Vec3<T> offset_W = bodyComWorld - upperBodyCom_W;
 
-        reducedInertiaWorld += bodyInertiaWorld +
-            bodyMass * ((offset.squaredNorm() * Mat3<T>::Identity()) - (offset * offset.transpose()));
+        upperBodyInertia_W += bodyInertiaWorld +
+            bodyMass * ((offset_W.squaredNorm() * Mat3<T>::Identity()) - (offset_W * offset_W.transpose()));
     }
 
-    Mat3<T> baseRotationWorld = Mat3<T>::Zero();
-    Vec3<T> basePosWorld = Vec3<T>::Zero();
+    Mat3<T> R_WT = Mat3<T>::Zero();
+    Vec3<T> torsoPos_W = Vec3<T>::Zero();
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 3; ++col) {
-            baseRotationWorld(row, col) =
-                static_cast<T>(data->xmat[9 * bindings.baseBodyId + 3 * row + col]);
+        R_WT(row, col) =
+                static_cast<T>(data->xmat[9 * bindings.torsoBodyId + 3 * row + col]);
         }
-        basePosWorld[row] = static_cast<T>(data->xpos[3 * bindings.baseBodyId + row]);
+        torsoPos_W[row] = static_cast<T>(data->xpos[3 * bindings.torsoBodyId + row]);
     }
-    const Mat3<T> baseRotationBody = baseRotationWorld.transpose();
+    const T psi = yawFromRotationMatrix(R_WT);
+    const Mat3<T> R_WB = Rz(psi);
+    const Mat3<T> R_BW = R_WB.transpose();
 
-    params.bodyMass = reducedMass;
-    params.bodyInertia = baseRotationBody * reducedInertiaWorld * baseRotationWorld;
-    params.bodyComLocation = baseRotationBody * (reducedComWorld - basePosWorld);
+    params.bodyMass = upperBodyMass;
+    params.bodyInertia = R_BW * upperBodyInertia_W * R_WB;
+    params.bodyComLocation = R_BW * (upperBodyCom_W - torsoPos_W);
 }
 
 template void updateReducedBodyMassPropertiesFromData<float>(
