@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 #include "Controllers/LegController.h"
+#include "Dynamics/OperationalSpaceDynamics.h"
 
 Mat3<double> LeftSwingHoldController::makeDiagonal(const double x,
                                                    const double y,
@@ -55,7 +56,7 @@ void LeftSwingHoldController::initializeRuntime() {
     _swingDuration = swingTime();
     _holdDuration = stanceTime();
     _swingHeight = std::max(config.swing.height, 0.06);
-    _swingKp = makeDiagonal(config.swing.kpDiag[0], config.swing.kpDiag[1], config.swing.kpDiag[2]);
+    _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
 
     _phase = Phase::Swing;
@@ -120,6 +121,7 @@ void LeftSwingHoldController::configureJointHold(const int legIndex, const DVec<
 
 void LeftSwingHoldController::configureSwingLeg(const int legIndex) {
     auto& command = _legController->commands[static_cast<std::size_t>(legIndex)];
+    const auto& legData = _legController->datas[static_cast<std::size_t>(legIndex)];
 
     command.mode = LegControlMode::SwingFoot;
     command.tauFeedForward.setZero(command.dof());
@@ -129,10 +131,11 @@ void LeftSwingHoldController::configureSwingLeg(const int legIndex) {
     command.qdDes.setZero(command.dof());
     command.kpJoint.setZero(command.dof(), command.dof());
     command.kdJoint.setZero(command.dof(), command.dof());
+    command.kpCartesian =
+        computeSwingCartesianKp(legData.Jv_W, legData.massMatrix, _swingNaturalFrequency);
     command.pDes_W = _leftSwingTrajectory.position();
     command.vDes_W = _leftSwingTrajectory.velocity();
     command.aDes_W = _leftSwingTrajectory.acceleration();
-    command.kpCartesian = _swingKp;
     command.kdCartesian = _swingKd;
 }
 

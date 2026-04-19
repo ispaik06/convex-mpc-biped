@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 #include "Controllers/LegController.h"
+#include "Dynamics/OperationalSpaceDynamics.h"
 #include "Utilities/MatrixUtils.h"
 
 Mat3<double> SwingLegTestController::makeDiagonal(const double x,
@@ -35,7 +36,7 @@ void SwingLegTestController::initializeRuntime() {
     const auto& config = getControllerConfig();
     _swingDuration = swingTime();
     _swingHeight = std::max(config.swing.height, 0.08);
-    _swingKp = makeDiagonal(config.swing.kpDiag[0], config.swing.kpDiag[1], config.swing.kpDiag[2]);
+    _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
 
     const Vec3<double> comWorld = reducedBodyComWorld();
@@ -98,15 +99,16 @@ void SwingLegTestController::resetTrajectories() {
 void SwingLegTestController::configureSwingLeg(const std::size_t legIndex) {
     auto& command = _legController->commands[legIndex];
     const auto& runtime = _legs[legIndex];
+    const auto& legData = _legController->datas[legIndex];
 
     command.mode = LegControlMode::SwingFoot;
     command.tauFeedForward.setZero(command.dof());
     command.forceFeedForward_W.setZero();
     command.momentFeedForward_W.setZero();
+    command.kpCartesian = computeSwingCartesianKp(legData.Jv_W, legData.massMatrix, _swingNaturalFrequency);
     command.pDes_W = runtime.trajectory.position();
     command.vDes_W = runtime.trajectory.velocity();
     command.aDes_W = runtime.trajectory.acceleration();
-    command.kpCartesian = _swingKp;
     command.kdCartesian = _swingKd;
 }
 

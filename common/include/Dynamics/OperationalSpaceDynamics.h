@@ -7,6 +7,11 @@ template <typename T>
 DMat<T> computeApparentInertia(const DMat<T>& Jv_W, const DMat<T>& massMatrix);
 
 template <typename T>
+Mat3<T> computeSwingCartesianKp(const DMat<T>& Jv_W,
+                               const DMat<T>& massMatrix,
+                               const Vec3<T>& naturalFrequency);
+
+template <typename T>
 DVec<T> computeSwingLegJointTorque(const DMat<T>& Jv_W,
                                    const DMat<T>& JvDot_W,
                                    const DMat<T>& massMatrix,

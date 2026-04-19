@@ -42,7 +42,7 @@ private:
     Vec3<double> _leftHoldFootWorld = Vec3<double>::Zero();
     SwingFootTrajectory _leftSwingTrajectory;
     JointPdGains<double> _jointHoldGains;
-    Mat3<double> _swingKp = Mat3<double>::Zero();
+    Vec3<double> _swingNaturalFrequency = Vec3<double>::Zero();
     Mat3<double> _swingKd = Mat3<double>::Zero();
     double _swingDuration{0.8};
     double _holdDuration{0.8};

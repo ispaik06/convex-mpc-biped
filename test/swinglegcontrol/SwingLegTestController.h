@@ -37,7 +37,7 @@ private:
     double _lastTime{0.0};
     double _swingDuration{0.8};
     double _swingHeight{0.06};
-    Mat3<double> _swingKp = Mat3<double>::Zero();
+    Vec3<double> _swingNaturalFrequency = Vec3<double>::Zero();
     Mat3<double> _swingKd = Mat3<double>::Zero();
     u64 _iteration{0};
 };

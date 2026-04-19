@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "Controllers/LegController.h"
+#include "Dynamics/OperationalSpaceDynamics.h"
 #include "Utilities/MatrixUtils.h"
 
 namespace {
@@ -93,7 +94,7 @@ void MyController::initializeRuntimeObjects() {
     _convexMPC = std::make_unique<ConvexMPC>();
 
     const auto& config = getControllerConfig();
-    _swingKp = makeDiagonal(config.swing.kpDiag[0], config.swing.kpDiag[1], config.swing.kpDiag[2]);
+    _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
     _swingHeight = config.swing.height;
     _iterationsBetweenMpc = static_cast<u64>(std::max(config.mpc.iterationsBetweenSolve, 1));
@@ -294,10 +295,13 @@ void MyController::writeLegCommands() {
         }
 
         command.mode = LegControlMode::SwingFoot;
+        command.kpCartesian = computeSwingCartesianKp(
+            _legController->datas[leg].Jv_W,
+            _legController->datas[leg].massMatrix,
+            _swingNaturalFrequency);
         command.pDes_W = _legRuntime[leg].swingTrajectory.position();
         command.vDes_W = _legRuntime[leg].swingTrajectory.velocity();
         command.aDes_W = _legRuntime[leg].swingTrajectory.acceleration();
-        command.kpCartesian = _swingKp;
         command.kdCartesian = _swingKd;
     }
 }

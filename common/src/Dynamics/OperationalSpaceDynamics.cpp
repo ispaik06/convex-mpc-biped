@@ -46,6 +46,18 @@ DMat<T> computeApparentInertia(const DMat<T>& Jv_W, const DMat<T>& massMatrix) {
 }
 
 template <typename T>
+Mat3<T> computeSwingCartesianKp(const DMat<T>& Jv_W,
+                                const DMat<T>& massMatrix,
+                                const Vec3<T>& naturalFrequency) {
+    const DMat<T> lambda = computeApparentInertia(Jv_W, massMatrix);
+
+    Mat3<T> kp = Mat3<T>::Zero();
+    kp.diagonal() =
+        naturalFrequency.array().square() * lambda.diagonal().array();
+    return kp;
+}
+
+template <typename T>
 DVec<T> computeSwingLegJointTorque(const DMat<T>& Jv_W,
                                    const DMat<T>& JvDot_W,
                                    const DMat<T>& massMatrix,
@@ -83,6 +95,13 @@ DVec<T> computeStanceLegJointTorque(const DMat<T>& Jv_W,
 
 template DMat<float> computeApparentInertia(const DMat<float>&, const DMat<float>&);
 template DMat<double> computeApparentInertia(const DMat<double>&, const DMat<double>&);
+
+template Mat3<float> computeSwingCartesianKp(const DMat<float>&,
+                                             const DMat<float>&,
+                                             const Vec3<float>&);
+template Mat3<double> computeSwingCartesianKp(const DMat<double>&,
+                                              const DMat<double>&,
+                                              const Vec3<double>&);
 
 template DVec<float> computeSwingLegJointTorque(const DMat<float>&,
                                                 const DMat<float>&,

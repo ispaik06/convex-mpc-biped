@@ -31,7 +31,7 @@ struct MPCParameters {
 };
 
 struct SwingParameters {
-    Vec3<double> kpDiag = Vec3<double>(300.0, 300.0, 220.0);
+    Vec3<double> naturalFrequency = Vec3<double>(10.0, 10.0, 10.0);
     Vec3<double> kdDiag = Vec3<double>(15.0, 15.0, 18.0);
     double height{0.06};
     double minRemainingTime{1e-3};

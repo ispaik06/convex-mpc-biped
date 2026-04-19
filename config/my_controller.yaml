@@ -22,7 +22,7 @@ mpc:
   input_weight_diag: [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
 
 swing:
-  kp_diag: [100.0, 100.0, 120.0]
+  natural_frequency: [10.0, 10.0, 10.9544511501]
   kd_diag: [15.0, 15.0, 18.0]
   height: 0.06
   min_remaining_time: 0.001

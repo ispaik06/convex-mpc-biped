@@ -56,7 +56,7 @@ private:
 	std::unique_ptr<ConvexMPC> _convexMPC;
 	ReferenceTrajectoryOutput _referenceTrajectoryOutput;
 	MPCFormulationOutput _mpcFormulationOutput;
-	Mat3<double> _swingKp = Mat3<double>::Zero();
+	Vec3<double> _swingNaturalFrequency = Vec3<double>::Zero();
 	Mat3<double> _swingKd = Mat3<double>::Zero();
 	double _swingHeight{0.0};
 	u64 _iterationsBetweenMpc{10};

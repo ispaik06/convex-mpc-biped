@@ -97,8 +97,9 @@ ControllerConfig loadControllerConfigFromYaml() {
     }
 
     const YAML::Node swing = config["swing"];
-    if (swing && swing["kp_diag"]) {
-        params.swing.kpDiag = readVec3(swing["kp_diag"], "swing.kp_diag");
+    if (swing && swing["natural_frequency"]) {
+        params.swing.naturalFrequency =
+            readVec3(swing["natural_frequency"], "swing.natural_frequency");
     }
     if (swing && swing["kd_diag"]) {
         params.swing.kdDiag = readVec3(swing["kd_diag"], "swing.kd_diag");
