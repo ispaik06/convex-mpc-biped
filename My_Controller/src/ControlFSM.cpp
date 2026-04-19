@@ -34,9 +34,11 @@ DesiredFootPositions ControlFSM::SwingFootDesPos() {
 
     const Vec3<double> bodyComOffset_W = R_WB * _robotParams->bodyComLocation;
     const Vec3<double> p_com_W = _stateEstimate->torsoPos_W + bodyComOffset_W;
-    const Vec3<double> yawAngularVelocityWorld(0.0, 0.0, _stateEstimate->torsoAngVel_W.z());
+    // Keep the exact rigid-body velocity term here. A yaw-only angular velocity is a
+    // modeling approximation and should only be reintroduced deliberately if we decide
+    // the reduced-body COM motion can tolerate it.
     const Vec3<double> v_com_W =
-        _stateEstimate->torsoLinVel_W + yawAngularVelocityWorld.cross(bodyComOffset_W);
+        _stateEstimate->torsoLinVel_W + _stateEstimate->torsoAngVel_W.cross(bodyComOffset_W);
     const Vec3<double> u_com_B = R_BW * v_com_W;
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const double z_com = p_com_W[2];
