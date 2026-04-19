@@ -59,4 +59,8 @@ if [[ ! -f "${xml_path}" ]]; then
     exit 1
 fi
 
+if [[ ${#extra_args[@]} -eq 0 ]]; then
+    exec "${simulate_bin}" "${xml_path}"
+fi
+
 exec "${simulate_bin}" "${xml_path}" "${extra_args[@]}"
