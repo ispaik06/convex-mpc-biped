@@ -12,10 +12,7 @@
 #include "setupRobotParams.h"
 
 void SimulationRunner::init() {
-	if (_robot == RobotType::MIT_HUMANOID) _modelPath = "/models/mit_humanoid/scene.xml";
-	else if (_robot == RobotType::UNITREE_G1) _modelPath = "/models/unitree_robots/g1/scene_23dof.xml";
-	else if (_robot == RobotType::UNITREE_H1) _modelPath = "/models/unitree_robots/h1/scene.xml";
-	else _modelPath = "/models/mit_humanoid/scene.xml";
+	_modelPath = "/models/mit_humanoid/scene.xml";
 
 	_modelPath = std::string(PROJECT_ROOT_DIR) + _modelPath;
 
@@ -135,7 +132,7 @@ void SimulationRunner::runRobotControl() {
 		// }
 		_robotRunner->run(_stateEstimate, _robotCommand);
 		applyRobotCommand();
-	}
+}
 
 void SimulationRunner::applyRobotCommand() {
 	if (_robotCommand.tau.size() != model->nu) {

@@ -31,15 +31,7 @@ FixedBaseSwingTestRunner::~FixedBaseSwingTestRunner() {
 }
 
 void FixedBaseSwingTestRunner::init() {
-    if (_robotType == RobotType::MIT_HUMANOID) {
-        _modelPath = std::string(PROJECT_ROOT_DIR) + "/models/mit_humanoid/scene.xml";
-    } else if (_robotType == RobotType::UNITREE_G1) {
-        _modelPath = std::string(PROJECT_ROOT_DIR) + "/models/unitree_robots/g1/scene_23dof.xml";
-    } else if (_robotType == RobotType::UNITREE_H1) {
-        _modelPath = std::string(PROJECT_ROOT_DIR) + "/models/unitree_robots/h1/scene.xml";
-    } else {
-        throw std::runtime_error("Unsupported robot type for FixedBaseSwingTestRunner");
-    }
+    _modelPath = std::string(PROJECT_ROOT_DIR) + "/models/mit_humanoid/scene.xml";
 
     if (mjVERSION_HEADER != mj_version()) {
         throw std::runtime_error("MuJoCo header/library version mismatch");

@@ -280,17 +280,9 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
 }
 
 std::string LegSwingDynamicsProvider::robotXmlPath(const RobotType robotType) {
+    (void)robotType;
     const std::string root(PROJECT_ROOT_DIR);
-    switch (robotType) {
-        case RobotType::MIT_HUMANOID:
-            return root + "/models/mit_humanoid/mit_humanoid.xml";
-        case RobotType::UNITREE_G1:
-            return root + "/models/unitree_robots/g1/g1_23dof.xml";
-        case RobotType::UNITREE_H1:
-            return root + "/models/unitree_robots/h1/h1.xml";
-        default:
-            throw std::runtime_error("Unsupported RobotType for LegSwingDynamicsProvider");
-    }
+    return root + "/models/mit_humanoid/mit_humanoid.xml";
 }
 
 void LegSwingDynamicsProvider::destroy(AuxiliaryLegModel& auxModel) {

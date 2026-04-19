@@ -2,8 +2,6 @@ add_library(sim
 	src/LegSwingDynamicsProvider.cpp
 	src/MujocoCheaterStateReader.cpp
 	src/models/MitHumanoidSpec.cpp
-	src/models/G1_23Spec.cpp
-	src/models/H1Spec.cpp
 	src/main_thread.cpp
 	src/SimulationRunner.cpp
 	src/setupRobotParams.cpp

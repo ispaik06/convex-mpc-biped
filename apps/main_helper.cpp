@@ -9,7 +9,7 @@
 void printUsage() {
 	printf(
 		"Usage: robot [robot-id] Viewer [y/n] \n"
-		"\t where robot-id:    m for MIT humanoid, g for UNITREE G1\n"
+		"\t where robot-id:    m for MIT humanoid\n"
 		"\t where default viewer mode  :    GUI viewer");
 }
 
@@ -21,9 +21,7 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		return EXIT_FAILURE;
 	}
 	if(argc == 2) {
-		// TODO: Revisit the single-argument CLI once the non-MIT robot flows are
-		// finalized. For now, the existing personal workflow keeps this narrow.
-		if(argv[1][0] == 'm' || argv[1][0] == 'g') headless = false;
+		if(argv[1][0] == 'm') headless = false;
 		else {
 			printUsage();
 			return EXIT_FAILURE;
@@ -48,18 +46,6 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		simulationRunner.init();
 		simulationRunner.run();
 		printf("[MIT HUMANOID] Sim Runner run() has finished!\n");
-	}
-	else if(argv[1][0] == 'g') {
-		SimulationRunner simulationRunner(RobotType::UNITREE_G1, ctrl, headless);
-		simulationRunner.init();
-		simulationRunner.run();
-		printf("[UNITREE G1] Sim Runner run() has finished!\n");
-	}
-	else if(argv[1][0] == 'h') {
-		SimulationRunner simulationRunner(RobotType::UNITREE_H1, ctrl, headless);
-		simulationRunner.init();
-		simulationRunner.run();
-		printf("[UNITREE H1] Sim Runner run() has finished!\n");
 	}
 	else {
 		printUsage();
