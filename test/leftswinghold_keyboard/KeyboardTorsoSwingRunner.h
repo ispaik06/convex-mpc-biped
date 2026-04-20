@@ -1,11 +1,9 @@
-#ifndef FIXED_BASE_SWING_TEST_RUNNER_H
-#define FIXED_BASE_SWING_TEST_RUNNER_H
+#ifndef KEYBOARD_TORSO_SWING_RUNNER_H
+#define KEYBOARD_TORSO_SWING_RUNNER_H
 
-#include <array>
 #include <atomic>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "LegSwingDynamicsProvider.h"
 #include "MujocoRobotBindings.h"
@@ -23,10 +21,10 @@ struct mjData_;
 using mjModel = mjModel_;
 using mjData = mjData_;
 
-class FixedBaseSwingTestRunner {
+class KeyboardTorsoSwingRunner {
 public:
-    FixedBaseSwingTestRunner(RobotType robotType, RobotController* controller, bool headless);
-    ~FixedBaseSwingTestRunner();
+    KeyboardTorsoSwingRunner(RobotType robotType, RobotController* controller, bool headless);
+    ~KeyboardTorsoSwingRunner();
 
     void init();
     void run();
@@ -35,31 +33,38 @@ private:
     void runPhysicsLoop(bool throttleRealtime, bool syncViewer);
     void runRobotControl();
     void applyRobotCommand();
-    void clampFloatingBase();
-    void cacheFloatingBaseState();
+    void locateFloatingBase();
+    void cachePlanarBasePose();
+    void advancePlanarBasePose(double dt);
+    void applyPlanarBasePose(const Vec3<double>& worldLinearVelocity,
+                             const Vec3<double>& bodyAngularVelocity);
 
     RobotType _robotType;
+    std::unique_ptr<RobotRunner> _robotRunner;
+    bool _headless{true};
+    bool _firstControllerRun{true};
+    bool _planarMotionEnabled{false};
+    std::string _modelPath;
     RobotParams<double> _params;
     MujocoRobotBindings _bindings;
     CheaterState<double> _cheaterState;
     StateEstimate<double> _stateEstimate;
-    StateEstimator<double> _stateEstimator{StateEstimatorMode::Cheater};
     UserCommand _userCommand;
+    StateEstimator<double> _stateEstimator{StateEstimatorMode::Cheater};
     RobotCommand<double> _robotCommand;
-    std::unique_ptr<RobotRunner> _robotRunner;
     std::unique_ptr<LegSwingDynamicsProvider> _legSwingDynamicsProvider;
-    bool _firstControllerRun{true};
-    std::string _modelPath;
     u64 _iterations{0};
     MainThread _mainThread;
     mjModel* _model{nullptr};
     mjData* _data{nullptr};
-    bool _headless{true};
     std::atomic<bool> _stopRequested{false};
-    KeyboardCommand _keyboardCommand;
     int _freeJointQposIndex{-1};
     int _freeJointQvelIndex{-1};
-    std::array<double, 7> _fixedBaseQpos{};
+    Vec3<double> _planarBasePosition_W = Vec3<double>::Zero();
+    Mat3<double> _planarRotationNoYaw = Mat3<double>::Identity();
+    double _planarBaseYaw{0.0};
+    double _planarBaseZ{0.0};
+    KeyboardCommand _keyboardCommand;
 };
 
-#endif  // FIXED_BASE_SWING_TEST_RUNNER_H
+#endif  // KEYBOARD_TORSO_SWING_RUNNER_H

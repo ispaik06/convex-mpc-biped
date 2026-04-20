@@ -2,12 +2,12 @@
 #include <iostream>
 #include <memory>
 
-#include "FixedBaseSwingTestRunner.h"
-#include "SwingLegTestController.h"
+#include "LeftSwingHoldController.h"
+#include "KeyboardTorsoSwingRunner.h"
 
 namespace {
 void printUsage() {
-    std::cout << "Usage: main_swing_test [robot-id] Viewer [y/n]\n"
+    std::cout << "Usage: main_left_swing_hold_keyboard_test [robot-id] Viewer [y/n]\n"
               << "\t robot-id: m for MIT humanoid\n"
               << "\t Viewer: y for GUI, n for headless\n";
 }
@@ -19,7 +19,6 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    RobotType robotType = RobotType::MIT_HUMANOID;
     if (argv[1][0] != 'm') {
         printUsage();
         return EXIT_FAILURE;
@@ -37,8 +36,8 @@ int main(int argc, char** argv) {
         }
     }
 
-    auto controller = std::make_unique<SwingLegTestController>();
-    FixedBaseSwingTestRunner runner(robotType, controller.get(), headless);
+    auto controller = std::make_unique<LeftSwingHoldController>();
+    KeyboardTorsoSwingRunner runner(RobotType::MIT_HUMANOID, controller.get(), headless);
     runner.init();
     runner.run();
     return EXIT_SUCCESS;

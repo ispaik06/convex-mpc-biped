@@ -35,13 +35,24 @@ flowchart TD
 
 이 프로젝트는 frame 이름을 짧게 적고, 회전행렬과 위치벡터는 접미사로 기준을 드러낸다.
 
-- `R_WT`: world 기준 torso frame
-- `R_WB`: world 기준 SRB body frame, yaw-only virtual frame
+- `W`: simulation world frame
+- `T`: torso body frame
+  - origin은 MuJoCo torso body origin이고, `torsoPos_W`, `torsoQuat_W`로 표현한다.
+- `B`: reduced-body frame
+  - `torso + arms`의 reduced COM을 원점으로 하는 yaw-aligned frame이다.
+  - `R_WB`는 yaw만 반영한 회전이고, origin은 `p_com_W`로 잡는다.
+- `R_WT`: world에서 본 torso frame 회전
+- `R_WB`: world에서 본 reduced-body frame 회전, yaw-only
 - `R_BW`: `R_WB.transpose()`
 - `p_WX`: world에서 본 위치
-- `p_BX`: SRB body frame에서 본 위치
+- `p_BX`: reduced-body COM 원점에서 본 위치
 
-SRB body frame은 `torso + arms`의 reduced COM을 원점으로 하고, orientation은 torso heading의 yaw만 반영한다. `LegSwingDynamicsProvider`는 이 frame을 쓰지 않고 world frame 출력을 유지한다.
+즉,
+
+- `p_com_W = torsoPos_W + R_WB * bodyComLocation`
+- `p_BX = R_BW * (p_WX - p_com_W)`
+
+로 쓰는 것이 이 repo의 `B` 정의다. `bodyComLocation`은 `T` 원점에서 `B` 원점까지의 yaw-aligned 오프셋이다. `LegSwingDynamicsProvider`는 이 frame 정의를 바꾸지 않고, 발 end-effector의 world 좌표만 `site` 또는 `body_com`에서 읽어온다.
 
 `config/my_controller.yaml`의 `locomotion_mode`는 `walking` 또는 `standing`을 받는다. `standing`이면 gait scheduler가 양발 stance로 고정된다.
 `config/my_controller.yaml`의 `swing.touchdown_target_mode`는 스윙 발 착지점을 계산하는 방식을 고른다. `body_velocity_half_stance`는 swing 시작 시점의 `p_init + v_body * 0.5 * stance_time`을 한 번 잡아서 그 착지점을 고정하고, `legacy_com_yaw_corrected`는 기존 COM/yaw 보정식을 유지하면서 매 tick 재계산한다. `swing.foot_end_effector_source`는 발 end-effector를 `site`로 읽을지 `body_com`으로 읽을지 고른다.
@@ -96,6 +107,8 @@ ConvexMPC/
 │   └── unitree_robots/
 ├── test/
 │   ├── leftswinghold/
+│   ├── leftswinghold_keyboard/
+│   ├── leftswinghold_nominal/
 │   └── SwingTrajectory/
 ├── CMakeLists.txt
 └── README.md
@@ -190,6 +203,10 @@ ConvexMPC/
 - `test/leftswinghold/`
   - torso를 고정한 뒤 좌측 다리 swing/hold 반복 동작을 확인하는 수동 실험 실행 파일.
   - 스윙 목표와 실제 end-effector 좌표를 CSV로 기록해 추적 오차를 확인한다.
+- `test/leftswinghold_keyboard/`
+  - 키보드 입력으로 torso 평면 이동을 강제하면서 left swing hold를 확인하는 실험 실행 파일.
+- `test/leftswinghold_nominal/`
+  - MuJoCo 시뮬레이션을 돌려 `LegPosInitializer` 완료 시점의 발 위치와 legacy touchdown nominal을 비교하는 probe 실행 파일.
 - `test/SwingTrajectory/`
   - MATLAB 기반 궤적 프로토타입 파일.
   - C++ 빌드에는 직접 연결되지 않는다.
@@ -248,7 +265,7 @@ ConvexMPC/
 - `logging`
   - gait 상태 출력 간격
 
-코드에서는 `R_WT`, `R_WB`, `p_W`, `p_B`처럼 frame을 접미사로 표시해서, world/torso/SRB body 기준이 섞이지 않게 맞추는 편이 좋다.
+코드에서는 `R_WT`, `R_WB`, `p_W`, `p_B`처럼 frame을 접미사로 표시해서, world/torso/reduced-body 기준이 섞이지 않게 맞추는 편이 좋다.
 
 이 파일을 바꾸면 README 기준 현재 구현상 시뮬레이터를 재시작해야 반영된다.
 
@@ -326,6 +343,40 @@ TTY 환경에서만 동작한다.
 ```
 
 이 바이너리는 torso lock 상태에서 왼발 swing/hold 추종만 따로 보는 데 목적이 있다.
+
+### Left Swing Hold nominal probe
+
+```bash
+./build/test/leftswinghold_nominal/main_left_swing_hold_nominal_test m
+```
+
+이 바이너리는 `RobotRunner`를 이용해 `LegPosInitializer`가 끝날 때까지 시뮬레이션을 돌린 뒤, 그 시점의 발 위치와 legacy touchdown nominal을 비교한다. 메인 컨트롤러는 돌리지 않는다.
+stdout에 `init_steps`와 `sim_time`도 같이 출력된다.
+
+stdout과 CSV에 나오는 각 항목의 의미는 다음과 같다.
+
+- `site_W`
+  - 발 contact site의 world 좌표다.
+  - `LegPosInitializer` 완료 후에는 `z`가 바닥 근처로 내려와야 정상이다.
+- `foot_link_com_W`
+  - 발 link body COM의 world 좌표다.
+- `site_B`
+  - `site_W`를 reduced-body frame `B`로 옮긴 값이다.
+  - `B`는 `torso + arms`의 reduced COM을 원점으로 하는 yaw-aligned frame이다.
+  - 따라서 `z`가 0에 가까울 필요는 없다.
+- `foot_link_com_B`
+  - `foot_link_com_W`를 `B`로 옮긴 값이다.
+- `legacy_nominal_B`
+  - 현재 `ControlFSM` / `LeftSwingHoldController`의 legacy touchdown 식이 만드는 nominal touchdown target이다.
+  - `B` 기준으로 표현된다.
+- `delta_site_legacy`
+  - `site_B - legacy_nominal_B`다.
+  - 초기 pose의 contact site가 legacy nominal과 얼마나 다른지 보여준다.
+- `delta_footcom_legacy`
+  - `foot_link_com_B - legacy_nominal_B`다.
+  - foot link COM을 end-effector로 볼 때 legacy nominal과 얼마나 다른지 보여준다.
+
+이 probe는 `site` 기준과 `body_com` 기준을 동시에 보여주기 때문에, `main_left_swing_hold_test`에서 어떤 end-effector source를 쓰든 초기 nominal 차이를 바로 비교할 수 있다.
 
 ## 현재 코드 기준 주의사항
 
