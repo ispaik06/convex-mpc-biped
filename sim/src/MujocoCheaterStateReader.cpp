@@ -204,8 +204,10 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
-        leg_state.footPos_W = readBodyComPosition(data, foot.bodyId);
-        leg_state.footVel_W = readBodyLinearVelocity(model, data, foot.bodyId);
+        leg_state.footPos_W = readEndEffectorPosition(data, foot.siteId, foot.bodyId);
+        leg_state.footEndPos_W = leg_state.footPos_W;
+        leg_state.footVel_W = readEndEffectorVelocity(model, data, foot.siteId, foot.bodyId);
+        leg_state.footEndVel_W = leg_state.footVel_W;
         leg_state.hasFootKinematics = true;
         leg_state.hasLegDynamics = false;
     }

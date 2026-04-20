@@ -139,7 +139,9 @@ void fillLeg(const mjModel* model,
     fillJointGroup(model, spec.joints, leg.joints);
     foot_binding.rootBodyId = firstJointBodyId<T>(model, spec.joints);
     foot_binding.bodyId = requireId<T>(model, mjOBJ_BODY, spec.endBody, "foot body");
-    foot_binding.siteId = optionalId<T>(model, mjOBJ_SITE, spec.endSite);
+    foot_binding.siteId = spec.endSite.empty()
+                              ? -1
+                              : requireId<T>(model, mjOBJ_SITE, spec.endSite, "foot site");
     leg.hipLocationFromBody = firstJointLocationFromBase<T>(model, spec.joints);
 }
 

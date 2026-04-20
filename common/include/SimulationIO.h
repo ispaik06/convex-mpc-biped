@@ -8,8 +8,10 @@ struct RobotLegState {
     DVec<T> q;
     DVec<T> qd;
     DVec<T> tauEstimate;
-    Vec3<T> footPos_W = Vec3<T>::Zero();
-    Vec3<T> footVel_W = Vec3<T>::Zero();
+    Vec3<T> footPos_W = Vec3<T>::Zero();      // tracked foot contact-site position
+    Vec3<T> footEndPos_W = Vec3<T>::Zero();   // same point, retained for trace compatibility
+    Vec3<T> footVel_W = Vec3<T>::Zero();      // tracked foot contact-site velocity
+    Vec3<T> footEndVel_W = Vec3<T>::Zero();   // same point, retained for trace compatibility
     DMat<T> Jv_W;
     DMat<T> JvDot_W;
     DMat<T> Jw_W;

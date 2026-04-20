@@ -7,7 +7,7 @@ const RobotMujocoSpec& getMitHumanoidMujocoSpec() {
         {
             {Side::Left,
              "left_foot_link",
-             "",
+             "left_foot_contact_site",
              {
                  {"left_hip_yaw_joint", "left_hip_yaw"},
                  {"left_hip_abad_joint", "left_hip_abad"},
@@ -17,7 +17,7 @@ const RobotMujocoSpec& getMitHumanoidMujocoSpec() {
              }},
             {Side::Right,
              "right_foot_link",
-             "",
+             "right_foot_contact_site",
              {
                  {"right_hip_yaw_joint", "right_hip_yaw"},
                  {"right_hip_abad_joint", "right_hip_abad"},

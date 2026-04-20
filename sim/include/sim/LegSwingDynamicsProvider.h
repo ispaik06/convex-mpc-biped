@@ -34,6 +34,7 @@ private:
         mjData* data{nullptr};
         int torsoBodyId{-1};
         int footBodyId{-1};
+        int footSiteId{-1};
         std::vector<int> qposIndex;
         std::vector<int> qvelIndex;
         std::vector<mjtNum> jacpScratch;
