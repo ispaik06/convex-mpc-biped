@@ -106,7 +106,10 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 void SimulationRunner::runRobotControl() {
 	if (_firstControllerRun) {
 
-		const auto robotSetup = setupRobotParams<double>(_robot, model);
+		const auto robotSetup = setupRobotParams<double>(
+			_robot,
+			model,
+			_robotRunner->_robot_ctrl->footEndEffectorSource());
 		_params = robotSetup.params;
 		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);

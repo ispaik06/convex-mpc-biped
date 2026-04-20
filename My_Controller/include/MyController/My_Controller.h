@@ -17,7 +17,7 @@ class MyController : public RobotController {
 public:
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-	MyController() = default;
+	MyController();
 	virtual ~MyController() {}
 
 	virtual void initializeController();
@@ -60,6 +60,7 @@ private:
 	Mat3<double> _swingKd = Mat3<double>::Zero();
 	double _swingHeight{0.0};
 	u64 _iterationsBetweenMpc{10};
+	LocomotionMode _locomotionMode{LocomotionMode::Walking};
 
 };
 

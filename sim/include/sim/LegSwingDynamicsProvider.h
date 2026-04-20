@@ -35,6 +35,7 @@ private:
         int torsoBodyId{-1};
         int footBodyId{-1};
         int footSiteId{-1};
+        FootEndEffectorSource footSource{FootEndEffectorSource::Site};
         std::vector<int> qposIndex;
         std::vector<int> qvelIndex;
         std::vector<mjtNum> jacpScratch;

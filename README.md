@@ -43,6 +43,11 @@ flowchart TD
 
 SRB body frame은 `torso + arms`의 reduced COM을 원점으로 하고, orientation은 torso heading의 yaw만 반영한다. `LegSwingDynamicsProvider`는 이 frame을 쓰지 않고 world frame 출력을 유지한다.
 
+`config/my_controller.yaml`의 `locomotion_mode`는 `walking` 또는 `standing`을 받는다. `standing`이면 gait scheduler가 양발 stance로 고정된다.
+`config/my_controller.yaml`의 `swing.touchdown_target_mode`는 스윙 발 착지점을 계산하는 방식을 고른다. `body_velocity_half_stance`는 swing 시작 시점의 `p_init + v_body * 0.5 * stance_time`을 한 번 잡아서 그 착지점을 고정하고, `legacy_com_yaw_corrected`는 기존 COM/yaw 보정식을 유지하면서 매 tick 재계산한다. `swing.foot_end_effector_source`는 발 end-effector를 `site`로 읽을지 `body_com`으로 읽을지 고른다.
+`test/leftswinghold`는 `build/left_swing_hold_trace.csv`에 스윙 중 발 end-effector 실제값과 목표값을 기록하고, `scripts/plot_left_swing_hold_trace.py --watch`로 바로 볼 수 있다. 홀드 구간은 CSV marker로 분리되어 viewer가 최신 스윙 segment만 표시한다.
+`config/my_controller.yaml`의 `left_swing_hold_test.touchdown_target_mode`는 `main_left_swing_hold_test`의 touchdown 계산식을 고른다(`legacy_com_yaw_corrected` 또는 `body_velocity_half_stance`).
+
 ## 디렉터리 구조
 
 ```text
@@ -90,7 +95,7 @@ ConvexMPC/
 │   ├── mit_humanoid/
 │   └── unitree_robots/
 ├── test/
-│   ├── swinglegcontrol/
+│   ├── leftswinghold/
 │   └── SwingTrajectory/
 ├── CMakeLists.txt
 └── README.md
@@ -182,9 +187,9 @@ ConvexMPC/
 
 ### `test/`
 
-- `test/swinglegcontrol/`
-  - 보행 전체 대신 스윙 발 제어만 분리해 확인하는 실험용 실행 파일.
-  - floating base를 고정한 뒤 각 다리에 `SwingFootTrajectory`를 반복 적용한다.
+- `test/leftswinghold/`
+  - torso를 고정한 뒤 좌측 다리 swing/hold 반복 동작을 확인하는 수동 실험 실행 파일.
+  - 스윙 목표와 실제 end-effector 좌표를 CSV로 기록해 추적 오차를 확인한다.
 - `test/SwingTrajectory/`
   - MATLAB 기반 궤적 프로토타입 파일.
   - C++ 빌드에는 직접 연결되지 않는다.
@@ -313,14 +318,14 @@ TTY 환경에서만 동작한다.
 - `q / e`: yaw rate 명령
 - `space`: 명령 초기화
 
-### 스윙 발 실험 실행기
+### Left Swing Hold 실험 실행기
 
 ```bash
-./build/test/swinglegcontrol/main_swing_test m y
-./build/test/swinglegcontrol/main_swing_test m n
+./build/test/leftswinghold/main_left_swing_hold_test m y
+./build/test/leftswinghold/main_left_swing_hold_test m n
 ```
 
-이 바이너리는 fixed-base 상태에서 스윙 발 추종만 따로 보는 데 목적이 있다.
+이 바이너리는 torso lock 상태에서 왼발 swing/hold 추종만 따로 보는 데 목적이 있다.
 
 ## 현재 코드 기준 주의사항
 
@@ -332,11 +337,7 @@ TTY 환경에서만 동작한다.
 
 viewer 없는 실행은 현재 의도적으로 내부 종료 조건 없이 계속 루프를 돈다. 개인 확인용 실행에는 편하지만, 자동화된 회귀 테스트용으로는 별도 종료 조건이나 step limit이 필요하다.
 
-### 3. `main_swing_test`는 수동 확인용이다
-
-`test/swinglegcontrol` 실행 파일은 수동 확인용이라 `CTest`에 등록하지 않았다.
-
-### 4. estimator는 현재 cheater only
+### 3. estimator는 현재 cheater only
 
 비치터 추정기는 인터페이스만 있고 구현은 없다. 실제 로봇 연결이나 센서 기반 추정으로 확장하려면 `StateEstimatorMode::Estimated` 경로를 채워야 한다.
 

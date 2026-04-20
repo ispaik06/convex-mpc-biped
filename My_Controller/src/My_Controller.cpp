@@ -64,6 +64,10 @@ Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstim
 }
 }  // namespace
 
+MyController::MyController() {
+    setFootEndEffectorSource(getControllerConfig().swing.footEndEffectorSource);
+}
+
 Mat3<double> MyController::makeDiagonal(const double x, const double y, const double z) {
     Mat3<double> diagonal = Mat3<double>::Zero();
     diagonal.diagonal() << x, y, z;
@@ -100,6 +104,8 @@ void MyController::initializeRuntimeObjects() {
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
     _swingHeight = config.swing.height;
     _iterationsBetweenMpc = static_cast<u64>(std::max(config.mpc.iterationsBetweenSolve, 1));
+    _locomotionMode = config.locomotionMode;
+    _gaitScheduler->setLocomotionMode(_locomotionMode);
 
     _legRuntime.assign(_robotParams->legs.size(), LegRuntimeState{});
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
@@ -178,7 +184,10 @@ void MyController::updateSwingTrajectories(
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
             runtime.swingTrajectory.reset(
-                currentFootPosition, touchdownTarget, _swingHeight, timeRemaining);
+                currentFootPosition,
+                touchdownTarget,
+                _swingHeight,
+                timeRemaining);
         } else {
             runtime.swingTrajectory.setFinalPosition(touchdownTarget);
             runtime.swingTrajectory.advance(dt);
@@ -318,10 +327,15 @@ void MyController::runController() {
     }
 
     _horizonClock->sync(_stateEstimate->time);
-    maybePrintGaitScheduler();
+    // maybePrintGaitScheduler();
 
     const Vec13<double> x0 = buildCurrentMpcState();
-    const DesiredFootPositions desiredFootPositions = _controlFSM->SwingFootDesPos();
+    const DesiredFootPositions desiredFootPositions =
+        (_locomotionMode == LocomotionMode::Standing)
+            ? DesiredFootPositions{
+                  _stateEstimate->legs[findLegIndex(Side::Left)].footPos_W,
+                  _stateEstimate->legs[findLegIndex(Side::Right)].footPos_W}
+            : _controlFSM->SwingFootDesPos();
 
     updateSwingTrajectories(desiredFootPositions);
     maybeUpdateMpc(x0, desiredFootPositions);

@@ -1,4 +1,4 @@
-# Restart the simulator after editing this file.
+locomotion_mode: standing
 
 timing:
   cycle: 1.0
@@ -11,27 +11,30 @@ model:
   gravity: 9.81
 
 mpc:
-  friction_coefficient: 0.3
+  friction_coefficient: 0.6
   foot_half_length: 0.065
   foot_half_width: 0.01
   torsional_friction_scale: 0.0657
   normal_force_max: 700.0
   normal_force_min: 10.0
   iterations_between_solve: 10
-  state_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 50.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  input_weight_diag: [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
+  state_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  input_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  # [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
 
 swing:
-  natural_frequency: [10.0, 10.0, 10.9544511501]
-  kd_diag: [15.0, 15.0, 18.0]
+  natural_frequency: [100.0, 100.0, 70.0]  # [780.0, 765.0, 600.0]
+  kd_diag: [20.0, 20.0, 20.0]   # [35.0, 25.0, 10.0]
   height: 0.06
   min_remaining_time: 0.001
+  touchdown_target_mode: body_velocity_half_stance
+  foot_end_effector_source: site
 
 foot_placement:
   velocity_feedback_gain: 0.03
   placement_clamp: 0.3
   touchdown_height: -0.003
-  nominal_lateral_offset: 0.065
+  nominal_lateral_offset: 0.0 # -0.0018375
   swing_bias: 0.0
 
 logging:
@@ -44,9 +47,14 @@ joint_tracking:
     kd: [15.0, 10.0, 7.0, 9.0, 100.0]
   arm:
     # MIT humanoid order: [shoulder_pitch, shoulder_abad, shoulder_yaw, elbow]
-    kp: [30.0, 8.0, 8.0, 2.0]
-    kd: [5.0, 1.0, 1.0, 0.75]
+    kp: [100.0, 100.0, 100.0, 100.0]
+    kd: [5.0, 5.0, 5.0, 5.0]
 
 initial_pose:
   leg_joint_offsets: [0.0, 0.0, -0.70, 0.80, -0.35]
   arm_joint_offsets: [0.0, 0.0, 0.0, -0.65]
+
+left_swing_hold_test:
+  touchdown_target_mode: body_velocity_half_stance
+  # legacy_com_yaw_corrected
+  # body_velocity_half_stance

@@ -133,6 +133,7 @@ bool isInLegSubtree(const mjModel* model, const MujocoRobotBindings& bindings, c
 template <typename T>
 void fillLeg(const mjModel* model,
              const LimbMujocoSpec& spec,
+             FootEndEffectorSource footEndEffectorSource,
              LegParams<T>& leg,
              MujocoEndEffectorBinding& foot_binding) {
     leg.side = spec.side;
@@ -142,6 +143,9 @@ void fillLeg(const mjModel* model,
     foot_binding.siteId = spec.endSite.empty()
                               ? -1
                               : requireId<T>(model, mjOBJ_SITE, spec.endSite, "foot site");
+    if (footEndEffectorSource == FootEndEffectorSource::Site && spec.endSite.empty()) {
+        throw std::runtime_error("Foot end-effector source is site, but the leg spec has no endSite");
+    }
     leg.hipLocationFromBody = firstJointLocationFromBase<T>(model, spec.joints);
 }
 
@@ -278,7 +282,9 @@ T yawFromRotationMatrix(const Mat3<T>& R_WT) {
 }
 
 template <typename T>
-MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMujocoSpec& spec) {
+MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model,
+                                             const RobotMujocoSpec& spec,
+                                             FootEndEffectorSource footEndEffectorSource) {
     MujocoRobotSetup<T> setup;
     RobotParams<T>& params = setup.params;
     MujocoRobotBindings& bindings = setup.bindings;
@@ -290,13 +296,18 @@ MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMu
     fillDefaultQpos(model, params);
     const int torsoBodyId = requireId<T>(model, mjOBJ_BODY, spec.baseBody, "base body");
     bindings.torsoBodyId = torsoBodyId;
+    bindings.footSource = footEndEffectorSource;
 
     params.legs.reserve(spec.legs.size());
     bindings.feet.reserve(spec.legs.size());
     for (const auto& legSpec : spec.legs) {
         params.legs.emplace_back();
         bindings.feet.emplace_back();
-        fillLeg<T>(model, legSpec, params.legs.back(), bindings.feet.back());
+        fillLeg<T>(model,
+                   legSpec,
+                   footEndEffectorSource,
+                   params.legs.back(),
+                   bindings.feet.back());
     }
 
     params.arms.reserve(spec.arms.size());
@@ -314,17 +325,25 @@ MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model, const RobotMu
 }  // namespace
 
 template <typename T>
-MujocoRobotSetup<T> setupRobotParams(const RobotType robotType, const mjModel_* model) {
+MujocoRobotSetup<T> setupRobotParams(const RobotType robotType,
+                                     const mjModel_* model,
+                                     FootEndEffectorSource footEndEffectorSource) {
     if (model == nullptr) {
         throw std::runtime_error("setupRobotParams received null mjModel");
     }
 
     const auto& spec = getRobotMujocoSpec(robotType);
-    return buildRobotParamsFromSpec<T>(reinterpret_cast<const mjModel*>(model), spec);
+    return buildRobotParamsFromSpec<T>(reinterpret_cast<const mjModel*>(model),
+                                      spec,
+                                      footEndEffectorSource);
 }
 
-template MujocoRobotSetup<float> setupRobotParams<float>(RobotType, const mjModel_*);
-template MujocoRobotSetup<double> setupRobotParams<double>(RobotType, const mjModel_*);
+template MujocoRobotSetup<float> setupRobotParams<float>(RobotType,
+                                                         const mjModel_*,
+                                                         FootEndEffectorSource);
+template MujocoRobotSetup<double> setupRobotParams<double>(RobotType,
+                                                          const mjModel_*,
+                                                          FootEndEffectorSource);
 
 template <typename T>
 void updateReducedBodyMassPropertiesFromData(const mjModel_* modelPtr,

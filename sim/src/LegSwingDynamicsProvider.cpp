@@ -245,6 +245,7 @@ LegSwingDynamicsProvider::LegSwingDynamicsProvider(const RobotType robotType,
         auxModel.torsoBodyId = mj_name2id(auxModel.model, mjOBJ_BODY, std::string(robotSpec.baseBody).c_str());
         auxModel.footBodyId =
             mj_name2id(auxModel.model, mjOBJ_BODY, std::string(robotSpec.legs[leg].endBody).c_str());
+        auxModel.footSource = bindings.footSource;
         if (!robotSpec.legs[leg].endSite.empty()) {
             auxModel.footSiteId =
                 mj_name2id(auxModel.model,
@@ -314,34 +315,40 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
 
         mj_forward(auxModel.model, auxModel.data);
 
-        if (auxModel.footSiteId >= 0) {
-            legState.footPos_W = readSitePosition(auxModel.data, auxModel.footSiteId);
-            readSiteJacobians(auxModel.model,
-                              auxModel.data,
-                              auxModel.footSiteId,
-                              auxModel.jacpScratch,
-                              auxModel.jacrScratch,
-                              legState.Jv_W,
-                              legState.Jw_W);
-            readSiteJacobianDot(auxModel.model,
-                                auxModel.data,
-                                auxModel.footSiteId,
-                                auxModel.jacDotpScratch,
-                                legState.JvDot_W);
-        } else {
-            legState.footPos_W = readBodyComPosition(auxModel.data, auxModel.footBodyId);
-            readBodyComJacobians(auxModel.model,
-                                 auxModel.data,
-                                 auxModel.footBodyId,
-                                 auxModel.jacpScratch,
-                                 auxModel.jacrScratch,
-                                 legState.Jv_W,
-                                 legState.Jw_W);
-            readBodyComJacobianDot(auxModel.model,
-                                   auxModel.data,
-                                   auxModel.footBodyId,
-                                   auxModel.jacDotpScratch,
-                                   legState.JvDot_W);
+        switch (auxModel.footSource) {
+            case FootEndEffectorSource::Site:
+                if (auxModel.footSiteId < 0) {
+                    throw std::runtime_error("Foot end-effector source is site, but no foot site was bound");
+                }
+                legState.footPos_W = readSitePosition(auxModel.data, auxModel.footSiteId);
+                readSiteJacobians(auxModel.model,
+                                  auxModel.data,
+                                  auxModel.footSiteId,
+                                  auxModel.jacpScratch,
+                                  auxModel.jacrScratch,
+                                  legState.Jv_W,
+                                  legState.Jw_W);
+                readSiteJacobianDot(auxModel.model,
+                                    auxModel.data,
+                                    auxModel.footSiteId,
+                                    auxModel.jacDotpScratch,
+                                    legState.JvDot_W);
+                break;
+            case FootEndEffectorSource::BodyCom:
+                legState.footPos_W = readBodyComPosition(auxModel.data, auxModel.footBodyId);
+                readBodyComJacobians(auxModel.model,
+                                     auxModel.data,
+                                     auxModel.footBodyId,
+                                     auxModel.jacpScratch,
+                                     auxModel.jacrScratch,
+                                     legState.Jv_W,
+                                     legState.Jw_W);
+                readBodyComJacobianDot(auxModel.model,
+                                       auxModel.data,
+                                       auxModel.footBodyId,
+                                       auxModel.jacDotpScratch,
+                                       legState.JvDot_W);
+                break;
         }
         legState.footVel_W = legState.Jv_W * legState.qd;
         legState.footEndPos_W = legState.footPos_W;

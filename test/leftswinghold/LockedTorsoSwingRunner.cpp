@@ -128,7 +128,10 @@ void LockedTorsoSwingRunner::runPhysicsLoop(const bool throttleRealtime, const b
 
 void LockedTorsoSwingRunner::runRobotControl() {
     if (_firstControllerRun) {
-        const auto robotSetup = setupRobotParams<double>(_robotType, _model);
+        const auto robotSetup = setupRobotParams<double>(
+            _robotType,
+            _model,
+            _robotRunner->_robot_ctrl->footEndEffectorSource());
         _params = robotSetup.params;
         _bindings = robotSetup.bindings;
         updateReducedBodyMassPropertiesFromData(_model, _data, _bindings, _params);

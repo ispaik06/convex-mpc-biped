@@ -125,6 +125,39 @@ Vec3<double> readBodyLinearAcceleration(const mjModel* model, const mjData* data
     return linear;
 }
 
+Vec3<double> readFootEndEffectorPosition(const mjData* data,
+                                         const MujocoEndEffectorBinding& foot,
+                                         const FootEndEffectorSource source) {
+    switch (source) {
+        case FootEndEffectorSource::Site:
+            if (foot.siteId < 0) {
+                throw std::runtime_error("Foot end-effector source is site, but no siteId is bound");
+            }
+            return readSitePosition(data, foot.siteId);
+        case FootEndEffectorSource::BodyCom:
+            return readBodyComPosition(data, foot.bodyId);
+    }
+
+    throw std::runtime_error("Unsupported foot end-effector source");
+}
+
+Vec3<double> readFootEndEffectorVelocity(const mjModel* model,
+                                         const mjData* data,
+                                         const MujocoEndEffectorBinding& foot,
+                                         const FootEndEffectorSource source) {
+    switch (source) {
+        case FootEndEffectorSource::Site:
+            if (foot.siteId < 0) {
+                throw std::runtime_error("Foot end-effector source is site, but no siteId is bound");
+            }
+            return readObjectLinearVelocity(model, data, mjOBJ_SITE, foot.siteId);
+        case FootEndEffectorSource::BodyCom:
+            return readBodyLinearVelocity(model, data, foot.bodyId);
+    }
+
+    throw std::runtime_error("Unsupported foot end-effector source");
+}
+
 Vec3<double> readEndEffectorPosition(const mjData* data, int site_id, int body_id) {
     if (site_id >= 0) {
         return readSitePosition(data, site_id);
@@ -204,9 +237,9 @@ void fillCheaterState(const mjModel* model,
         const auto& tau_idx =
             joints.actuator_idx.empty() ? joints.qd_idx : joints.actuator_idx;
         copyIndexed(data->actuator_force, tau_idx, leg_state.tauEstimate);
-        leg_state.footPos_W = readEndEffectorPosition(data, foot.siteId, foot.bodyId);
+        leg_state.footPos_W = readFootEndEffectorPosition(data, foot, bindings.footSource);
         leg_state.footEndPos_W = leg_state.footPos_W;
-        leg_state.footVel_W = readEndEffectorVelocity(model, data, foot.siteId, foot.bodyId);
+        leg_state.footVel_W = readFootEndEffectorVelocity(model, data, foot, bindings.footSource);
         leg_state.footEndVel_W = leg_state.footVel_W;
         leg_state.hasFootKinematics = true;
         leg_state.hasLegDynamics = false;

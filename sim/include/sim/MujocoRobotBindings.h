@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include "RobotController.h"
+
 struct MujocoEndEffectorBinding {
     int rootBodyId{-1};
     int bodyId{-1};
@@ -11,6 +13,7 @@ struct MujocoEndEffectorBinding {
 
 struct MujocoRobotBindings {
     int torsoBodyId{-1};
+    FootEndEffectorSource footSource{FootEndEffectorSource::Site};
     std::vector<MujocoEndEffectorBinding> feet;
     std::vector<MujocoEndEffectorBinding> hands;
 };

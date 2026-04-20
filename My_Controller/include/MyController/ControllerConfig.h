@@ -2,9 +2,20 @@
 #define CONTROLLER_CONFIG_H
 
 #include "cppTypes.h"
+#include "RobotController.h"
 
 using StateWeightMat = Eigen::Matrix<double, 13, 13>;
 using InputWeightMat = Mat12<double>;
+
+enum class LocomotionMode {
+    Walking,
+    Standing,
+};
+
+enum class TouchdownTargetMode {
+    BodyVelocityHalfStance,
+    LegacyComYawCorrected,
+};
 
 struct TimingParameters {
     double cycle{1.0};
@@ -35,6 +46,8 @@ struct SwingParameters {
     Vec3<double> kdDiag = Vec3<double>(15.0, 15.0, 18.0);
     double height{0.06};
     double minRemainingTime{1e-3};
+    TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::BodyVelocityHalfStance};
+    FootEndEffectorSource footEndEffectorSource{FootEndEffectorSource::Site};
 };
 
 struct FootPlacementParameters {
@@ -54,7 +67,12 @@ struct InitialPoseParameters {
     std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
 };
 
+struct LeftSwingHoldTestParameters {
+    TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::LegacyComYawCorrected};
+};
+
 struct ControllerConfig {
+    LocomotionMode locomotionMode{LocomotionMode::Walking};
     TimingParameters timing;
     ModelParameters model;
     MPCParameters mpc;
@@ -62,6 +80,7 @@ struct ControllerConfig {
     FootPlacementParameters footPlacement;
     LoggingParameters logging;
     InitialPoseParameters initialPose;
+    LeftSwingHoldTestParameters leftSwingHoldTest;
 };
 
 const ControllerConfig& getControllerConfig();
@@ -74,5 +93,6 @@ double dtMpc();
 
 const DMat<double>& getL();
 const DMat<double>& getK();
+LocomotionMode locomotionMode();
 
 #endif  // CONTROLLER_CONFIG_H

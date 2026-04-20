@@ -58,6 +58,57 @@ Vec3<double> readVec3(const YAML::Node& node, const char* keyName) {
     return Vec3<double>(node[0].as<double>(), node[1].as<double>(), node[2].as<double>());
 }
 
+LocomotionMode parseLocomotionMode(const YAML::Node& node) {
+    if (!node || !node.IsScalar()) {
+        return LocomotionMode::Walking;
+    }
+
+    const std::string mode = node.as<std::string>();
+    if (mode == "walking" || mode == "walk") {
+        return LocomotionMode::Walking;
+    }
+    if (mode == "standing" || mode == "stand") {
+        return LocomotionMode::Standing;
+    }
+
+    throw std::runtime_error(
+        "Invalid locomotion_mode. Expected one of: walking, walk, standing, stand");
+}
+
+TouchdownTargetMode parseTouchdownTargetMode(const YAML::Node& node) {
+    if (!node || !node.IsScalar()) {
+        return TouchdownTargetMode::BodyVelocityHalfStance;
+    }
+
+    const std::string mode = node.as<std::string>();
+    if (mode == "body_velocity_half_stance") {
+        return TouchdownTargetMode::BodyVelocityHalfStance;
+    }
+    if (mode == "legacy_com_yaw_corrected") {
+        return TouchdownTargetMode::LegacyComYawCorrected;
+    }
+
+    throw std::runtime_error(
+        "Invalid swing.touchdown_target_mode. Expected body_velocity_half_stance or legacy_com_yaw_corrected");
+}
+
+FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
+    if (!node || !node.IsScalar()) {
+        return FootEndEffectorSource::Site;
+    }
+
+    const std::string mode = node.as<std::string>();
+    if (mode == "site") {
+        return FootEndEffectorSource::Site;
+    }
+    if (mode == "body_com" || mode == "com") {
+        return FootEndEffectorSource::BodyCom;
+    }
+
+    throw std::runtime_error(
+        "Invalid swing.foot_end_effector_source. Expected site or body_com");
+}
+
 ControllerConfig loadControllerConfigFromYaml() {
     ControllerConfig params;
 
@@ -70,6 +121,8 @@ ControllerConfig loadControllerConfigFromYaml() {
         throw std::runtime_error("Failed to load controller config YAML from " + configPath
                                  + ": " + exception.what());
     }
+
+    params.locomotionMode = parseLocomotionMode(config["locomotion_mode"]);
 
     const YAML::Node timing = config["timing"];
     readScalarIfPresent(timing, "cycle", params.timing.cycle);
@@ -106,6 +159,8 @@ ControllerConfig loadControllerConfigFromYaml() {
     }
     readScalarIfPresent(swing, "height", params.swing.height);
     readScalarIfPresent(swing, "min_remaining_time", params.swing.minRemainingTime);
+    params.swing.touchdownTargetMode = parseTouchdownTargetMode(swing["touchdown_target_mode"]);
+    params.swing.footEndEffectorSource = parseFootEndEffectorSource(swing["foot_end_effector_source"]);
 
     const YAML::Node footPlacement = config["foot_placement"];
     readScalarIfPresent(footPlacement,
@@ -128,6 +183,10 @@ ControllerConfig loadControllerConfigFromYaml() {
     const YAML::Node initialPose = config["initial_pose"];
     readVectorIfPresent(initialPose, "leg_joint_offsets", params.initialPose.legJointOffsets);
     readVectorIfPresent(initialPose, "arm_joint_offsets", params.initialPose.armJointOffsets);
+
+    const YAML::Node leftSwingHoldTest = config["left_swing_hold_test"];
+    params.leftSwingHoldTest.touchdownTargetMode =
+        parseTouchdownTargetMode(leftSwingHoldTest["touchdown_target_mode"]);
 
     if (params.timing.cycle <= 0.0 || params.timing.swing <= 0.0 || params.timing.stance <= 0.0 ||
         params.timing.horizon <= 0.0 || params.timing.horizonSteps <= 0) {
@@ -197,4 +256,8 @@ const DMat<double>& getK() {
     }();
 
     return K;
+}
+
+LocomotionMode locomotionMode() {
+    return getControllerConfig().locomotionMode;
 }

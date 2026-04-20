@@ -4,6 +4,11 @@
 #include "Robot/RobotModel.h"
 #include "Utilities/UserCommand.h"
 
+enum class FootEndEffectorSource {
+	BodyCom,
+	Site,
+};
+
 class RobotRunner;
 template <typename T>
 class LegController;
@@ -19,6 +24,8 @@ public:
 	RobotController(){}
 	virtual ~RobotController(){}
 
+	FootEndEffectorSource footEndEffectorSource() const { return _footEndEffectorSource; }
+
 	virtual void initializeController() = 0;
 
 	virtual void runController() = 0;
@@ -31,11 +38,14 @@ private:
 	RobotType _robotType;
 
 protected:
+	void setFootEndEffectorSource(FootEndEffectorSource source) { _footEndEffectorSource = source; }
+
 	const UserCommand* _userCommand = nullptr;
 	const StateEstimate<double>* _stateEstimate = nullptr;
 	const RobotParams<double>* _robotParams = nullptr;
 	LegController<double>* _legController = nullptr;
 	ArmController<double>* _armController = nullptr;
+	FootEndEffectorSource _footEndEffectorSource{FootEndEffectorSource::Site};
 };
 
 #endif  // ROBOT_CONTROLLER_H

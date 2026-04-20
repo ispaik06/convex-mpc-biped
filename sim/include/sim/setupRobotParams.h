@@ -14,7 +14,7 @@ struct MujocoRobotSetup {
 };
 
 template <typename T>
-MujocoRobotSetup<T> setupRobotParams(const RobotType, const mjModel_*);
+MujocoRobotSetup<T> setupRobotParams(const RobotType, const mjModel_*, FootEndEffectorSource);
 
 template <typename T>
 void updateReducedBodyMassPropertiesFromData(const mjModel_* model,
