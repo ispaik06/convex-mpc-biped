@@ -18,8 +18,9 @@ mpc:
   normal_force_max: 700.0
   normal_force_min: 10.0
   iterations_between_solve: 10
-  state_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-  input_weight_diag: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  state_weight_diag: [80.0, 80.0, 5.0, 2.0, 2.0, 300.0, 10.0, 10.0, 5.0, 2.0, 2.0, 15.0, 1.0]
+  input_weight_diag: [3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4]
+  # [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   # [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
 
 swing:
@@ -28,7 +29,7 @@ swing:
   height: 0.06
   min_remaining_time: 0.001
   touchdown_target_mode: legacy_com_yaw_corrected
-  foot_end_effector_source: body_com  # site or body_com
+  foot_end_effector_source: site  # site or body_com
 
 foot_placement:
   velocity_feedback_gain: 0.03

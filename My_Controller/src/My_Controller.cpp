@@ -223,6 +223,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0);
         _convexMPC->solve();
         _stanceWrenchWorld = _convexMPC->optimalWrench();
+
     } catch (const std::exception&) {
         _stanceWrenchWorld.setZero();
 

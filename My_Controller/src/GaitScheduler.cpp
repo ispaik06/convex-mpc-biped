@@ -73,7 +73,8 @@ void GaitScheduler::buildConstraintMatrices() {
             S_left = Mat3<double>::Identity();
         }
         else {  // stance
-            C_left << C_unit, DMat<double>::Zero(12, 6);
+            C_left.block<12, 3>(0, 0) = C_unit.block<12, 3>(0, 0);
+            C_left.block<12, 3>(0, 6) = C_unit.block<12, 3>(0, 3);
             Ck_bound(4) = mpc.normalForceMax;
             Ck_bound(5) = -mpc.normalForceMin;
         }
@@ -82,7 +83,8 @@ void GaitScheduler::buildConstraintMatrices() {
             S_right = Mat3<double>::Identity();
         }
         else {  // stance
-            C_right << DMat<double>::Zero(12, 6), C_unit;
+            C_right.block<12, 3>(0, 3) = C_unit.block<12, 3>(0, 0);
+            C_right.block<12, 3>(0, 9) = C_unit.block<12, 3>(0, 3);
             Ck_bound(16) = mpc.normalForceMax;
             Ck_bound(17) = -mpc.normalForceMin;
         }
