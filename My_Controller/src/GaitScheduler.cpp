@@ -4,6 +4,10 @@
 
 #include "GaitScheduler.h"
 
+void GaitScheduler::setLocomotionMode(const LocomotionMode locomotionMode) {
+    _locomotionMode = locomotionMode;
+}
+
 void GaitScheduler::rebuildContactConstraintTemplate() {
     const auto& mpc = getControllerConfig().mpc;
     C_unit <<
@@ -22,6 +26,10 @@ void GaitScheduler::rebuildContactConstraintTemplate() {
 }
 
 double GaitScheduler::p(Side i, double t) const {
+    if (_locomotionMode == LocomotionMode::Standing) {
+        return 0.0;
+    }
+
     if (_horizonClock == nullptr) {
         throw std::runtime_error("GaitScheduler::p requires initialized HorizonClock");
     }
@@ -32,6 +40,10 @@ double GaitScheduler::p(Side i, double t) const {
 }
 
 bool GaitScheduler::c(Side i, double t) const {
+    if (_locomotionMode == LocomotionMode::Standing) {
+        return true;
+    }
+
     const double phase = p(i, t);
     const double stanceFraction = stanceTime() / cycleTime();
     return (0.0 <= phase && phase < stanceFraction);

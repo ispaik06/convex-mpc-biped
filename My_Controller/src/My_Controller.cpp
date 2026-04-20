@@ -56,11 +56,11 @@ Vec3<double> reducedBodyComWorld(const StateEstimate<double>& stateEstimate,
 
 Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstimate,
                                          const RobotParams<double>& robotParams) {
-    const Vec3<double> offsetWorld = reducedBodyOffsetWorld(stateEstimate, robotParams);
+    const Vec3<double> bodyBOffset_W = reducedBodyOffsetWorld(stateEstimate, robotParams);
     // Use the full torso angular velocity here so the reduced-body COM velocity stays
     // consistent when the torso has roll/pitch motion. If we want a yaw-only approximation
     // later, that should be an explicit model choice rather than an accidental truncation.
-    return stateEstimate.torsoLinVel_W + stateEstimate.torsoAngVel_W.cross(offsetWorld);
+    return stateEstimate.torsoLinVel_W + stateEstimate.torsoAngVel_W.cross(bodyBOffset_W);
 }
 }  // namespace
 

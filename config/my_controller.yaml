@@ -23,16 +23,16 @@ mpc:
   # [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
 
 swing:
-  natural_frequency: [100.0, 100.0, 70.0]  # [780.0, 765.0, 600.0]
-  kd_diag: [20.0, 20.0, 20.0]   # [35.0, 25.0, 10.0]
+  natural_frequency: [795.0, 779.0, 600.0]  # [795.0, 779.0, 600.0]
+  kd_diag: [25.0, 25.0, 10.0]   # [25.0, 25.0, 10.0]
   height: 0.06
   min_remaining_time: 0.001
-  touchdown_target_mode: body_velocity_half_stance
-  foot_end_effector_source: site
+  touchdown_target_mode: legacy_com_yaw_corrected
+  foot_end_effector_source: body_com  # site or body_com
 
 foot_placement:
   velocity_feedback_gain: 0.03
-  placement_clamp: 0.3
+  placement_clamp: 0.2
   touchdown_height: -0.003
   nominal_lateral_offset: 0.0 # -0.0018375
   swing_bias: 0.0

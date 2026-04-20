@@ -36,8 +36,8 @@ private:
     Vec3<double> _p = Vec3<double>::Zero();
     Vec3<double> _v = Vec3<double>::Zero();
     Vec3<double> _a = Vec3<double>::Zero();
-    double _swingHeight{0.06};
-    double _swingTime{1.0};
+    double _swingHeight{0.0};
+    double _swingTime{0.0};
     double _remainingTime{0.0};
     bool _active{false};
 };

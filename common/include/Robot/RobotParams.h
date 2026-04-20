@@ -64,8 +64,8 @@ struct RobotParams {
   int nu{0};
 
   T bodyMass{0.0};
-  Mat3<T> bodyInertia = Mat3<T>::Zero();  // reduced-body frame, yaw aligned
-  Vec3<T> bodyComLocation = Vec3<T>::Zero();  // torso root -> reduced COM, yaw aligned
+  Mat3<T> bodyInertia = Mat3<T>::Zero();  // reduced-body frame B, yaw aligned
+  Vec3<T> bodyComLocation = Vec3<T>::Zero();  // torso root -> reduced-body COM (B origin), yaw aligned
 
   DVec<T> default_qpos;
 

@@ -266,7 +266,7 @@ void fillReducedBodyMassProperties(const mjModel* model,
         const Mat3<T> I_body_B = R_i * I_diag * R_i.transpose();
         const Vec3<T> offset_B = comBody_B - upperBodyCom_B;
 
-        // Parallel axis theorem about the reduced COM in the torso-root frame.
+        // Parallel axis theorem about the reduced-body COM (B origin) in the torso-root frame.
         upperBodyInertia_B += I_body_B +
             mass * ((offset_B.squaredNorm() * Mat3<T>::Identity()) - (offset_B * offset_B.transpose()));
     }

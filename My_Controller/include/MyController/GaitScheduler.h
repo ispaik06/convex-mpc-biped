@@ -13,6 +13,8 @@ public:
         Ck_bound = Vec24<double>::Zero();
     }
 
+    void setLocomotionMode(LocomotionMode locomotionMode);
+
     double p(Side, double) const;
     bool c(Side, double) const;
 
@@ -26,6 +28,7 @@ private:
     void rebuildContactConstraintTemplate();
 
     const HorizonClock* _horizonClock = nullptr;
+    LocomotionMode _locomotionMode{LocomotionMode::Walking};
     Eigen::Matrix<double, 12, 6> C_unit;
     Vec24<double> Ck_bound;
 };
