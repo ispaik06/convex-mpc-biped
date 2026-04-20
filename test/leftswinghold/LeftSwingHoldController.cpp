@@ -123,10 +123,10 @@ Vec3<double> LeftSwingHoldController::touchdownTargetWorld() const {
     const double psi = _stateEstimate->psi;
     const Mat3<double> R_WB = Rz(psi);
     const Mat3<double> R_BW = R_WB.transpose();
-    const Vec3<double> bodyComOffset_W = R_WB * _robotParams->bodyComLocation;
-    const Vec3<double> p_com_W = _stateEstimate->torsoPos_W + bodyComOffset_W;
+    const Vec3<double> bodyBOffset_W = R_WB * _robotParams->bodyComLocation;
+    const Vec3<double> p_com_W = _stateEstimate->torsoPos_W + bodyBOffset_W;
     const Vec3<double> v_com_W =
-        _stateEstimate->torsoLinVel_W + _stateEstimate->torsoAngVel_W.cross(bodyComOffset_W);
+        _stateEstimate->torsoLinVel_W + _stateEstimate->torsoAngVel_W.cross(bodyBOffset_W);
     const Vec3<double> u_com_B = R_BW * v_com_W;
     const Vec3<double> u_des_B = Vec3<double>{
         _userCommand != nullptr ? _userCommand->x_dot : 0.0,
@@ -150,22 +150,22 @@ Vec3<double> LeftSwingHoldController::touchdownTargetWorld() const {
                 _stateEstimate->torsoPos_W +
                 _stateEstimate->torsoQuat_W.toRotationMatrix() *
                     _robotParams->legs[legIndex].hipLocationFromBody;
-            Vec3<double> p_nom_B = R_BW * (hipWorld - p_com_W);
-            p_nom_B[1] += (_robotParams->legs[legIndex].side == Side::Left ? 1.0 : -1.0) *
+            Vec3<double> p_nom_B(-0.002851214,  0.072812741, -0.752981881);
+            // p_nom_B[1] += (_robotParams->legs[legIndex].side == Side::Left ? 1.0 : -1.0) *
                           footPlacement.nominalLateralOffset;
 
             const double yaw_correction = psi_dot * stanceTime() / 2.0;
             const Mat3<double> R_yaw_correction = Rz(yaw_correction);
 
             double delta_x =
-                (0.5 + footPlacement.swingBias) * u_com_B[0] * stanceTime()
-                + footPlacement.velocityFeedbackGain * (u_com_B[0] - u_des_B[0])
-                + (0.5 * z_com / model.gravity) * (u_com_B[1] * psi_dot);
+                (0.5 + footPlacement.swingBias) * u_com_B[0] * stanceTime();
+                // + footPlacement.velocityFeedbackGain * (u_com_B[0] - u_des_B[0])
+                // + (0.5 * z_com / model.gravity) * (u_com_B[1] * psi_dot);
 
             double delta_y =
-                0.5 * u_com_B[1] * stanceTime()
-                + footPlacement.velocityFeedbackGain * (u_com_B[1] - u_des_B[1])
-                + (0.5 * z_com / model.gravity) * (-u_com_B[0] * psi_dot);
+                0.5 * u_com_B[1] * stanceTime();
+                // + footPlacement.velocityFeedbackGain * (u_com_B[1] - u_des_B[1])
+                // + (0.5 * z_com / model.gravity) * (-u_com_B[0] * psi_dot);
 
             delta_x = std::clamp(delta_x, -footPlacement.placementClamp, footPlacement.placementClamp);
             delta_y = std::clamp(delta_y, -footPlacement.placementClamp, footPlacement.placementClamp);
@@ -173,7 +173,6 @@ Vec3<double> LeftSwingHoldController::touchdownTargetWorld() const {
             const Vec3<double> feedback_B(delta_x, delta_y, footPlacement.touchdownHeight);
             Vec3<double> target =
                 p_com_W + R_WB * (R_yaw_correction * p_nom_B + u_des_B * T_rem + feedback_B);
-            target.z() = _stateEstimate->legs[legIndex].footPos_W.z();
             return target;
         }
     }
