@@ -66,6 +66,7 @@ void MPCFormulation::build(const ReferenceTrajectoryOutput& referenceTrajectory,
         const Vec3<double> r_right_k = referenceTrajectory.r_right.col(k);
 
         const Mat3<double> R_k = Rz(psi_k);
+        const Mat3<double> I_k = R_k * I_body * R_k.transpose();
         const Mat3<double> I_k_inv = R_k * I_body_inv * R_k.transpose();
 
         Mat13d A_c_k = Mat13d::Zero();
@@ -80,6 +81,10 @@ void MPCFormulation::build(const ReferenceTrajectoryOutput& referenceTrajectory,
         B_c_k.block<3, 3>(6, 9) = I_k_inv;
         B_c_k.block<3, 3>(9, 0) = I3 / mass;
         B_c_k.block<3, 3>(9, 3) = I3 / mass;
+
+        out.A_c[k] = A_c_k;
+        out.B_c[k] = B_c_k;
+        out.inertia_W[k] = I_k;
 
         discretizeZOH(A_c_k, B_c_k, dt, _A_d[k], _B_d[k]);
     }

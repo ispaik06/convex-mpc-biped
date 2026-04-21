@@ -7,6 +7,7 @@
 
 #include "Controllers/LegController.h"
 #include "Dynamics/OperationalSpaceDynamics.h"
+#include "StandingMpcDebugLogger.h"
 #include "Utilities/MatrixUtils.h"
 
 namespace {
@@ -120,6 +121,8 @@ void MyController::initializeRuntimeObjects() {
     _stanceWrenchWorld.setZero();
     _iteration = 0;
     _lastMpcIteration = 0;
+    _standingMpcDebugLogPending = false;
+    _standingMpcDebugLogWritten = false;
     _lastControlTime = _stateEstimate->time;
     _bodyTarget = BodyTargetState{};
     _initialized = true;
@@ -257,9 +260,13 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0);
         _convexMPC->solve();
         _stanceWrenchWorld = _convexMPC->optimalWrench();
+        if (_locomotionMode == LocomotionMode::Standing && !_standingMpcDebugLogWritten) {
+            _standingMpcDebugLogPending = true;
+        }
 
     } catch (const std::exception&) {
         _stanceWrenchWorld.setZero();
+        _standingMpcDebugLogPending = false;
 
         const double time = _stateEstimate->time;
         int stanceLegCount = 0;
@@ -288,6 +295,44 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     }
 
     _lastMpcIteration = _iteration;
+}
+
+void MyController::maybeWriteFirstStandingMpcDebugLog(
+    const Vec13<double>& x0,
+    const DesiredFootPositions& desiredFootPositions) {
+    if (_locomotionMode != LocomotionMode::Standing ||
+        !_standingMpcDebugLogPending ||
+        _standingMpcDebugLogWritten ||
+        _convexMPC == nullptr ||
+        !_convexMPC->hasSolution() ||
+        _stateEstimate == nullptr ||
+        _robotParams == nullptr ||
+        _legController == nullptr) {
+        return;
+    }
+
+    try {
+        const StandingMpcDebugSnapshot snapshot{
+            *_stateEstimate,
+            *_robotParams,
+            *_legController,
+            desiredFootPositions,
+            x0,
+            _referenceTrajectoryOutput,
+            _mpcFormulationOutput,
+            _convexMPC->optimalWrenchHorizon(),
+            _iteration,
+        };
+
+        const std::string logPath = writeStandingMpcDebugLog(snapshot);
+        std::cout << "[StandingMPCDebug] wrote " << logPath << std::endl;
+        _standingMpcDebugLogWritten = true;
+        _standingMpcDebugLogPending = false;
+    } catch (const std::exception& exception) {
+        std::cerr << "[StandingMPCDebug] failed to write log: "
+                  << exception.what() << std::endl;
+        _standingMpcDebugLogPending = false;
+    }
 }
 
 void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) const {
@@ -443,6 +488,7 @@ void MyController::runController() {
     updateSwingTrajectories(desiredFootPositions);
     maybeUpdateMpc(x0, desiredFootPositions);
     writeLegCommands();
+    maybeWriteFirstStandingMpcDebugLog(x0, desiredFootPositions);
 
     ++_iteration;
 }

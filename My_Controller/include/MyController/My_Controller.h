@@ -52,11 +52,15 @@ private:
 		                   const DesiredFootPositions& desiredFootPositions);
 	void writeLegCommands();
 	void writeStandingLegCommands();
+	void maybeWriteFirstStandingMpcDebugLog(const Vec13<double>& x0,
+		                                    const DesiredFootPositions& desiredFootPositions);
 	void maybePrintGaitScheduler() const;
 
 	bool _initialized{false};
 	u64 _iteration{0};
 	u64 _lastMpcIteration{0};
+	bool _standingMpcDebugLogPending{false};
+	bool _standingMpcDebugLogWritten{false};
 	double _lastControlTime{0.0};
 	Vec12<double> _stanceWrenchWorld = Vec12<double>::Zero();
 	vectorAligned<LegRuntimeState> _legRuntime;

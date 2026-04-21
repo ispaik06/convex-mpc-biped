@@ -121,7 +121,8 @@ ConvexMPC::ConvexMPC()
       _gradientDense(12 * horizonSteps()),
       _statePrediction(13 * horizonSteps()),
       _stateError(13 * horizonSteps()),
-      _weightedStateError(13 * horizonSteps()) {
+      _weightedStateError(13 * horizonSteps()),
+      _optimalWrenchHorizon(12 * horizonSteps()) {
     _gradient.setZero();
     _lowerBound.setZero();
     _upperBound.setZero();
@@ -133,6 +134,7 @@ ConvexMPC::ConvexMPC()
     _statePrediction.setZero();
     _stateError.setZero();
     _weightedStateError.setZero();
+    _optimalWrenchHorizon.setZero();
 }
 
 int ConvexMPC::numVars() const {
@@ -185,6 +187,7 @@ void ConvexMPC::clear() {
     _qpReady = false;
     _hasPreviousSolution = false;
     _optimalWrench.setZero();
+    _optimalWrenchHorizon.setZero();
     _warmStart.setZero();
     _lastSolution.setZero();
 }
@@ -210,6 +213,14 @@ const DMat<double>& ConvexMPC::K() const {
 
 const Vec12<double>& ConvexMPC::optimalWrench() const {
     return _optimalWrench;
+}
+
+const DVec<double>& ConvexMPC::optimalWrenchHorizon() const {
+    return _optimalWrenchHorizon;
+}
+
+bool ConvexMPC::hasSolution() const {
+    return _hasPreviousSolution;
 }
 
 void ConvexMPC::buildQP() {
@@ -299,6 +310,7 @@ void ConvexMPC::solve() {
     _lastSolution = solution;
     updateWarmStart();
     _hasPreviousSolution = true;
+    _optimalWrenchHorizon = solution.cast<double>();
     _optimalWrench = solution.segment(0, 12).cast<double>();
 }
 

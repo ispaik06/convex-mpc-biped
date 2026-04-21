@@ -39,6 +39,8 @@ public:
     const DMat<double>& L() const;
     const DMat<double>& K() const;
     const Vec12<double>& optimalWrench() const;
+    const DVec<double>& optimalWrenchHorizon() const;
+    bool hasSolution() const;
 
     void buildQP();
     void solve();
@@ -78,6 +80,7 @@ private:
     DVec<double> _stateError;
     DVec<double> _weightedStateError;
     Vec12<double> _optimalWrench = Vec12<double>::Zero();
+    DVec<double> _optimalWrenchHorizon;
 };
 
 #endif  // CONVEX_MPC_H

@@ -7,6 +7,7 @@ add_library(My_Controller
 	src/SwingFootTrajectory.cpp
 	src/MPCFormulation.cpp
 	src/ConvexMPC.cpp
+	src/StandingMpcDebugLogger.cpp
 )
 
 find_package(osqp CONFIG REQUIRED)
