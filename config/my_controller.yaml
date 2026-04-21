@@ -1,4 +1,4 @@
-locomotion_mode: standing
+locomotion_mode: standing  # walking or standing
 
 timing:
   cycle: 1.0

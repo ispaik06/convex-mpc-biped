@@ -15,9 +15,6 @@ target_include_directories(robot
 
 target_link_libraries(robot PUBLIC
 	common
-)
-
-target_link_libraries(robot PRIVATE
 	yaml-cpp::yaml-cpp
 )
 

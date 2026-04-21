@@ -152,7 +152,7 @@ Vec3<double> LeftSwingHoldController::touchdownTargetWorld() const {
                     _robotParams->legs[legIndex].hipLocationFromBody;
             Vec3<double> p_nom_B(-0.002851214,  0.072812741, -0.752981881);
             // p_nom_B[1] += (_robotParams->legs[legIndex].side == Side::Left ? 1.0 : -1.0) *
-                          footPlacement.nominalLateralOffset;
+            //               footPlacement.nominalLateralOffset;
 
             const double yaw_correction = psi_dot * stanceTime() / 2.0;
             const Mat3<double> R_yaw_correction = Rz(yaw_correction);

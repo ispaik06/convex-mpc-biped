@@ -11,7 +11,6 @@ add_library(My_Controller
 
 find_package(osqp CONFIG REQUIRED)
 find_package(OsqpEigen REQUIRED)
-find_package(yaml-cpp CONFIG REQUIRED)
 
 
 target_include_directories(My_Controller PUBLIC
@@ -24,7 +23,6 @@ target_link_libraries(My_Controller PUBLIC
 	robot
 	osqp::osqp
 	OsqpEigen::OsqpEigen
-	yaml-cpp::yaml-cpp
 )
 
 target_compile_definitions(My_Controller

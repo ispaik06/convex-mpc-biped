@@ -15,8 +15,6 @@ target_include_directories(main_left_swing_hold_keyboard_test PRIVATE
 )
 
 target_link_libraries(main_left_swing_hold_keyboard_test PRIVATE
-    common
-    robot
     sim
     My_Controller
 )

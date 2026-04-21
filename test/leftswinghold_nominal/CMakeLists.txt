@@ -12,8 +12,6 @@ target_include_directories(main_left_swing_hold_nominal_test PRIVATE
 )
 
 target_link_libraries(main_left_swing_hold_nominal_test PRIVATE
-    common
-    robot
     sim
     My_Controller
 )
