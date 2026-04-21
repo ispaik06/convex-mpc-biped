@@ -60,6 +60,15 @@ std::string freeJointName(const mjModel* fullModel) {
     throw std::runtime_error("Expected a floating-base joint in the full MuJoCo model");
 }
 
+int findLegIndexBySide(const RobotParams<double>& params, const Side side) {
+    for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
+        if (params.legs[leg].side == side) {
+            return static_cast<int>(leg);
+        }
+    }
+    return -1;
+}
+
 void assignBasePose(mjModel* model,
                     const int torsoBodyId,
                     const Vec3<double>& torsoPos_W,
@@ -177,6 +186,53 @@ void copyBias(const mjData* data, DVec<double>& bias) {
         bias[i] = static_cast<double>(data->qfrc_bias[i]);
     }
 }
+
+void copySelectedJacobianColumns(const mjModel* model,
+                                 const std::vector<mjtNum>& source,
+                                 const std::vector<int>& columnIndices,
+                                 DMat<double>& target,
+                                 const Eigen::Index rowOffset) {
+    Eigen::Map<const RowMajorMatrix<mjtNum>> sourceMap(source.data(), 3, model->nv);
+    for (Eigen::Index row = 0; row < 3; ++row) {
+        for (Eigen::Index col = 0; col < static_cast<Eigen::Index>(columnIndices.size()); ++col) {
+            const int sourceCol = columnIndices[static_cast<std::size_t>(col)];
+            if (sourceCol < 0 || sourceCol >= model->nv) {
+                throw std::runtime_error("Auxiliary standing Jacobian column index is out of range");
+            }
+            target(rowOffset + row, col) = static_cast<double>(sourceMap(row, sourceCol));
+        }
+    }
+}
+
+void readStandingFootJacobians(const mjModel* model,
+                               const mjData* data,
+                               const FootEndEffectorSource footSource,
+                               const int footBodyId,
+                               const int footSiteId,
+                               const std::vector<int>& combinedQvelIndex,
+                               std::vector<mjtNum>& jacpScratch,
+                               std::vector<mjtNum>& jacrScratch,
+                               DMat<double>& Jv_W,
+                               DMat<double>& Jw_W,
+                               const Eigen::Index rowOffset) {
+    switch (footSource) {
+        case FootEndEffectorSource::Site:
+            if (footSiteId < 0) {
+                throw std::runtime_error("Standing foot source is site, but no foot site was bound");
+            }
+            mj_jacSite(model, data, jacpScratch.data(), jacrScratch.data(), footSiteId);
+            break;
+        case FootEndEffectorSource::BodyCom:
+            if (footBodyId < 0) {
+                throw std::runtime_error("Standing foot source is body COM, but no foot body was bound");
+            }
+            mj_jacBodyCom(model, data, jacpScratch.data(), jacrScratch.data(), footBodyId);
+            break;
+    }
+
+    copySelectedJacobianColumns(model, jacpScratch, combinedQvelIndex, Jv_W, rowOffset);
+    copySelectedJacobianColumns(model, jacrScratch, combinedQvelIndex, Jw_W, rowOffset);
+}
 }  // namespace
 
 LegSwingDynamicsProvider::LegSwingDynamicsProvider(const RobotType robotType,
@@ -279,12 +335,117 @@ LegSwingDynamicsProvider::LegSwingDynamicsProvider(const RobotType robotType,
         auxModel.denseMassScratch.resize(
             static_cast<std::size_t>(auxModel.model->nv * auxModel.model->nv));
     }
+
+    const int leftLegIndex = findLegIndexBySide(params, Side::Left);
+    const int rightLegIndex = findLegIndexBySide(params, Side::Right);
+    if (leftLegIndex >= 0 && rightLegIndex >= 0) {
+        std::array<char, 1024> error{};
+        mjSpec* spec = mj_parseXML(xmlPath.c_str(), nullptr, error.data(), static_cast<int>(error.size()));
+        if (spec == nullptr) {
+            throw std::runtime_error("Failed to parse auxiliary standing XML: " + std::string(error.data()));
+        }
+
+        deleteElementsByType(spec, mjOBJ_ACTUATOR);
+        deleteElementsByType(spec, mjOBJ_SENSOR);
+        deleteElementsByType(spec, mjOBJ_KEY);
+
+        if (mjsElement* floatingJoint = mjs_findElement(spec, mjOBJ_JOINT, floatingJointName.c_str());
+            floatingJoint != nullptr) {
+            mjs_delete(spec, floatingJoint);
+        }
+
+        for (const auto& hand : bindings.hands) {
+            deleteBodyIfExists(spec, requireObjectName(fullModel, mjOBJ_BODY, hand.rootBodyId, "arm root body"));
+        }
+
+        _standingAuxiliaryModel.model = mj_compile(spec, nullptr);
+        if (_standingAuxiliaryModel.model == nullptr) {
+            const char* compileError = mjs_getError(spec);
+            const std::string message =
+                (compileError != nullptr && compileError[0] != '\0')
+                    ? std::string(compileError)
+                    : std::string("unknown MuJoCo compile failure");
+            mj_deleteSpec(spec);
+            throw std::runtime_error("Failed to compile auxiliary standing model: " + message);
+        }
+        mj_deleteSpec(spec);
+
+        _standingAuxiliaryModel.data = mj_makeData(_standingAuxiliaryModel.model);
+        if (_standingAuxiliaryModel.data == nullptr) {
+            destroy(_standingAuxiliaryModel);
+            throw std::runtime_error("Failed to allocate auxiliary standing mjData");
+        }
+
+        _standingAuxiliaryModel.torsoBodyId =
+            mj_name2id(_standingAuxiliaryModel.model,
+                       mjOBJ_BODY,
+                       std::string(robotSpec.baseBody).c_str());
+        _standingAuxiliaryModel.footSource = bindings.footSource;
+        _standingAuxiliaryModel.footBodyIds.resize(params.legs.size(), -1);
+        _standingAuxiliaryModel.footSiteIds.resize(params.legs.size(), -1);
+        _standingAuxiliaryModel.qposIndexByLeg.resize(params.legs.size());
+        _standingAuxiliaryModel.qvelIndexByLeg.resize(params.legs.size());
+        _standingAuxiliaryModel.footRowLegIndices = {
+            static_cast<std::size_t>(leftLegIndex),
+            static_cast<std::size_t>(rightLegIndex),
+        };
+
+        if (_standingAuxiliaryModel.torsoBodyId < 0) {
+            destroy(_standingAuxiliaryModel);
+            throw std::runtime_error("Auxiliary standing model is missing required base body");
+        }
+
+        for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
+            _standingAuxiliaryModel.footBodyIds[leg] =
+                mj_name2id(_standingAuxiliaryModel.model,
+                           mjOBJ_BODY,
+                           std::string(robotSpec.legs[leg].endBody).c_str());
+            if (!robotSpec.legs[leg].endSite.empty()) {
+                _standingAuxiliaryModel.footSiteIds[leg] =
+                    mj_name2id(_standingAuxiliaryModel.model,
+                               mjOBJ_SITE,
+                               std::string(robotSpec.legs[leg].endSite).c_str());
+            }
+
+            if (_standingAuxiliaryModel.footBodyIds[leg] < 0 ||
+                (!robotSpec.legs[leg].endSite.empty() && _standingAuxiliaryModel.footSiteIds[leg] < 0)) {
+                destroy(_standingAuxiliaryModel);
+                throw std::runtime_error(
+                    "Auxiliary standing model is missing required foot body or foot site");
+            }
+
+            auto& qposIndex = _standingAuxiliaryModel.qposIndexByLeg[leg];
+            auto& qvelIndex = _standingAuxiliaryModel.qvelIndexByLeg[leg];
+            qposIndex.reserve(robotSpec.legs[leg].joints.size());
+            qvelIndex.reserve(robotSpec.legs[leg].joints.size());
+            for (const auto& jointSpec : robotSpec.legs[leg].joints) {
+                const int jointId = mj_name2id(_standingAuxiliaryModel.model,
+                                               mjOBJ_JOINT,
+                                               std::string(jointSpec.joint).c_str());
+                if (jointId < 0) {
+                    destroy(_standingAuxiliaryModel);
+                    throw std::runtime_error("Auxiliary standing model is missing required leg joint");
+                }
+
+                qposIndex.push_back(_standingAuxiliaryModel.model->jnt_qposadr[jointId]);
+                qvelIndex.push_back(_standingAuxiliaryModel.model->jnt_dofadr[jointId]);
+                _standingAuxiliaryModel.combinedQvelIndex.push_back(
+                    _standingAuxiliaryModel.model->jnt_dofadr[jointId]);
+            }
+        }
+
+        _standingAuxiliaryModel.jacpScratch.resize(
+            static_cast<std::size_t>(3 * _standingAuxiliaryModel.model->nv));
+        _standingAuxiliaryModel.jacrScratch.resize(
+            static_cast<std::size_t>(3 * _standingAuxiliaryModel.model->nv));
+    }
 }
 
 LegSwingDynamicsProvider::~LegSwingDynamicsProvider() {
     for (auto& auxModel : _auxiliaryLegModels) {
         destroy(auxModel);
     }
+    destroy(_standingAuxiliaryModel);
 }
 
 void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
@@ -361,6 +522,58 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
         legState.hasFootKinematics = true;
         legState.hasLegDynamics = true;
     }
+
+    stateEstimate.standingFeet.zero();
+    if (_standingAuxiliaryModel.model == nullptr || _standingAuxiliaryModel.data == nullptr) {
+        return;
+    }
+
+    auto& standingModel = _standingAuxiliaryModel;
+    assignBasePose(standingModel.model,
+                   standingModel.torsoBodyId,
+                   stateEstimate.torsoPos_W,
+                   stateEstimate.torsoQuat_W);
+
+    for (std::size_t leg = 0; leg < stateEstimate.legs.size(); ++leg) {
+        auto& legState = stateEstimate.legs[leg];
+        const auto& qposIndex = standingModel.qposIndexByLeg[leg];
+        const auto& qvelIndex = standingModel.qvelIndexByLeg[leg];
+        if (legState.q.size() != static_cast<Eigen::Index>(qposIndex.size()) ||
+            legState.qd.size() != static_cast<Eigen::Index>(qvelIndex.size())) {
+            throw std::runtime_error("Auxiliary standing model leg state dimension mismatch");
+        }
+
+        for (Eigen::Index i = 0; i < legState.q.size(); ++i) {
+            standingModel.data->qpos[qposIndex[static_cast<std::size_t>(i)]] =
+                static_cast<mjtNum>(legState.q[i]);
+            standingModel.data->qvel[qvelIndex[static_cast<std::size_t>(i)]] =
+                static_cast<mjtNum>(legState.qd[i]);
+        }
+    }
+
+    mj_forward(standingModel.model, standingModel.data);
+
+    const Eigen::Index combinedDof =
+        static_cast<Eigen::Index>(standingModel.combinedQvelIndex.size());
+    stateEstimate.standingFeet.resize(combinedDof);
+    stateEstimate.standingFeet.Jv_W.setZero(6, combinedDof);
+    stateEstimate.standingFeet.Jw_W.setZero(6, combinedDof);
+
+    for (std::size_t rowBlock = 0; rowBlock < standingModel.footRowLegIndices.size(); ++rowBlock) {
+        const std::size_t leg = standingModel.footRowLegIndices[rowBlock];
+        readStandingFootJacobians(standingModel.model,
+                                  standingModel.data,
+                                  standingModel.footSource,
+                                  standingModel.footBodyIds[leg],
+                                  standingModel.footSiteIds[leg],
+                                  standingModel.combinedQvelIndex,
+                                  standingModel.jacpScratch,
+                                  standingModel.jacrScratch,
+                                  stateEstimate.standingFeet.Jv_W,
+                                  stateEstimate.standingFeet.Jw_W,
+                                  static_cast<Eigen::Index>(3 * rowBlock));
+    }
+    stateEstimate.standingFeet.hasFootJacobians = true;
 }
 
 std::string LegSwingDynamicsProvider::robotXmlPath(const RobotType robotType) {
@@ -387,4 +600,25 @@ void LegSwingDynamicsProvider::destroy(AuxiliaryLegModel& auxModel) {
     auxModel.jacrScratch.clear();
     auxModel.jacDotpScratch.clear();
     auxModel.denseMassScratch.clear();
+}
+
+void LegSwingDynamicsProvider::destroy(StandingAuxiliaryModel& auxModel) {
+    if (auxModel.data != nullptr) {
+        mj_deleteData(auxModel.data);
+        auxModel.data = nullptr;
+    }
+    if (auxModel.model != nullptr) {
+        mj_deleteModel(auxModel.model);
+        auxModel.model = nullptr;
+    }
+    auxModel.torsoBodyId = -1;
+    auxModel.footSource = FootEndEffectorSource::Site;
+    auxModel.footBodyIds.clear();
+    auxModel.footSiteIds.clear();
+    auxModel.footRowLegIndices.clear();
+    auxModel.qposIndexByLeg.clear();
+    auxModel.qvelIndexByLeg.clear();
+    auxModel.combinedQvelIndex.clear();
+    auxModel.jacpScratch.clear();
+    auxModel.jacrScratch.clear();
 }

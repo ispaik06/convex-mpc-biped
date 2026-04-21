@@ -324,6 +324,11 @@ DVec<T> LegController<T>::computeLegTorque(int leg) const {
     switch (mode) {
         case LegControlMode::JointPd:
             return computeJointPdTorque(leg);
+        case LegControlMode::JointTorque: {
+            const std::size_t idx = static_cast<std::size_t>(leg);
+            validateLegShape(idx);
+            return commands[idx].tauFeedForward;
+        }
         case LegControlMode::SwingFoot:
             return computeSwingLegTorque(leg);
         case LegControlMode::StanceWrench:

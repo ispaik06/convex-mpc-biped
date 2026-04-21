@@ -9,6 +9,7 @@
 
 enum class LegControlMode {
     JointPd,
+    JointTorque,
     SwingFoot,
     StanceWrench,
 };

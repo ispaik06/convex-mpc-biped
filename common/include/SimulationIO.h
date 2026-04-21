@@ -56,6 +56,36 @@ struct RobotLegState {
 };
 
 template <typename T>
+struct StandingFootKinematics {
+    DMat<T> Jv_W;
+    DMat<T> Jw_W;
+    bool hasFootJacobians = false;
+
+    bool matchesLayout(Eigen::Index total_leg_qd_size) const {
+        return Jv_W.rows() == 6 &&
+               Jv_W.cols() == total_leg_qd_size &&
+               Jw_W.rows() == 6 &&
+               Jw_W.cols() == total_leg_qd_size;
+    }
+
+    void resize(Eigen::Index total_leg_qd_size) {
+        if (matchesLayout(total_leg_qd_size)) {
+            return;
+        }
+
+        Jv_W.setZero(6, total_leg_qd_size);
+        Jw_W.setZero(6, total_leg_qd_size);
+        hasFootJacobians = false;
+    }
+
+    void zero() {
+        Jv_W.setZero(Jv_W.rows(), Jv_W.cols());
+        Jw_W.setZero(Jw_W.rows(), Jw_W.cols());
+        hasFootJacobians = false;
+    }
+};
+
+template <typename T>
 struct WholeBodyDynamicsState {
     DVec<T> qd;
     DVec<T> bias;

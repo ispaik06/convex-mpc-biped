@@ -14,6 +14,10 @@ double clampUnit(const double value) {
     return std::clamp(value, -1.0, 1.0);
 }
 
+double wrapAngle(const double angle) {
+    return std::atan2(std::sin(angle), std::cos(angle));
+}
+
 Vec3<double> desiredFootPositionForSide(const DesiredFootPositions& desiredFootPositions,
                                         const Side side) {
     switch (side) {
@@ -117,6 +121,7 @@ void MyController::initializeRuntimeObjects() {
     _iteration = 0;
     _lastMpcIteration = 0;
     _lastControlTime = _stateEstimate->time;
+    _bodyTarget = BodyTargetState{};
     _initialized = true;
 }
 
@@ -153,6 +158,31 @@ Vec13<double> MyController::buildCurrentMpcState() const {
     x0.template segment<3>(9) = comVelocityWorld;
     x0[12] = getControllerConfig().model.gravity;
     return x0;
+}
+
+void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
+    if (_stateEstimate == nullptr) {
+        throw std::runtime_error("MyController::updateBodyTarget requires state estimate");
+    }
+
+    if (!_bodyTarget.initialized) {
+        _bodyTarget.position_W = x0.template segment<3>(3);
+        _bodyTarget.psi = _stateEstimate->psi;
+        _bodyTarget.initialized = true;
+        return;
+    }
+
+    if (dt <= 0.0) {
+        return;
+    }
+
+    const double x_dot = (_userCommand != nullptr) ? _userCommand->x_dot : 0.0;
+    const double y_dot = (_userCommand != nullptr) ? _userCommand->y_dot : 0.0;
+    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    const Vec3<double> v_cmd_B(x_dot, y_dot, 0.0);
+
+    _bodyTarget.position_W += Rz(_bodyTarget.psi) * v_cmd_B * dt;
+    _bodyTarget.psi = wrapAngle(_bodyTarget.psi + psi_dot * dt);
 }
 
 void MyController::updateSwingTrajectories(
@@ -215,7 +245,11 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     try {
         _gaitScheduler->buildConstraintMatrices();
 
-        ReferenceTrajectory(_userCommand, x0, desiredFootPositions, _horizonClock.get())
+        Vec13<double> referenceSeed = x0;
+        referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
+        referenceSeed[2] = _bodyTarget.psi;
+
+        ReferenceTrajectory(_userCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
             .build(_referenceTrajectoryOutput);
         _mpcFormulation->build(_referenceTrajectoryOutput, _mpcFormulationOutput);
 
@@ -256,6 +290,19 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     _lastMpcIteration = _iteration;
 }
 
+void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) const {
+    if (!_bodyTarget.initialized) {
+        return;
+    }
+
+    DebugVizMarker<double> marker;
+    marker.name = "debug_body_target";
+    marker.position_W = _bodyTarget.position_W;
+    marker.orientation_W = Quat<double>::Identity();
+    marker.active = true;
+    debugViz.markers.push_back(marker);
+}
+
 void MyController::maybePrintGaitScheduler() const {
     if (_gaitScheduler == nullptr || _stateEstimate == nullptr) {
         return;
@@ -274,10 +321,58 @@ void MyController::maybePrintGaitScheduler() const {
               << "  R: " << (rightStance ? "stance" : "swing") << std::endl;
 }
 
+void MyController::writeStandingLegCommands() {
+    if (_legController == nullptr || _stateEstimate == nullptr || _robotParams == nullptr) {
+        throw std::runtime_error("MyController::writeStandingLegCommands requires initialized pointers");
+    }
+
+    const auto& standingFeet = _stateEstimate->standingFeet;
+    if (!standingFeet.hasFootJacobians) {
+        throw std::runtime_error("Standing mode requires combined two-foot Jacobians");
+    }
+
+    Eigen::Index totalLegDof = 0;
+    for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
+        totalLegDof += _legController->datas[leg].dof();
+    }
+
+    if (standingFeet.Jv_W.rows() != 6 || standingFeet.Jw_W.rows() != 6 ||
+        standingFeet.Jv_W.cols() != totalLegDof || standingFeet.Jw_W.cols() != totalLegDof) {
+        throw std::runtime_error("Standing combined Jacobian dimension does not match leg dofs");
+    }
+
+    DVec<double> footForces_W(6);
+    DVec<double> footMoments_W(6);
+    footForces_W.template segment<3>(0) = -_stanceWrenchWorld.template segment<3>(0);
+    footForces_W.template segment<3>(3) = -_stanceWrenchWorld.template segment<3>(3);
+    footMoments_W.template segment<3>(0) = -_stanceWrenchWorld.template segment<3>(6);
+    footMoments_W.template segment<3>(3) = -_stanceWrenchWorld.template segment<3>(9);
+
+    const DVec<double> combinedLegTorque =
+        standingFeet.Jv_W.transpose() * footForces_W +
+        standingFeet.Jw_W.transpose() * footMoments_W;
+
+    Eigen::Index offset = 0;
+    for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
+        auto& command = _legController->commands[leg];
+        const Eigen::Index dof = _legController->datas[leg].dof();
+        command.mode = LegControlMode::JointTorque;
+        command.tauFeedForward = combinedLegTorque.segment(offset, dof);
+        command.forceFeedForward_W.setZero();
+        command.momentFeedForward_W.setZero();
+        offset += dof;
+    }
+}
+
 void MyController::writeLegCommands() {
     if (_legController == nullptr || _gaitScheduler == nullptr || _stateEstimate == nullptr ||
         _robotParams == nullptr) {
         throw std::runtime_error("MyController::writeLegCommands requires initialized pointers");
+    }
+
+    if (_locomotionMode == LocomotionMode::Standing) {
+        writeStandingLegCommands();
+        return;
     }
 
     const double time = _stateEstimate->time;
@@ -332,6 +427,8 @@ void MyController::runController() {
     // maybePrintGaitScheduler();
 
     const Vec13<double> x0 = buildCurrentMpcState();
+    const double dt = std::max(0.0, _stateEstimate->time - _lastControlTime);
+    updateBodyTarget(x0, dt);
     const auto standingFootTarget = [&](const Side side) {
         Vec3<double> target = _stateEstimate->legs[findLegIndex(side)].footPos_W;
         target.z() = -0.005;

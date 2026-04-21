@@ -44,10 +44,27 @@ private:
         std::vector<mjtNum> denseMassScratch;
     };
 
+    struct StandingAuxiliaryModel {
+        mjModel* model{nullptr};
+        mjData* data{nullptr};
+        int torsoBodyId{-1};
+        FootEndEffectorSource footSource{FootEndEffectorSource::Site};
+        std::vector<int> footBodyIds;
+        std::vector<int> footSiteIds;
+        std::vector<std::size_t> footRowLegIndices;
+        std::vector<std::vector<int>> qposIndexByLeg;
+        std::vector<std::vector<int>> qvelIndexByLeg;
+        std::vector<int> combinedQvelIndex;
+        std::vector<mjtNum> jacpScratch;
+        std::vector<mjtNum> jacrScratch;
+    };
+
     static std::string robotXmlPath(RobotType robotType);
     static void destroy(AuxiliaryLegModel& auxModel);
+    static void destroy(StandingAuxiliaryModel& auxModel);
 
     std::vector<AuxiliaryLegModel> _auxiliaryLegModels;
+    StandingAuxiliaryModel _standingAuxiliaryModel;
 };
 
 #endif  // LEG_SWING_DYNAMICS_PROVIDER_H

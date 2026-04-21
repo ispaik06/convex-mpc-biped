@@ -20,11 +20,20 @@ public:
 	MyController();
 	virtual ~MyController() {}
 
-	virtual void initializeController();
+	virtual void initializeController() override;
 
-	virtual void runController();
+	virtual void runController() override;
+	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const override;
 
 private:
+	struct BodyTargetState {
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+		Vec3<double> position_W = Vec3<double>::Zero();
+		double psi{0.0};
+		bool initialized{false};
+	};
+
 	struct LegRuntimeState {
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -37,10 +46,12 @@ private:
 	void initializeRuntimeObjects();
 	int findLegIndex(Side side) const;
 	Vec13<double> buildCurrentMpcState() const;
+	void updateBodyTarget(const Vec13<double>& x0, double dt);
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
 	void maybeUpdateMpc(const Vec13<double>& x0,
 		                   const DesiredFootPositions& desiredFootPositions);
 	void writeLegCommands();
+	void writeStandingLegCommands();
 	void maybePrintGaitScheduler() const;
 
 	bool _initialized{false};
@@ -61,6 +72,7 @@ private:
 	double _swingHeight{0.0};
 	u64 _iterationsBetweenMpc{10};
 	LocomotionMode _locomotionMode{LocomotionMode::Walking};
+	BodyTargetState _bodyTarget;
 
 };
 
