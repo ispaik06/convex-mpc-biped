@@ -71,7 +71,7 @@ void MPCFormulation::build(const ReferenceTrajectoryOutput& referenceTrajectory,
         Mat13d A_c_k = Mat13d::Zero();
         A_c_k.block<3, 3>(0, 6) = R_k.transpose();
         A_c_k.block<3, 3>(3, 9) = I3;
-        A_c_k.block<3, 1>(9, 12) << 0.0, 0.0, -1.0;
+        A_c_k.block<3, 1>(9, 12) << 0.0, 0.0, 1.0;
 
         Mat13x12d B_c_k = Mat13x12d::Zero();
         B_c_k.block<3, 3>(6, 0) = I_k_inv * skew(r_left_k);

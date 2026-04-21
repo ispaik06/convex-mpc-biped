@@ -8,7 +8,7 @@ timing:
   horizon_steps: 20
 
 model:
-  gravity: 9.81
+  gravity: -9.81
 
 mpc:
   friction_coefficient: 0.6

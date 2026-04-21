@@ -79,12 +79,12 @@ Vec3<double> ControlFSM::touchdownTargetWorldLegacy(const std::size_t legIndex) 
     double delta_x =
         (0.5 + footPlacement.swingBias) * u_com_B[0] * stanceTime()
         + footPlacement.velocityFeedbackGain * (u_com_B[0] - u_des_B[0])
-        + (0.5 * z_com / model.gravity) * (u_com_B[1] * psi_dot);
+        + (0.5 * z_com / std::abs(model.gravity)) * (u_com_B[1] * psi_dot);
 
     double delta_y =
         0.5 * u_com_B[1] * stanceTime()
         + footPlacement.velocityFeedbackGain * (u_com_B[1] - u_des_B[1])
-        + (0.5 * z_com / model.gravity) * (-u_com_B[0] * psi_dot);
+        + (0.5 * z_com / std::abs(model.gravity)) * (-u_com_B[0] * psi_dot);
 
     delta_x = std::clamp(delta_x, -footPlacement.placementClamp, footPlacement.placementClamp);
     delta_y = std::clamp(delta_y, -footPlacement.placementClamp, footPlacement.placementClamp);

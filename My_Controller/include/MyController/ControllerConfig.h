@@ -26,7 +26,7 @@ struct TimingParameters {
 };
 
 struct ModelParameters {
-    double gravity{9.81};
+    double gravity{-9.81};
 };
 
 struct MPCParameters {

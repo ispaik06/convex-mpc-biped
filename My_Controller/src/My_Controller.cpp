@@ -149,7 +149,7 @@ Vec13<double> MyController::buildCurrentMpcState() const {
     x0[1] = rollPitch[1];
     x0[2] = _stateEstimate->psi;
     x0.template segment<3>(3) = comWorld;
-    x0.template segment<3>(6) = _stateEstimate->torsoAngVel_W;
+    x0.template segment<3>(6) = _stateEstimate->torsoAngVel_W; //? approximate reduced-body as rigid body
     x0.template segment<3>(9) = comVelocityWorld;
     x0[12] = getControllerConfig().model.gravity;
     return x0;
@@ -237,7 +237,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
 
         if (stanceLegCount > 0) {
             const double verticalForce =
-                (_robotParams->bodyMass * getControllerConfig().model.gravity) /
+                (_robotParams->bodyMass * std::abs(getControllerConfig().model.gravity)) /
                 static_cast<double>(stanceLegCount);
             for (const auto& leg : _robotParams->legs) {
                 if (!_gaitScheduler->c(leg.side, time)) {
