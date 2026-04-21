@@ -2,6 +2,7 @@
 #define ROBOT_CONTROLLER_H
 
 #include "Robot/RobotModel.h"
+#include "DebugVisualization.h"
 #include "Utilities/UserCommand.h"
 
 enum class FootEndEffectorSource {
@@ -29,6 +30,8 @@ public:
 	virtual void initializeController() = 0;
 
 	virtual void runController() = 0;
+
+	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const {}
 
 private:
 	friend class RobotRunner;

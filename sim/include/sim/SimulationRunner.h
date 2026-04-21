@@ -3,7 +3,9 @@
 
 #include <atomic>
 #include <string>
+#include <vector>
 
+#include "DebugVisualization.h"
 #include "StateEstimator/StateEstimator.h"
 #include "LegSwingDynamicsProvider.h"
 #include "MujocoRobotBindings.h"
@@ -35,6 +37,13 @@ public:
 
 private:
 	void applyRobotCommand();
+	void updateDebugVisualization();
+
+	struct DebugMocapBinding {
+		std::string name;
+		int bodyId{-1};
+		int mocapId{-1};
+	};
 
 	RobotType _robot;
 	RobotParams<double> _params;
@@ -46,6 +55,7 @@ private:
 	RobotCommand<double> _robotCommand;
 	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
 	std::unique_ptr<LegSwingDynamicsProvider> _legSwingDynamicsProvider = nullptr;
+	std::vector<DebugMocapBinding> _debugMocapBindings;
 	bool _firstControllerRun = true;
 	std::string _modelPath;
 	u64 _iterations = 0;

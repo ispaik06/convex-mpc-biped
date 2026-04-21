@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <thread>
 
@@ -33,6 +34,7 @@ void SimulationRunner::init() {
 	}
 
 	mj_forward(model, data);
+	_debugMocapBindings.clear();
 
 	model->opt.timestep = 0.002;
 	model->opt.integrator = mjINT_IMPLICITFAST;
@@ -67,6 +69,7 @@ void SimulationRunner::run() {
 	mj_deleteModel(model);
 	data = nullptr;
 	model = nullptr;
+	_debugMocapBindings.clear();
 }
 
 void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
@@ -137,7 +140,63 @@ void SimulationRunner::runRobotControl() {
 		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
 		// }
 	_robotRunner->run(_stateEstimate, _robotCommand);
+	updateDebugVisualization();
 	applyRobotCommand();
+}
+
+void SimulationRunner::updateDebugVisualization() {
+	if (model == nullptr || data == nullptr || _robotRunner == nullptr || _robotRunner->_robot_ctrl == nullptr) {
+		return;
+	}
+
+	DebugVizState<double> debugViz;
+	_robotRunner->_robot_ctrl->collectDebugVisualization(debugViz);
+
+	if (debugViz.markers.empty()) {
+		return;
+	}
+
+	for (const auto& marker : debugViz.markers) {
+		if (!marker.active) {
+			continue;
+		}
+
+		auto it = std::find_if(_debugMocapBindings.begin(),
+							   _debugMocapBindings.end(),
+							   [&](const DebugMocapBinding& binding) {
+								   return binding.name == marker.name;
+							   });
+
+		if (it == _debugMocapBindings.end()) {
+			DebugMocapBinding binding;
+			binding.name = marker.name;
+			binding.bodyId = mj_name2id(model, mjOBJ_BODY, marker.name.c_str());
+			if (binding.bodyId < 0) {
+				throw std::runtime_error(
+					"Debug visualization body not found in MuJoCo model: " + marker.name);
+			}
+
+			binding.mocapId = model->body_mocapid[binding.bodyId];
+			if (binding.mocapId < 0) {
+				throw std::runtime_error(
+					"Debug visualization body is not a mocap body: " + marker.name);
+			}
+
+			_debugMocapBindings.push_back(binding);
+			it = std::prev(_debugMocapBindings.end());
+		}
+
+		const Eigen::Index posOffset = static_cast<Eigen::Index>(3 * it->mocapId);
+		data->mocap_pos[posOffset + 0] = marker.position_W[0];
+		data->mocap_pos[posOffset + 1] = marker.position_W[1];
+		data->mocap_pos[posOffset + 2] = marker.position_W[2];
+
+		const Eigen::Index quatOffset = static_cast<Eigen::Index>(4 * it->mocapId);
+		data->mocap_quat[quatOffset + 0] = marker.orientation_W.w();
+		data->mocap_quat[quatOffset + 1] = marker.orientation_W.x();
+		data->mocap_quat[quatOffset + 2] = marker.orientation_W.y();
+		data->mocap_quat[quatOffset + 3] = marker.orientation_W.z();
+	}
 }
 
 void SimulationRunner::applyRobotCommand() {
