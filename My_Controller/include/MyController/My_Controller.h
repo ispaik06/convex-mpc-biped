@@ -30,7 +30,7 @@ private:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 		Vec3<double> position_W = Vec3<double>::Zero();
-		double psi{0.0};
+		Vec3<double> euler_W = Vec3<double>::Zero();
 		bool initialized{false};
 	};
 
@@ -52,15 +52,17 @@ private:
 		                   const DesiredFootPositions& desiredFootPositions);
 	void writeLegCommands();
 	void writeStandingLegCommands();
-	void maybeWriteFirstStandingMpcDebugLog(const Vec13<double>& x0,
-		                                    const DesiredFootPositions& desiredFootPositions);
+	void updateStandingMpcDebugRequest();
+	void maybeWriteStandingMpcDebugLog(const Vec13<double>& x0,
+		                               const DesiredFootPositions& desiredFootPositions);
 	void maybePrintGaitScheduler() const;
 
 	bool _initialized{false};
 	u64 _iteration{0};
 	u64 _lastMpcIteration{0};
 	bool _standingMpcDebugLogPending{false};
-	bool _standingMpcDebugLogWritten{false};
+	bool _standingMpcDebugLogReady{false};
+	unsigned long long _lastStandingMpcDebugLogRequest{0};
 	double _lastControlTime{0.0};
 	Vec12<double> _stanceWrenchWorld = Vec12<double>::Zero();
 	vectorAligned<LegRuntimeState> _legRuntime;

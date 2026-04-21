@@ -122,7 +122,8 @@ void MyController::initializeRuntimeObjects() {
     _iteration = 0;
     _lastMpcIteration = 0;
     _standingMpcDebugLogPending = false;
-    _standingMpcDebugLogWritten = false;
+    _standingMpcDebugLogReady = false;
+    _lastStandingMpcDebugLogRequest = 0;
     _lastControlTime = _stateEstimate->time;
     _bodyTarget = BodyTargetState{};
     _initialized = true;
@@ -170,7 +171,7 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
 
     if (!_bodyTarget.initialized) {
         _bodyTarget.position_W = x0.template segment<3>(3);
-        _bodyTarget.psi = _stateEstimate->psi;
+        _bodyTarget.euler_W = x0.template segment<3>(0);
         _bodyTarget.initialized = true;
         return;
     }
@@ -184,8 +185,8 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const Vec3<double> v_cmd_B(x_dot, y_dot, 0.0);
 
-    _bodyTarget.position_W += Rz(_bodyTarget.psi) * v_cmd_B * dt;
-    _bodyTarget.psi = wrapAngle(_bodyTarget.psi + psi_dot * dt);
+    _bodyTarget.position_W += Rz(_bodyTarget.euler_W[2]) * v_cmd_B * dt;
+    _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] + psi_dot * dt);
 }
 
 void MyController::updateSwingTrajectories(
@@ -249,8 +250,8 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         _gaitScheduler->buildConstraintMatrices();
 
         Vec13<double> referenceSeed = x0;
+        referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
         referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
-        referenceSeed[2] = _bodyTarget.psi;
 
         ReferenceTrajectory(_userCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
             .build(_referenceTrajectoryOutput);
@@ -260,13 +261,13 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0);
         _convexMPC->solve();
         _stanceWrenchWorld = _convexMPC->optimalWrench();
-        if (_locomotionMode == LocomotionMode::Standing && !_standingMpcDebugLogWritten) {
-            _standingMpcDebugLogPending = true;
+        if (_locomotionMode == LocomotionMode::Standing && _standingMpcDebugLogPending) {
+            _standingMpcDebugLogReady = true;
         }
 
     } catch (const std::exception&) {
         _stanceWrenchWorld.setZero();
-        _standingMpcDebugLogPending = false;
+        _standingMpcDebugLogReady = false;
 
         const double time = _stateEstimate->time;
         int stanceLegCount = 0;
@@ -297,12 +298,29 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     _lastMpcIteration = _iteration;
 }
 
-void MyController::maybeWriteFirstStandingMpcDebugLog(
+void MyController::updateStandingMpcDebugRequest() {
+    if (_locomotionMode != LocomotionMode::Standing || _userCommand == nullptr) {
+        return;
+    }
+
+    const unsigned long long request = _userCommand->standing_mpc_debug_log_request;
+    if (request <= _lastStandingMpcDebugLogRequest) {
+        return;
+    }
+
+    _lastStandingMpcDebugLogRequest = request;
+    _standingMpcDebugLogPending = true;
+    _standingMpcDebugLogReady = false;
+    std::cout << "[StandingMPCDebug] request #" << request
+              << " queued for the next scheduled MPC solve" << std::endl;
+}
+
+void MyController::maybeWriteStandingMpcDebugLog(
     const Vec13<double>& x0,
     const DesiredFootPositions& desiredFootPositions) {
     if (_locomotionMode != LocomotionMode::Standing ||
         !_standingMpcDebugLogPending ||
-        _standingMpcDebugLogWritten ||
+        !_standingMpcDebugLogReady ||
         _convexMPC == nullptr ||
         !_convexMPC->hasSolution() ||
         _stateEstimate == nullptr ||
@@ -316,6 +334,7 @@ void MyController::maybeWriteFirstStandingMpcDebugLog(
             *_stateEstimate,
             *_robotParams,
             *_legController,
+            _armController,
             desiredFootPositions,
             x0,
             _referenceTrajectoryOutput,
@@ -326,12 +345,13 @@ void MyController::maybeWriteFirstStandingMpcDebugLog(
 
         const std::string logPath = writeStandingMpcDebugLog(snapshot);
         std::cout << "[StandingMPCDebug] wrote " << logPath << std::endl;
-        _standingMpcDebugLogWritten = true;
         _standingMpcDebugLogPending = false;
+        _standingMpcDebugLogReady = false;
     } catch (const std::exception& exception) {
         std::cerr << "[StandingMPCDebug] failed to write log: "
                   << exception.what() << std::endl;
         _standingMpcDebugLogPending = false;
+        _standingMpcDebugLogReady = false;
     }
 }
 
@@ -346,6 +366,7 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
     marker.orientation_W = Quat<double>::Identity();
     marker.active = true;
     debugViz.markers.push_back(marker);
+    //TODO: visualization of orientation.
 }
 
 void MyController::maybePrintGaitScheduler() const {
@@ -486,9 +507,10 @@ void MyController::runController() {
             : _controlFSM->SwingFootDesPos();
 
     updateSwingTrajectories(desiredFootPositions);
+    updateStandingMpcDebugRequest();
     maybeUpdateMpc(x0, desiredFootPositions);
     writeLegCommands();
-    maybeWriteFirstStandingMpcDebugLog(x0, desiredFootPositions);
+    maybeWriteStandingMpcDebugLog(x0, desiredFootPositions);
 
     ++_iteration;
 }

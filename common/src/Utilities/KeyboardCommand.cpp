@@ -71,7 +71,8 @@ void KeyboardCommand::start() {
     }
 
     _running.store(true);
-    std::cout << "KeyboardCommand active: w/s x_dot, a/d y_dot, q/e psi_dot, space reset\n";
+    std::cout << "KeyboardCommand active: w/s x_dot, a/d y_dot, q/e psi_dot, "
+              << "l log next standing MPC, space reset\n";
     _inputThread = std::thread(&KeyboardCommand::inputLoop, this);
 }
 
@@ -160,14 +161,27 @@ void KeyboardCommand::applyKey(char key) {
                                               -_yawLimit,
                                               _yawLimit);
             break;
+        case 'l':
+            ++_userCommand.standing_mpc_debug_log_request;
+            std::cout << "StandingMPCDebug request #"
+                      << _userCommand.standing_mpc_debug_log_request
+                      << " queued for the next MPC solve\n";
+            return;
         case ' ':
+        {
+            const unsigned long long requestCount =
+                _userCommand.standing_mpc_debug_log_request;
             _userCommand = UserCommand{};
+            _userCommand.standing_mpc_debug_log_request = requestCount;
             break;
+        }
         default:
             return;
     }
 
     std::cout << "UserCommand | x_dot: " << _userCommand.x_dot
               << "  y_dot: " << _userCommand.y_dot
-              << "  psi_dot: " << _userCommand.psi_dot << '\n';
+              << "  psi_dot: " << _userCommand.psi_dot
+              << "  standing_mpc_debug_log_request: "
+              << _userCommand.standing_mpc_debug_log_request << '\n';
 }

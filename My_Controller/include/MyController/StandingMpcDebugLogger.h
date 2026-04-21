@@ -3,6 +3,7 @@
 
 #include <string>
 
+#include "Controllers/ArmController.h"
 #include "Controllers/LegController.h"
 #include "ControlFSM.h"
 #include "MPCFormulation.h"
@@ -13,6 +14,7 @@ struct StandingMpcDebugSnapshot {
     const StateEstimate<double>& stateEstimate;
     const RobotParams<double>& robotParams;
     const LegController<double>& legController;
+    const ArmController<double>* armController{nullptr};
     const DesiredFootPositions& desiredFootPositions;
     const Vec13<double>& x0;
     const ReferenceTrajectoryOutput& referenceTrajectory;

@@ -11,11 +11,17 @@
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "Utilities/MatrixUtils.h"
 
 namespace {
+using json = nlohmann::ordered_json;
+
 constexpr int kStateDim = 13;
 constexpr int kInputDim = 12;
 
@@ -62,6 +68,8 @@ TimestampStrings makeTimestampStrings() {
 
     const auto now = clock::now();
     const auto seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    const auto micros =
+        std::chrono::duration_cast<std::chrono::microseconds>(now - seconds).count();
     const std::time_t time = clock::to_time_t(now);
 
     std::tm localTime {};
@@ -72,8 +80,7 @@ TimestampStrings makeTimestampStrings() {
 
     std::ostringstream readable;
     readable << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S")
-             << '.' << std::setw(6) << std::setfill('0')
-             << std::chrono::duration_cast<std::chrono::microseconds>(now - seconds).count();
+             << '.' << std::setw(6) << std::setfill('0') << micros;
 
     return TimestampStrings{filename.str(), readable.str()};
 }
@@ -91,160 +98,348 @@ std::string makeLogPath(const TimestampStrings& timestamp) {
     return standingDir + "/standing_mpc_debug_" + timestamp.filenameToken + ".json";
 }
 
-void indent(std::ostream& out, const int spaces) {
-    for (int i = 0; i < spaces; ++i) {
-        out << ' ';
-    }
-}
-
-void writeEscapedString(std::ostream& out, const std::string& value) {
-    out << '"';
-    for (const char c : value) {
-        switch (c) {
-            case '\\':
-                out << "\\\\";
-                break;
-            case '"':
-                out << "\\\"";
-                break;
-            case '\n':
-                out << "\\n";
-                break;
-            case '\r':
-                out << "\\r";
-                break;
-            case '\t':
-                out << "\\t";
-                break;
-            default:
-                out << c;
-                break;
+template <typename Scalar>
+json scalarToJson(Scalar value) {
+    if constexpr (std::is_floating_point_v<Scalar>) {
+        if (std::isfinite(value)) {
+            return json(value);
         }
-    }
-    out << '"';
-}
-
-void writeKey(std::ostream& out, const int spaces, const std::string& key) {
-    indent(out, spaces);
-    writeEscapedString(out, key);
-    out << ": ";
-}
-
-void writeNumber(std::ostream& out, const double value) {
-    if (std::isfinite(value)) {
-        out << value;
+        return nullptr;
     } else {
-        out << "null";
+        return json(value);
     }
-}
-
-void writeIntVector(std::ostream& out, const std::vector<int>& values) {
-    out << '[';
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        if (i > 0) {
-            out << ", ";
-        }
-        out << values[i];
-    }
-    out << ']';
 }
 
 template <typename Derived>
-void writeVector(std::ostream& out, const Eigen::MatrixBase<Derived>& vector) {
-    out << '[';
+json vectorToJson(const Eigen::MatrixBase<Derived>& vector) {
+    json out = json::array();
     for (Eigen::Index i = 0; i < vector.size(); ++i) {
-        if (i > 0) {
-            out << ", ";
-        }
-        writeNumber(out, vector.derived()(i));
+        out.push_back(scalarToJson(vector.derived()(i)));
     }
-    out << ']';
+    return out;
 }
 
 template <typename Derived>
-void writeMatrix(std::ostream& out, const Eigen::MatrixBase<Derived>& matrix, const int spaces) {
-    out << "[\n";
+json matrixToFlatJson(const Eigen::MatrixBase<Derived>& matrix) {
+    json data = json::array();
     for (Eigen::Index row = 0; row < matrix.rows(); ++row) {
-        indent(out, spaces + 2);
-        out << '[';
+        json rowJson = json::array();
         for (Eigen::Index col = 0; col < matrix.cols(); ++col) {
-            if (col > 0) {
-                out << ", ";
+            rowJson.push_back(scalarToJson(matrix.derived()(row, col)));
+        }
+        data.push_back(std::move(rowJson));
+    }
+
+    json out = json::object();
+    out["rows"] = matrix.rows();
+    out["cols"] = matrix.cols();
+    out["data"] = std::move(data);
+    return out;
+}
+
+json intVectorToJson(const std::vector<int>& values) {
+    json out = json::array();
+    for (const int value : values) {
+        out.push_back(value);
+    }
+    return out;
+}
+
+template <typename Sequence>
+json matrixSequenceToFlatJson(const Sequence& matrices) {
+    json data = json::array();
+    int count = 0;
+    int rows = 0;
+    int cols = 0;
+    for (const auto& matrix : matrices) {
+        json matrixJson = json::array();
+        if (count == 0) {
+            rows = static_cast<int>(matrix.rows());
+            cols = static_cast<int>(matrix.cols());
+        } else if (matrix.rows() != rows || matrix.cols() != cols) {
+            throw std::runtime_error("Matrix sequence dimensions are inconsistent for debug log");
+        }
+
+        for (Eigen::Index row = 0; row < matrix.rows(); ++row) {
+            json rowJson = json::array();
+            for (Eigen::Index col = 0; col < matrix.cols(); ++col) {
+                rowJson.push_back(scalarToJson(matrix(row, col)));
             }
-            writeNumber(out, matrix.derived()(row, col));
+            matrixJson.push_back(std::move(rowJson));
         }
-        out << ']';
-        if (row + 1 < matrix.rows()) {
-            out << ',';
-        }
-        out << '\n';
+        data.push_back(std::move(matrixJson));
+        ++count;
     }
-    indent(out, spaces);
-    out << ']';
+
+    json out = json::object();
+    out["count"] = count;
+    out["rows"] = rows;
+    out["cols"] = cols;
+    out["data"] = std::move(data);
+    return out;
 }
 
-template <typename MatrixSequence>
-void writeMatrixSequence(std::ostream& out, const MatrixSequence& matrices, const int spaces) {
-    out << "[\n";
-    for (std::size_t i = 0; i < matrices.size(); ++i) {
-        indent(out, spaces + 2);
-        writeMatrix(out, matrices[i], spaces + 2);
-        if (i + 1 < matrices.size()) {
-            out << ',';
-        }
-        out << '\n';
-    }
-    indent(out, spaces);
-    out << ']';
-}
-
-void writeVectorByStep(std::ostream& out,
-                       const DVec<double>& values,
-                       const int rows,
-                       const int cols,
-                       const int spaces) {
+json vectorByStepToFlatJson(const DVec<double>& values, const int rows, const int cols) {
     if (values.size() != rows * cols) {
         throw std::runtime_error("Cannot reshape vector for debug log");
     }
 
-    out << "[\n";
+    json data = json::array();
     for (int row = 0; row < rows; ++row) {
-        indent(out, spaces + 2);
-        out << '[';
+        json rowJson = json::array();
         for (int col = 0; col < cols; ++col) {
-            if (col > 0) {
-                out << ", ";
-            }
-            writeNumber(out, values[row * cols + col]);
+            rowJson.push_back(scalarToJson(values[row * cols + col]));
         }
-        out << ']';
-        if (row + 1 < rows) {
+        data.push_back(std::move(rowJson));
+    }
+
+    json out = json::object();
+    out["rows"] = rows;
+    out["cols"] = cols;
+    out["data"] = std::move(data);
+    return out;
+}
+
+bool isPrimitiveArray(const json& value) {
+    if (!value.is_array()) {
+        return false;
+    }
+
+    for (const auto& item : value) {
+        if (item.is_array() || item.is_object()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void writeIndent(std::ostream& out, const int indent) {
+    for (int i = 0; i < indent; ++i) {
+        out.put(' ');
+    }
+}
+
+void writePrimitiveArray(std::ostream& out, const json& value, const int indent) {
+    constexpr std::size_t kInlineLimit = 16;
+    constexpr std::size_t kItemsPerLine = 12;
+
+    if (value.size() <= kInlineLimit) {
+        out << value.dump();
+        return;
+    }
+
+    out << "[\n";
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        if ((i % kItemsPerLine) == 0) {
+            writeIndent(out, indent + 2);
+        } else {
+            out << ' ';
+        }
+
+        out << value[i].dump();
+        if (i + 1 < value.size()) {
             out << ',';
         }
-        out << '\n';
+        if (((i + 1) % kItemsPerLine) == 0 || i + 1 == value.size()) {
+            out << '\n';
+        }
     }
-    indent(out, spaces);
+    writeIndent(out, indent);
     out << ']';
 }
 
-Eigen::Index totalLegDof(const LegController<double>& legController) {
-    Eigen::Index total = 0;
-    for (const auto& data : legController.datas) {
-        total += data.dof();
+std::string footEndEffectorSourceName(const FootEndEffectorSource source) {
+    switch (source) {
+        case FootEndEffectorSource::Site:
+            return "site";
+        case FootEndEffectorSource::BodyCom:
+            return "body_com";
     }
-    return total;
+    return "unknown";
 }
 
-DVec<double> combinedLegTorqueCommand(const LegController<double>& legController) {
-    DVec<double> combined(totalLegDof(legController));
+std::string desiredWrenchReferencePointName(const FootEndEffectorSource source) {
+    switch (source) {
+        case FootEndEffectorSource::Site:
+            return "foot_site";
+        case FootEndEffectorSource::BodyCom:
+            return "foot_link_com";
+    }
+    return "unknown";
+}
 
-    Eigen::Index offset = 0;
-    for (const auto& command : legController.commands) {
-        combined.segment(offset, command.dof()) = command.tauFeedForward;
-        offset += command.dof();
+void writePrettyJson(std::ostream& out, const json& value, const int indent = 0) {
+    if (value.is_object()) {
+        if (value.empty()) {
+            out << "{}";
+            return;
+        }
+
+        out << "{\n";
+        std::size_t index = 0;
+        for (auto it = value.begin(); it != value.end(); ++it) {
+            writeIndent(out, indent + 2);
+            out << json(it.key()).dump() << ": ";
+            writePrettyJson(out, it.value(), indent + 2);
+            if (++index < value.size()) {
+                out << ',';
+            }
+            out << '\n';
+        }
+        writeIndent(out, indent);
+        out << '}';
+        return;
     }
 
-    return combined;
+    if (value.is_array()) {
+        if (value.empty() || isPrimitiveArray(value)) {
+            writePrimitiveArray(out, value, indent);
+            return;
+        }
+
+        out << "[\n";
+        for (std::size_t i = 0; i < value.size(); ++i) {
+            writeIndent(out, indent + 2);
+            writePrettyJson(out, value[i], indent + 2);
+            if (i + 1 < value.size()) {
+                out << ',';
+            }
+            out << '\n';
+        }
+        writeIndent(out, indent);
+        out << ']';
+        return;
+    }
+
+    out << value.dump();
+}
+
+const std::vector<int>& effectiveActuatorIndices(const JointGroupParams<double>& joints) {
+    if (!joints.actuator_idx.empty()) {
+        return joints.actuator_idx;
+    }
+    return joints.qd_idx;
+}
+
+template <typename Derived>
+void packIndexedValues(DVec<double>& dst,
+                       const std::vector<int>& indices,
+                       const Eigen::MatrixBase<Derived>& values,
+                       const char* name) {
+    if (static_cast<Eigen::Index>(indices.size()) != values.size()) {
+        throw std::runtime_error(std::string("Packed vector size mismatch for ") + name);
+    }
+
+    for (Eigen::Index i = 0; i < values.size(); ++i) {
+        const int dstIdx = indices[static_cast<std::size_t>(i)];
+        if (dstIdx < 0 || dstIdx >= dst.size()) {
+            throw std::runtime_error(std::string(name) + " index is out of range");
+        }
+        dst[dstIdx] = values.derived()(i);
+    }
+}
+
+DVec<double> packFullQpos(const StandingMpcDebugSnapshot& snapshot) {
+    DVec<double> qpos = snapshot.robotParams.default_qpos;
+    if (qpos.size() != snapshot.robotParams.nq) {
+        qpos.setZero(snapshot.robotParams.nq);
+    }
+
+    if (qpos.size() >= 7) {
+        qpos[0] = snapshot.stateEstimate.torsoPos_W.x();
+        qpos[1] = snapshot.stateEstimate.torsoPos_W.y();
+        qpos[2] = snapshot.stateEstimate.torsoPos_W.z();
+        qpos[3] = snapshot.stateEstimate.torsoQuat_W.w();
+        qpos[4] = snapshot.stateEstimate.torsoQuat_W.x();
+        qpos[5] = snapshot.stateEstimate.torsoQuat_W.y();
+        qpos[6] = snapshot.stateEstimate.torsoQuat_W.z();
+    }
+
+    for (std::size_t leg = 0; leg < snapshot.robotParams.legs.size(); ++leg) {
+        packIndexedValues(qpos,
+                          snapshot.robotParams.legs[leg].joints.q_idx,
+                          snapshot.stateEstimate.legs[leg].q,
+                          "leg qpos");
+    }
+
+    for (std::size_t arm = 0; arm < snapshot.robotParams.arms.size(); ++arm) {
+        packIndexedValues(qpos,
+                          snapshot.robotParams.arms[arm].joints.q_idx,
+                          snapshot.stateEstimate.arms[arm].q,
+                          "arm qpos");
+    }
+
+    return qpos;
+}
+
+DVec<double> packFullQvel(const StandingMpcDebugSnapshot& snapshot) {
+    DVec<double> qvel = DVec<double>::Zero(snapshot.robotParams.nv);
+    if (qvel.size() >= 6) {
+        qvel[0] = snapshot.stateEstimate.torsoLinVel_W.x();
+        qvel[1] = snapshot.stateEstimate.torsoLinVel_W.y();
+        qvel[2] = snapshot.stateEstimate.torsoLinVel_W.z();
+        qvel[3] = snapshot.stateEstimate.torsoAngVel_W.x();
+        qvel[4] = snapshot.stateEstimate.torsoAngVel_W.y();
+        qvel[5] = snapshot.stateEstimate.torsoAngVel_W.z();
+    }
+
+    for (std::size_t leg = 0; leg < snapshot.robotParams.legs.size(); ++leg) {
+        packIndexedValues(qvel,
+                          snapshot.robotParams.legs[leg].joints.qd_idx,
+                          snapshot.stateEstimate.legs[leg].qd,
+                          "leg qvel");
+    }
+
+    for (std::size_t arm = 0; arm < snapshot.robotParams.arms.size(); ++arm) {
+        packIndexedValues(qvel,
+                          snapshot.robotParams.arms[arm].joints.qd_idx,
+                          snapshot.stateEstimate.arms[arm].qd,
+                          "arm qvel");
+    }
+
+    return qvel;
+}
+
+DVec<double> packActualLegTauVector(const StandingMpcDebugSnapshot& snapshot) {
+    Eigen::Index totalDof = 0;
+    for (const auto& data : snapshot.legController.datas) {
+        totalDof += data.dof();
+    }
+
+    DVec<double> tau(totalDof);
+    Eigen::Index offset = 0;
+    for (std::size_t leg = 0; leg < snapshot.legController.commands.size(); ++leg) {
+        const DVec<double> legTorque = snapshot.legController.computeLegTorque(static_cast<int>(leg));
+        tau.segment(offset, legTorque.size()) = legTorque;
+        offset += legTorque.size();
+    }
+
+    return tau;
+}
+
+DVec<double> packFullTauCommand(const StandingMpcDebugSnapshot& snapshot) {
+    DVec<double> tau = DVec<double>::Zero(snapshot.robotParams.nu);
+
+    for (std::size_t leg = 0; leg < snapshot.robotParams.legs.size(); ++leg) {
+        const DVec<double> legTorque = snapshot.legController.computeLegTorque(static_cast<int>(leg));
+        packIndexedValues(tau,
+                          effectiveActuatorIndices(snapshot.robotParams.legs[leg].joints),
+                          legTorque,
+                          "leg tau");
+    }
+
+    if (snapshot.armController != nullptr) {
+        for (std::size_t arm = 0; arm < snapshot.robotParams.arms.size(); ++arm) {
+            const DVec<double> armTorque =
+                snapshot.armController->computeArmTorque(static_cast<int>(arm));
+            packIndexedValues(tau,
+                              effectiveActuatorIndices(snapshot.robotParams.arms[arm].joints),
+                              armTorque,
+                              "arm tau");
+        }
+    }
+
+    return tau;
 }
 
 DMat<double> buildWrenchToTorqueJacobian(const StandingFootKinematics<double>& standingFeet) {
@@ -260,61 +455,9 @@ Mat3<double> inertiaWorldFromX0(const RobotParams<double>& robotParams,
     return R_WB * robotParams.bodyInertia * R_WB.transpose();
 }
 
-void writeLegArray(std::ostream& out,
-                   const StandingMpcDebugSnapshot& snapshot,
-                   const int spaces) {
-    out << "[\n";
-    for (std::size_t leg = 0; leg < snapshot.robotParams.legs.size(); ++leg) {
-        const auto& legParams = snapshot.robotParams.legs[leg];
-        const auto& legState = snapshot.stateEstimate.legs[leg];
-        const auto& legCommand = snapshot.legController.commands[leg];
-
-        indent(out, spaces + 2);
-        out << "{\n";
-        writeKey(out, spaces + 4, "index");
-        out << leg << ",\n";
-        writeKey(out, spaces + 4, "side");
-        writeEscapedString(out, sideName(legParams.side));
-        out << ",\n";
-        writeKey(out, spaces + 4, "q_indices");
-        writeIntVector(out, legParams.joints.q_idx);
-        out << ",\n";
-        writeKey(out, spaces + 4, "qd_indices");
-        writeIntVector(out, legParams.joints.qd_idx);
-        out << ",\n";
-        writeKey(out, spaces + 4, "actuator_indices");
-        writeIntVector(out, legParams.joints.actuator_idx);
-        out << ",\n";
-        writeKey(out, spaces + 4, "foot_pos_W");
-        writeVector(out, legState.footPos_W);
-        out << ",\n";
-        writeKey(out, spaces + 4, "foot_vel_W");
-        writeVector(out, legState.footVel_W);
-        out << ",\n";
-        writeKey(out, spaces + 4, "q");
-        writeVector(out, legState.q);
-        out << ",\n";
-        writeKey(out, spaces + 4, "qd");
-        writeVector(out, legState.qd);
-        out << ",\n";
-        writeKey(out, spaces + 4, "tau_feedforward_command");
-        writeVector(out, legCommand.tauFeedForward);
-        out << '\n';
-        indent(out, spaces + 2);
-        out << '}';
-        if (leg + 1 < snapshot.robotParams.legs.size()) {
-            out << ',';
-        }
-        out << '\n';
-    }
-    indent(out, spaces);
-    out << ']';
-}
-
-void writeJson(std::ostream& out,
-               const StandingMpcDebugSnapshot& snapshot,
-               const std::string& logPath,
-               const TimestampStrings& timestamp) {
+json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
+                       const std::string& logPath,
+                       const TimestampStrings& timestamp) {
     const int steps = horizonSteps();
     if (snapshot.wrenchHorizon.size() != kInputDim * steps) {
         throw std::runtime_error("Standing MPC debug log received an unexpected wrench horizon size");
@@ -334,179 +477,117 @@ void writeJson(std::ostream& out,
         snapshot.formulation.B_qp * snapshot.wrenchHorizon;
     const DMat<double> wrenchToTau =
         buildWrenchToTorqueJacobian(snapshot.stateEstimate.standingFeet);
-    const DVec<double> actualLegTau = combinedLegTorqueCommand(snapshot.legController);
+    const DVec<double> actualLegTau = packActualLegTauVector(snapshot);
+    const DVec<double> fullQpos = packFullQpos(snapshot);
+    const DVec<double> fullQvel = packFullQvel(snapshot);
+    const DVec<double> fullTau = packFullTauCommand(snapshot);
 
-    out << std::setprecision(17);
-    out << "{\n";
+    json root = json::object();
 
-    writeKey(out, 2, "metadata");
-    out << "{\n";
-    writeKey(out, 4, "format_version");
-    out << 1 << ",\n";
-    writeKey(out, 4, "type");
-    writeEscapedString(out, "standing_mpc_first_solve_debug");
-    out << ",\n";
-    writeKey(out, 4, "generated_at_local");
-    writeEscapedString(out, timestamp.localTime);
-    out << ",\n";
-    writeKey(out, 4, "log_path");
-    writeEscapedString(out, logPath);
-    out << ",\n";
-    writeKey(out, 4, "controller_time");
-    writeNumber(out, snapshot.stateEstimate.time);
-    out << ",\n";
-    writeKey(out, 4, "controller_iteration");
-    out << snapshot.iteration << ",\n";
-    writeKey(out, 4, "horizon_steps");
-    out << steps << ",\n";
-    writeKey(out, 4, "dt_mpc");
-    writeNumber(out, dtMpc());
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+    json metadata = json::object();
+    metadata["type"] = "standing_mpc_first_solve_debug";
+    metadata["generated_at_local"] = timestamp.localTime;
+    metadata["log_path"] = logPath;
+    metadata["controller_time"] = snapshot.stateEstimate.time;
+    metadata["controller_iteration"] = snapshot.iteration;
+    metadata["horizon_steps"] = steps;
+    metadata["dt_mpc"] = dtMpc();
+    metadata["foot_end_effector_source"] =
+        footEndEffectorSourceName(getControllerConfig().swing.footEndEffectorSource);
+    metadata["desired_wrench_reference_point"] =
+        desiredWrenchReferencePointName(getControllerConfig().swing.footEndEffectorSource);
+    root["metadata"] = std::move(metadata);
 
-    writeKey(out, 2, "model");
-    out << "{\n";
-    writeKey(out, 4, "mass");
-    writeNumber(out, snapshot.robotParams.bodyMass);
-    out << ",\n";
-    writeKey(out, 4, "gravity");
-    writeNumber(out, getControllerConfig().model.gravity);
-    out << ",\n";
-    writeKey(out, 4, "body_com_location_yaw_frame");
-    writeVector(out, snapshot.robotParams.bodyComLocation);
-    out << ",\n";
-    writeKey(out, 4, "body_inertia_yaw_frame");
-    writeMatrix(out, snapshot.robotParams.bodyInertia, 4);
-    out << ",\n";
-    writeKey(out, 4, "inertia_world_from_x0");
-    writeMatrix(out, inertiaWorldFromX0(snapshot.robotParams, snapshot.x0), 4);
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+    json model = json::object();
+    model["mass"] = snapshot.robotParams.bodyMass;
+    model["gravity"] = getControllerConfig().model.gravity;
+    model["body_com_location_yaw_frame"] = vectorToJson(snapshot.robotParams.bodyComLocation);
+    model["body_inertia_yaw_frame"] = matrixToFlatJson(snapshot.robotParams.bodyInertia);
+    model["inertia_world_from_x0"] =
+        matrixToFlatJson(inertiaWorldFromX0(snapshot.robotParams, snapshot.x0));
+    root["model"] = std::move(model);
 
-    writeKey(out, 2, "initial_state");
-    out << "{\n";
-    writeKey(out, 4, "x0");
-    writeVector(out, snapshot.x0);
-    out << ",\n";
-    writeKey(out, 4, "psi");
-    writeNumber(out, snapshot.x0[2]);
-    out << ",\n";
-    writeKey(out, 4, "torso_pos_W");
-    writeVector(out, snapshot.stateEstimate.torsoPos_W);
-    out << ",\n";
-    writeKey(out, 4, "torso_lin_vel_W");
-    writeVector(out, snapshot.stateEstimate.torsoLinVel_W);
-    out << ",\n";
-    writeKey(out, 4, "torso_ang_vel_W");
-    writeVector(out, snapshot.stateEstimate.torsoAngVel_W);
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+    json initialState = json::object();
+    initialState["x0"] = vectorToJson(snapshot.x0);
+    initialState["psi"] = snapshot.x0[2];
+    initialState["torso_pos_W"] = vectorToJson(snapshot.stateEstimate.torsoPos_W);
+    initialState["torso_lin_vel_W"] = vectorToJson(snapshot.stateEstimate.torsoLinVel_W);
+    initialState["torso_ang_vel_W"] = vectorToJson(snapshot.stateEstimate.torsoAngVel_W);
+    root["initial_state"] = std::move(initialState);
 
-    writeKey(out, 2, "feet");
-    out << "{\n";
-    writeKey(out, 4, "desired_foot_pos_W");
-    out << "{\n";
-    writeKey(out, 6, "left");
-    writeVector(out, snapshot.desiredFootPositions.left_des_W);
-    out << ",\n";
-    writeKey(out, 6, "right");
-    writeVector(out, snapshot.desiredFootPositions.right_des_W);
-    out << '\n';
-    indent(out, 4);
-    out << "},\n";
-    writeKey(out, 4, "legs");
-    writeLegArray(out, snapshot, 4);
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+    json robotState = json::object();
+    robotState["full_qpos"] = vectorToJson(fullQpos);
+    robotState["full_qvel"] = vectorToJson(fullQvel);
+    robotState["full_tau_command"] = vectorToJson(fullTau);
+    root["robot_state"] = std::move(robotState);
 
-    writeKey(out, 2, "reference_trajectory");
-    out << "{\n";
-    writeKey(out, 4, "tk");
-    writeVector(out, snapshot.referenceTrajectory.tk);
-    out << ",\n";
-    writeKey(out, 4, "psi");
-    writeVector(out, snapshot.referenceTrajectory.psi);
-    out << ",\n";
-    writeKey(out, 4, "r_left");
-    writeMatrix(out, snapshot.referenceTrajectory.r_left, 4);
-    out << ",\n";
-    writeKey(out, 4, "r_right");
-    writeMatrix(out, snapshot.referenceTrajectory.r_right, 4);
-    out << ",\n";
-    writeKey(out, 4, "X_ref_by_step");
-    writeVectorByStep(out, snapshot.referenceTrajectory.X_ref, steps, kStateDim, 4);
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+    json feet = json::object();
+    json desiredFootPos = json::object();
+    desiredFootPos["left"] = vectorToJson(snapshot.desiredFootPositions.left_des_W);
+    desiredFootPos["right"] = vectorToJson(snapshot.desiredFootPositions.right_des_W);
+    feet["desired_foot_pos_W"] = std::move(desiredFootPos);
 
-    writeKey(out, 2, "formulation");
-    out << "{\n";
-    writeKey(out, 4, "input_order");
-    writeEscapedString(out, "[F_left(3), F_right(3), M_left(3), M_right(3)]");
-    out << ",\n";
-    writeKey(out, 4, "A_c");
-    writeMatrixSequence(out, snapshot.formulation.A_c, 4);
-    out << ",\n";
-    writeKey(out, 4, "B_c");
-    writeMatrixSequence(out, snapshot.formulation.B_c, 4);
-    out << ",\n";
-    writeKey(out, 4, "inertia_world");
-    writeMatrixSequence(out, snapshot.formulation.inertia_W, 4);
-    out << ",\n";
-    writeKey(out, 4, "A_qp");
-    writeMatrix(out, snapshot.formulation.A_qp, 4);
-    out << ",\n";
-    writeKey(out, 4, "B_qp");
-    writeMatrix(out, snapshot.formulation.B_qp, 4);
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+    json legs = json::array();
+    for (std::size_t leg = 0; leg < snapshot.robotParams.legs.size(); ++leg) {
+        const auto& legParams = snapshot.robotParams.legs[leg];
+        const auto& legState = snapshot.stateEstimate.legs[leg];
+        const auto& legCommand = snapshot.legController.commands[leg];
 
-    writeKey(out, 2, "solution");
-    out << "{\n";
-    writeKey(out, 4, "wrench_horizon");
-    writeVectorByStep(out, snapshot.wrenchHorizon, steps, kInputDim, 4);
-    out << ",\n";
-    writeKey(out, 4, "wrench_horizon_vector");
-    writeVector(out, snapshot.wrenchHorizon);
-    out << ",\n";
-    writeKey(out, 4, "first_wrench");
-    writeVector(out, snapshot.wrenchHorizon.head(kInputDim));
-    out << ",\n";
-    writeKey(out, 4, "predicted_state_horizon");
-    writeVectorByStep(out, predictedState, steps, kStateDim, 4);
-    out << ",\n";
-    writeKey(out, 4, "predicted_state_horizon_vector");
-    writeVector(out, predictedState);
-    out << '\n';
-    indent(out, 2);
-    out << "},\n";
+        json legJson = json::object();
+        legJson["index"] = leg;
+        legJson["side"] = sideName(legParams.side);
+        legJson["q_indices"] = intVectorToJson(legParams.joints.q_idx);
+        legJson["qd_indices"] = intVectorToJson(legParams.joints.qd_idx);
+        legJson["actuator_indices"] = intVectorToJson(legParams.joints.actuator_idx);
+        legJson["foot_pos_W"] = vectorToJson(legState.footPos_W);
+        legJson["foot_vel_W"] = vectorToJson(legState.footVel_W);
+        legJson["q"] = vectorToJson(legState.q);
+        legJson["qd"] = vectorToJson(legState.qd);
+        legJson["tau_feedforward_command"] = vectorToJson(legCommand.tauFeedForward);
+        legs.push_back(std::move(legJson));
+    }
+    feet["legs"] = std::move(legs);
+    root["feet"] = std::move(feet);
 
-    writeKey(out, 2, "standing_wrench_to_torque");
-    out << "{\n";
-    writeKey(out, 4, "mapping");
-    writeEscapedString(out, "tau = -[Jv_W^T, Jw_W^T] * [F_left, F_right, M_left, M_right]");
-    out << ",\n";
-    writeKey(out, 4, "standing_Jv_W");
-    writeMatrix(out, snapshot.stateEstimate.standingFeet.Jv_W, 4);
-    out << ",\n";
-    writeKey(out, 4, "standing_Jw_W");
-    writeMatrix(out, snapshot.stateEstimate.standingFeet.Jw_W, 4);
-    out << ",\n";
-    writeKey(out, 4, "wrench_to_tau_jacobian");
-    writeMatrix(out, wrenchToTau, 4);
-    out << ",\n";
-    writeKey(out, 4, "actual_leg_tau_vector");
-    writeVector(out, actualLegTau);
-    out << '\n';
-    indent(out, 2);
-    out << "}\n";
+    json referenceTrajectory = json::object();
+    referenceTrajectory["tk"] = vectorToJson(snapshot.referenceTrajectory.tk);
+    referenceTrajectory["psi"] = vectorToJson(snapshot.referenceTrajectory.psi);
+    referenceTrajectory["r_left"] = matrixToFlatJson(snapshot.referenceTrajectory.r_left);
+    referenceTrajectory["r_right"] = matrixToFlatJson(snapshot.referenceTrajectory.r_right);
+    referenceTrajectory["X_ref_by_step"] =
+        vectorByStepToFlatJson(snapshot.referenceTrajectory.X_ref, steps, kStateDim);
+    root["reference_trajectory"] = std::move(referenceTrajectory);
 
-    out << "}\n";
+    json formulation = json::object();
+    formulation["input_order"] = "[F_left(3), F_right(3), M_left(3), M_right(3)]";
+    formulation["A_c"] = matrixSequenceToFlatJson(snapshot.formulation.A_c);
+    formulation["B_c"] = matrixSequenceToFlatJson(snapshot.formulation.B_c);
+    formulation["inertia_world"] = matrixSequenceToFlatJson(snapshot.formulation.inertia_W);
+    formulation["A_qp"] = matrixToFlatJson(snapshot.formulation.A_qp);
+    formulation["B_qp"] = matrixToFlatJson(snapshot.formulation.B_qp);
+    root["formulation"] = std::move(formulation);
+
+    json solution = json::object();
+    solution["wrench_horizon"] = vectorByStepToFlatJson(snapshot.wrenchHorizon, steps, kInputDim);
+    solution["wrench_horizon_vector"] = vectorToJson(snapshot.wrenchHorizon);
+    solution["first_wrench"] = vectorToJson(snapshot.wrenchHorizon.head(kInputDim));
+    solution["predicted_state_horizon"] =
+        vectorByStepToFlatJson(predictedState, steps, kStateDim);
+    solution["predicted_state_horizon_vector"] = vectorToJson(predictedState);
+    root["solution"] = std::move(solution);
+
+    json wrenchToTauSection = json::object();
+    wrenchToTauSection["mapping"] =
+        "tau = -[Jv_W^T, Jw_W^T] * [F_left, F_right, M_left, M_right]";
+    wrenchToTauSection["standing_Jv_W"] =
+        matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jv_W);
+    wrenchToTauSection["standing_Jw_W"] =
+        matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jw_W);
+    wrenchToTauSection["wrench_to_tau_jacobian"] = matrixToFlatJson(wrenchToTau);
+    wrenchToTauSection["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
+    root["standing_wrench_to_torque"] = std::move(wrenchToTauSection);
+
+    return root;
 }
 }  // namespace
 
@@ -514,12 +595,15 @@ std::string writeStandingMpcDebugLog(const StandingMpcDebugSnapshot& snapshot) {
     const TimestampStrings timestamp = makeTimestampStrings();
     const std::string logPath = makeLogPath(timestamp);
 
-    std::ofstream out(logPath);
+    const json root = buildSnapshotJson(snapshot, logPath, timestamp);
+
+    std::ofstream out(logPath, std::ios::out | std::ios::trunc);
     if (!out.is_open()) {
         throw std::runtime_error("Failed to open standing MPC debug log: " + logPath);
     }
 
-    writeJson(out, snapshot, logPath, timestamp);
+    writePrettyJson(out, root);
+    out << '\n';
     if (!out.good()) {
         throw std::runtime_error("Failed while writing standing MPC debug log: " + logPath);
     }

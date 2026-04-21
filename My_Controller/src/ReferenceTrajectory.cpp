@@ -23,6 +23,7 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
     const int steps = horizonSteps();
 
     Vec3<double> p_ref = _x0.template segment<3>(3);
+    Vec3<double> euler_ref = _x0.template segment<3>(0);
     Vec3<double> v_ref_W = Vec3<double>::Zero();
 
     for (int k = 0; k < steps; ++k) {
@@ -45,8 +46,7 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
         const Eigen::Index stateOffset = static_cast<Eigen::Index>(13 * k);
         auto x_ref_k = out.X_ref.segment(stateOffset, 13);
         x_ref_k.setZero();
-        x_ref_k[0] = 0.0;
-        x_ref_k[1] = 0.0;
+        x_ref_k.template segment<3>(0) = euler_ref;
         x_ref_k[2] = psi_k;
         x_ref_k.template segment<3>(3) = p_ref;
         x_ref_k[6] = 0.0;

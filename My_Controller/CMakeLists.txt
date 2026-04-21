@@ -13,10 +13,22 @@ add_library(My_Controller
 find_package(osqp CONFIG REQUIRED)
 find_package(OsqpEigen REQUIRED)
 
+find_path(NLOHMANN_JSON_INCLUDE_DIR
+	NAMES nlohmann/json.hpp
+	HINTS
+		/opt/homebrew/opt/nlohmann-json/include
+		/usr/local/opt/nlohmann-json/include
+	REQUIRED
+)
+
 
 target_include_directories(My_Controller PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/include/MyController
 	$<TARGET_PROPERTY:robot,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_include_directories(My_Controller PRIVATE
+	${NLOHMANN_JSON_INCLUDE_DIR}
 )
 
 target_link_libraries(My_Controller PUBLIC
