@@ -209,6 +209,7 @@ void LockedTorsoSwingRunner::clampFloatingBase() {
     for (int i = 0; i < 6; ++i) {
         _data->qvel[_freeJointQvelIndex + i] = mjtNum(0);
     }
+    _data->qpos[_freeJointQposIndex + 2] += 0.2;
 
     mj_forward(_model, _data);
 }
