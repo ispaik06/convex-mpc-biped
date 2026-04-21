@@ -309,7 +309,9 @@ DVec<T> LegController<T>::computeStanceLegTorque(int leg) const {
         commands[idx].forceFeedForward_W,
         commands[idx].momentFeedForward_W);
 
-    // legTorque += datas[idx].bias;
+    // if (datas[idx].hasDynamicsData) {
+    //     legTorque += datas[idx].bias;
+    // }
     // legTorque += commands[idx].tauFeedForward;
     return legTorque;
 }

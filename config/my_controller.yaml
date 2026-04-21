@@ -15,11 +15,11 @@ mpc:
   foot_half_length: 0.065
   foot_half_width: 0.01
   torsional_friction_scale: 0.0657
-  normal_force_max: 700.0
-  normal_force_min: 10.0
+  normal_force_max: 750.0
+  normal_force_min: 5.0
   iterations_between_solve: 10
-  state_weight_diag: [80.0, 80.0, 5.0, 2.0, 2.0, 300.0, 10.0, 10.0, 5.0, 2.0, 2.0, 15.0, 1.0]
-  input_weight_diag: [3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4, 3.0e-4]
+  state_weight_diag: [120.0, 120.0, 5.0, 2.0, 2.0, 520.0, 15.0, 15.0, 5.0, 6.0, 6.0, 30.0, 1.0]
+  input_weight_diag: [1.5e-3, 1.5e-3, 8.0e-4, 1.5e-3, 1.5e-3, 8.0e-4, 3.0e-3, 3.0e-3, 3.0e-3, 3.0e-3, 3.0e-3, 3.0e-3]
   # [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   # [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
 
@@ -34,7 +34,7 @@ swing:
 foot_placement:
   velocity_feedback_gain: 0.03
   placement_clamp: 0.2
-  touchdown_height: -0.003
+  touchdown_height: -0.005
   nominal_lateral_offset: 0.0 # -0.0018375
   swing_bias: 0.0
 

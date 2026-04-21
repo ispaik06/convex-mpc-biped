@@ -290,14 +290,15 @@ void MyController::writeLegCommands() {
         if (isStance) {
             command.mode = LegControlMode::StanceWrench;
 
+            //! MPC solves for the ground reaction on the body; the foot command pushes the ground.
             switch (side) {
                 case Side::Left:
-                    command.forceFeedForward_W = _stanceWrenchWorld.template segment<3>(0);
-                    command.momentFeedForward_W = _stanceWrenchWorld.template segment<3>(6);
+                    command.forceFeedForward_W = -_stanceWrenchWorld.template segment<3>(0);
+                    command.momentFeedForward_W = -_stanceWrenchWorld.template segment<3>(6);
                     break;
                 case Side::Right:
-                    command.forceFeedForward_W = _stanceWrenchWorld.template segment<3>(3);
-                    command.momentFeedForward_W = _stanceWrenchWorld.template segment<3>(9);
+                    command.forceFeedForward_W = -_stanceWrenchWorld.template segment<3>(3);
+                    command.momentFeedForward_W = -_stanceWrenchWorld.template segment<3>(9);
                     break;
                 default:
                     throw std::runtime_error(
@@ -331,11 +332,15 @@ void MyController::runController() {
     // maybePrintGaitScheduler();
 
     const Vec13<double> x0 = buildCurrentMpcState();
+    const auto standingFootTarget = [&](const Side side) {
+        Vec3<double> target = _stateEstimate->legs[findLegIndex(side)].footPos_W;
+        target.z() = -0.005;
+        return target;
+    };
     const DesiredFootPositions desiredFootPositions =
         (_locomotionMode == LocomotionMode::Standing)
-            ? DesiredFootPositions{
-                  _stateEstimate->legs[findLegIndex(Side::Left)].footPos_W,
-                  _stateEstimate->legs[findLegIndex(Side::Right)].footPos_W}
+            ? DesiredFootPositions{standingFootTarget(Side::Left),
+                                   standingFootTarget(Side::Right)}
             : _controlFSM->SwingFootDesPos();
 
     updateSwingTrajectories(desiredFootPositions);
