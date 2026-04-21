@@ -18,8 +18,10 @@ mpc:
   normal_force_max: 750.0
   normal_force_min: 5.0
   iterations_between_solve: 10
-  state_weight_diag: [120.0, 120.0, 5.0, 2.0, 2.0, 520.0, 15.0, 15.0, 5.0, 6.0, 6.0, 30.0, 1.0]
-  input_weight_diag: [1.5e-3, 1.5e-3, 8.0e-4, 1.5e-3, 1.5e-3, 8.0e-4, 3.0e-3, 3.0e-3, 3.0e-3, 3.0e-3, 3.0e-3, 3.0e-3]
+  #                    roll   theta  psi  px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
+  state_weight_diag: [2600.0, 500.0, 1.0, 400.0, 700.0, 900.0, 2600.0, 100.0, 1.0, 500.0, 350.0, 1.0, 1.0]
+  #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
+  input_weight_diag: [1.5e-4, 7.0e-4, 8.0e-4, 1.5e-4, 7.0e-4, 8.0e-4, 5.0e-2, 4.0e-3, 5.0e-2, 5.0e-2, 4.0e-3, 5.0e-2]
   # [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
   # [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
 
