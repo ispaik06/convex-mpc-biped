@@ -21,7 +21,9 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 		return EXIT_FAILURE;
 	}
 	if(argc == 2) {
-		if(argv[1][0] == 'm') headless = false;
+		if(argv[1][0] == 'm' || argv[1][0] == 'M') headless = false;
+		else if(argv[1][0] == 'g' || argv[1][0] == 'G') headless = false;
+		else if(argv[1][0] == 'h' || argv[1][0] == 'H') headless = false;
 		else {
 			printUsage();
 			return EXIT_FAILURE;
@@ -41,11 +43,23 @@ int main_helper(int argc, char** argv, RobotController* ctrl) {
 	}
 	}
 
-	if(argv[1][0] == 'm') {
+	if(argv[1][0] == 'm' || argv[1][0] == 'M') {
 		SimulationRunner simulationRunner(RobotType::MIT_HUMANOID, ctrl, headless);
 		simulationRunner.init();
 		simulationRunner.run();
 		printf("[MIT HUMANOID] Sim Runner run() has finished!\n");
+	}
+	else if(argv[1][0] == 'g' || argv[1][0] == 'G') {
+		SimulationRunner simulationRunner(RobotType::UNITREE_G1, ctrl, headless);
+		simulationRunner.init();
+		simulationRunner.run();
+		printf("[UNITREE G1] Sim Runner run() has finished!\n");
+	}
+	else if(argv[1][0] == 'h' || argv[1][0] == 'H') {
+		SimulationRunner simulationRunner(RobotType::UNITREE_H1, ctrl, headless);
+		simulationRunner.init();
+		simulationRunner.run();
+		printf("[UNITREE H1] Sim Runner run() has finished!\n");
 	}
 	else {
 		printUsage();
