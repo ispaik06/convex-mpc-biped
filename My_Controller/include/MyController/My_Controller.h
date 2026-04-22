@@ -2,6 +2,7 @@
 #define MY_CONTROLLER_H
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "Controllers/ControlGains.h"
@@ -52,6 +53,9 @@ private:
 		                   const DesiredFootPositions& desiredFootPositions);
 	void writeLegCommands();
 	void writeStandingLegCommands();
+	void queueStandingMpcDebugLog(const std::string& source,
+		                          double requestTime,
+		                          double triggerTime);
 	void updateStandingMpcDebugRequest();
 	void maybeWriteStandingMpcDebugLog(const Vec13<double>& x0,
 		                               const DesiredFootPositions& desiredFootPositions);
@@ -63,6 +67,10 @@ private:
 	bool _standingMpcDebugLogPending{false};
 	bool _standingMpcDebugLogReady{false};
 	unsigned long long _lastStandingMpcDebugLogRequest{0};
+	std::size_t _nextStandingMpcDebugTriggerIndex{0};
+	std::string _standingMpcDebugRequestSource;
+	double _standingMpcDebugRequestTime{0.0};
+	double _standingMpcDebugTriggerTime{0.0};
 	double _lastControlTime{0.0};
 	Vec12<double> _stanceWrenchWorld = Vec12<double>::Zero();
 	vectorAligned<LegRuntimeState> _legRuntime;

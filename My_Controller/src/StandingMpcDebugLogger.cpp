@@ -490,6 +490,9 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     metadata["log_path"] = logPath;
     metadata["controller_time"] = snapshot.stateEstimate.time;
     metadata["controller_iteration"] = snapshot.iteration;
+    metadata["debug_request_source"] = snapshot.debugRequestSource;
+    metadata["debug_request_time"] = scalarToJson(snapshot.debugRequestTime);
+    metadata["debug_trigger_time"] = scalarToJson(snapshot.debugTriggerTime);
     metadata["horizon_steps"] = steps;
     metadata["dt_mpc"] = dtMpc();
     metadata["foot_end_effector_source"] =

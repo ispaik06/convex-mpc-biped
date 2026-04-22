@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
+
+#include <Eigen/Geometry>
 
 #include "Controllers/LegController.h"
 #include "Dynamics/OperationalSpaceDynamics.h"
@@ -47,6 +50,15 @@ Vec2<double> quaternionToRollPitch(Quat<double> quat) {
     rollPitch[0] = std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
     rollPitch[1] = std::asin(clampUnit(2.0 * (w * y - z * x)));
     return rollPitch;
+}
+
+Quat<double> rollPitchYawToQuaternion(const Vec3<double>& euler_W) {
+    const Quat<double> q_roll(Eigen::AngleAxis<double>(euler_W[0], Eigen::Vector3d::UnitX()));
+    const Quat<double> q_pitch(Eigen::AngleAxis<double>(euler_W[1], Eigen::Vector3d::UnitY()));
+    const Quat<double> q_yaw(Eigen::AngleAxis<double>(euler_W[2], Eigen::Vector3d::UnitZ()));
+    Quat<double> quat = q_yaw * q_pitch * q_roll;
+    quat.normalize();
+    return quat;
 }
 
 Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
@@ -124,6 +136,10 @@ void MyController::initializeRuntimeObjects() {
     _standingMpcDebugLogPending = false;
     _standingMpcDebugLogReady = false;
     _lastStandingMpcDebugLogRequest = 0;
+    _nextStandingMpcDebugTriggerIndex = 0;
+    _standingMpcDebugRequestSource.clear();
+    _standingMpcDebugRequestTime = std::numeric_limits<double>::quiet_NaN();
+    _standingMpcDebugTriggerTime = std::numeric_limits<double>::quiet_NaN();
     _lastControlTime = _stateEstimate->time;
     _bodyTarget = BodyTargetState{};
     _initialized = true;
@@ -298,21 +314,55 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     _lastMpcIteration = _iteration;
 }
 
-void MyController::updateStandingMpcDebugRequest() {
-    if (_locomotionMode != LocomotionMode::Standing || _userCommand == nullptr) {
-        return;
-    }
-
-    const unsigned long long request = _userCommand->standing_mpc_debug_log_request;
-    if (request <= _lastStandingMpcDebugLogRequest) {
-        return;
-    }
-
-    _lastStandingMpcDebugLogRequest = request;
+void MyController::queueStandingMpcDebugLog(const std::string& source,
+                                            const double requestTime,
+                                            const double triggerTime) {
     _standingMpcDebugLogPending = true;
     _standingMpcDebugLogReady = false;
-    std::cout << "[StandingMPCDebug] request #" << request
-              << " queued for the next scheduled MPC solve" << std::endl;
+    _standingMpcDebugRequestSource = source;
+    _standingMpcDebugRequestTime = requestTime;
+    _standingMpcDebugTriggerTime = triggerTime;
+}
+
+void MyController::updateStandingMpcDebugRequest() {
+    if (_locomotionMode != LocomotionMode::Standing || _stateEstimate == nullptr) {
+        return;
+    }
+
+    const double time = _stateEstimate->time;
+    if (_userCommand != nullptr) {
+        const unsigned long long request = _userCommand->standing_mpc_debug_log_request;
+        if (request > _lastStandingMpcDebugLogRequest) {
+            _lastStandingMpcDebugLogRequest = request;
+            queueStandingMpcDebugLog(
+                "keyboard",
+                time,
+                std::numeric_limits<double>::quiet_NaN());
+            std::cout << "[StandingMPCDebug] keyboard request #" << request
+                      << " at t=" << time
+                      << " queued for the next scheduled MPC solve" << std::endl;
+        }
+    }
+
+    if (_standingMpcDebugLogPending) {
+        return;
+    }
+
+    const auto& triggerTimes = getControllerConfig().logging.standingMpcDebugTriggerTimes;
+    if (_nextStandingMpcDebugTriggerIndex >= triggerTimes.size()) {
+        return;
+    }
+
+    const double triggerTime = triggerTimes[_nextStandingMpcDebugTriggerIndex];
+    if (time < triggerTime) {
+        return;
+    }
+
+    ++_nextStandingMpcDebugTriggerIndex;
+    queueStandingMpcDebugLog("time", time, triggerTime);
+    std::cout << "[StandingMPCDebug] time trigger t=" << triggerTime
+              << " reached at t=" << time
+              << "; queued for the next scheduled MPC solve" << std::endl;
 }
 
 void MyController::maybeWriteStandingMpcDebugLog(
@@ -341,17 +391,26 @@ void MyController::maybeWriteStandingMpcDebugLog(
             _mpcFormulationOutput,
             _convexMPC->optimalWrenchHorizon(),
             _iteration,
+            _standingMpcDebugRequestSource,
+            _standingMpcDebugRequestTime,
+            _standingMpcDebugTriggerTime,
         };
 
         const std::string logPath = writeStandingMpcDebugLog(snapshot);
         std::cout << "[StandingMPCDebug] wrote " << logPath << std::endl;
         _standingMpcDebugLogPending = false;
         _standingMpcDebugLogReady = false;
+        _standingMpcDebugRequestSource.clear();
+        _standingMpcDebugRequestTime = std::numeric_limits<double>::quiet_NaN();
+        _standingMpcDebugTriggerTime = std::numeric_limits<double>::quiet_NaN();
     } catch (const std::exception& exception) {
         std::cerr << "[StandingMPCDebug] failed to write log: "
                   << exception.what() << std::endl;
         _standingMpcDebugLogPending = false;
         _standingMpcDebugLogReady = false;
+        _standingMpcDebugRequestSource.clear();
+        _standingMpcDebugRequestTime = std::numeric_limits<double>::quiet_NaN();
+        _standingMpcDebugTriggerTime = std::numeric_limits<double>::quiet_NaN();
     }
 }
 
@@ -363,10 +422,9 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
     DebugVizMarker<double> marker;
     marker.name = "debug_body_target";
     marker.position_W = _bodyTarget.position_W;
-    marker.orientation_W = Quat<double>::Identity();
+    marker.orientation_W = rollPitchYawToQuaternion(_bodyTarget.euler_W);
     marker.active = true;
     debugViz.markers.push_back(marker);
-    //TODO: visualization of orientation.
 }
 
 void MyController::maybePrintGaitScheduler() const {

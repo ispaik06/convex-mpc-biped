@@ -1,5 +1,6 @@
 #include "ControllerConfig.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -179,6 +180,11 @@ ControllerConfig loadControllerConfigFromYaml() {
 
     const YAML::Node logging = config["logging"];
     readScalarIfPresent(logging, "gait_status_interval", params.logging.gaitStatusInterval);
+    readVectorIfPresent(logging,
+                        "standing_mpc_debug_trigger_times",
+                        params.logging.standingMpcDebugTriggerTimes);
+    std::sort(params.logging.standingMpcDebugTriggerTimes.begin(),
+              params.logging.standingMpcDebugTriggerTimes.end());
 
     const YAML::Node initialPose = config["initial_pose"];
     readVectorIfPresent(initialPose, "leg_joint_offsets", params.initialPose.legJointOffsets);

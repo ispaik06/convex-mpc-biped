@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <ctime>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -41,6 +42,12 @@ struct FootContactResult {
     WrenchAtPoint atFootSite;
 };
 
+struct ContactProbeOutputPaths {
+    std::filesystem::path report;
+    std::filesystem::path csv;
+    std::filesystem::path plot;
+};
+
 std::string timestampToken() {
     using clock = std::chrono::system_clock;
     const std::time_t time = clock::to_time_t(clock::now());
@@ -53,11 +60,23 @@ std::string timestampToken() {
     return out.str();
 }
 
-std::filesystem::path defaultReportPath() {
+ContactProbeOutputPaths defaultOutputPaths() {
+    const std::string timestamp = timestampToken();
     const std::filesystem::path dir =
         std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" / "standing_mpc" / "contact_probe";
+    const std::filesystem::path txtDir = dir / "txt";
+    const std::filesystem::path csvDir = dir / "csv";
+    const std::filesystem::path plotDir = dir / "plots";
     std::filesystem::create_directories(dir);
-    return dir / ("stand_contact_probe_" + timestampToken() + ".txt");
+    std::filesystem::create_directories(txtDir);
+    std::filesystem::create_directories(csvDir);
+    std::filesystem::create_directories(plotDir);
+
+    ContactProbeOutputPaths paths;
+    paths.report = txtDir / ("stand_contact_probe_" + timestamp + ".txt");
+    paths.csv = csvDir / ("stand_contact_probe_" + timestamp + ".csv");
+    paths.plot = plotDir / ("stand_contact_probe_" + timestamp + ".png");
+    return paths;
 }
 
 std::filesystem::path latestDebugLogPath() {
@@ -297,6 +316,109 @@ void printWrenchComparison(std::ostream& out,
     }
 }
 
+void writeCsvRowsForVec3(std::ostream& out,
+                         const std::string& side,
+                         const std::string& measurementPoint,
+                         const std::string& quantity,
+                         const Vec3<double>& desired,
+                         const Vec3<double>& measured,
+                         const int contactCount,
+                         const bool comparable) {
+    const char* axisNames[3] = {"x", "y", "z"};
+    for (int axis = 0; axis < 3; ++axis) {
+        out << side << ','
+            << measurementPoint << ','
+            << quantity << ','
+            << axisNames[axis] << ',';
+        if (comparable) {
+            out << desired[axis] << ','
+                << measured[axis] << ','
+                << measured[axis] - desired[axis] << ',';
+        } else {
+            out << ','
+                << measured[axis] << ','
+                << ',';
+        }
+        out << contactCount << ','
+            << (comparable ? 1 : 0)
+            << '\n';
+    }
+}
+
+void writePlotCsv(std::ostream& out,
+                  const std::filesystem::path& logPath,
+                  const std::string& desiredReferencePoint,
+                  const std::vector<FootContactResult>& results) {
+    out << std::setprecision(17);
+    out << "# source_json_file=" << logPath.filename().string() << '\n';
+    out << "# source_json_path=" << std::filesystem::absolute(logPath).string() << '\n';
+    out << "side,measurement_point,quantity,axis,desired,measured,error,contacts,comparable\n";
+
+    for (const FootContactResult& result : results) {
+        writeCsvRowsForVec3(out,
+                            result.side,
+                            "foot_site",
+                            "force",
+                            result.desiredForce_W,
+                            result.atFootSite.force_W,
+                            result.atFootSite.contactCount,
+                            true);
+        writeCsvRowsForVec3(out,
+                            result.side,
+                            "foot_link_com",
+                            "force",
+                            result.desiredForce_W,
+                            result.atFootCom.force_W,
+                            result.atFootCom.contactCount,
+                            true);
+        writeCsvRowsForVec3(out,
+                            result.side,
+                            "foot_site",
+                            "moment",
+                            result.desiredMoment_W,
+                            result.atFootSite.moment_W,
+                            result.atFootSite.contactCount,
+                            desiredReferencePoint == "foot_site");
+        writeCsvRowsForVec3(out,
+                            result.side,
+                            "foot_link_com",
+                            "moment",
+                            result.desiredMoment_W,
+                            result.atFootCom.moment_W,
+                            result.atFootCom.contactCount,
+                            desiredReferencePoint == "foot_link_com");
+    }
+}
+
+std::string shellQuote(const std::filesystem::path& path) {
+    std::string quoted = "'";
+    for (const char c : path.string()) {
+        if (c == '\'') {
+            quoted += "'\\''";
+        } else {
+            quoted += c;
+        }
+    }
+    quoted += "'";
+    return quoted;
+}
+
+void runPlotScript(const std::filesystem::path& csvPath, const std::filesystem::path& plotPath) {
+    const std::filesystem::path scriptPath =
+        std::filesystem::path(PROJECT_ROOT_DIR) / "test" / "standing_debug" / "plot_contact_probe.py";
+    const char* pythonEnv = std::getenv("PYTHON");
+    const std::string python = (pythonEnv != nullptr && pythonEnv[0] != '\0') ? pythonEnv : "python";
+    const std::string command =
+        python + " " + shellQuote(scriptPath) + " " + shellQuote(csvPath) + " " + shellQuote(plotPath);
+    const int status = std::system(command.c_str());
+    if (status == 0) {
+        std::cout << "plot: " << std::filesystem::absolute(plotPath).string() << "\n";
+    } else {
+        std::cerr << "plot: failed to run " << scriptPath
+                  << " with exit status " << status << "\n";
+    }
+}
+
 void writeReport(std::ostream& out,
                  const std::filesystem::path& logPath,
                  const std::string& modelPath,
@@ -349,7 +471,7 @@ int main(int argc, char** argv) {
 
     const std::filesystem::path logPath =
         (argc >= 2) ? std::filesystem::path(argv[1]) : latestDebugLogPath();
-    const std::filesystem::path reportPath = defaultReportPath();
+    const ContactProbeOutputPaths outputPaths = defaultOutputPaths();
 
     std::ifstream logStream(logPath);
     if (!logStream.is_open()) {
@@ -439,9 +561,9 @@ int main(int argc, char** argv) {
                 desiredReferencePoint,
                 results);
 
-    std::ofstream report(reportPath, std::ios::out | std::ios::trunc);
+    std::ofstream report(outputPaths.report, std::ios::out | std::ios::trunc);
     if (!report.is_open()) {
-        throw std::runtime_error("Failed to open report output: " + reportPath.string());
+        throw std::runtime_error("Failed to open report output: " + outputPaths.report.string());
     }
     writeReport(report,
                 logPath,
@@ -451,7 +573,19 @@ int main(int argc, char** argv) {
                 footSource,
                 desiredReferencePoint,
                 results);
-    std::cout << "report: " << std::filesystem::absolute(reportPath).string() << "\n";
+    std::cout << "report: " << std::filesystem::absolute(outputPaths.report).string() << "\n";
+
+    std::ofstream csv(outputPaths.csv, std::ios::out | std::ios::trunc);
+    if (!csv.is_open()) {
+        throw std::runtime_error("Failed to open plot CSV output: " + outputPaths.csv.string());
+    }
+    writePlotCsv(csv, logPath, desiredReferencePoint, results);
+    csv.close();
+    if (!csv.good()) {
+        throw std::runtime_error("Failed while writing plot CSV output: " + outputPaths.csv.string());
+    }
+    std::cout << "csv: " << std::filesystem::absolute(outputPaths.csv).string() << "\n";
+    runPlotScript(outputPaths.csv, outputPaths.plot);
 
     return EXIT_SUCCESS;
 }

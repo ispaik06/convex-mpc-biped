@@ -60,6 +60,7 @@ struct FootPlacementParameters {
 
 struct LoggingParameters {
     int gaitStatusInterval{50};
+    std::vector<double> standingMpcDebugTriggerTimes;
 };
 
 struct InitialPoseParameters {

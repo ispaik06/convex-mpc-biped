@@ -21,6 +21,9 @@ struct StandingMpcDebugSnapshot {
     const MPCFormulationOutput& formulation;
     const DVec<double>& wrenchHorizon;
     u64 iteration{0};
+    std::string debugRequestSource;
+    double debugRequestTime{0.0};
+    double debugTriggerTime{0.0};
 };
 
 std::string writeStandingMpcDebugLog(const StandingMpcDebugSnapshot& snapshot);
