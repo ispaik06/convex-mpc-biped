@@ -110,6 +110,23 @@ FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
         "Invalid swing.foot_end_effector_source. Expected site or body_com");
 }
 
+ContactWrenchModel parseContactWrenchModel(const YAML::Node& node) {
+    if (!node || !node.IsScalar()) {
+        return ContactWrenchModel::FullWrench;
+    }
+
+    const std::string model = node.as<std::string>();
+    if (model == "full_wrench" || model == "model1") {
+        return ContactWrenchModel::FullWrench;
+    }
+    if (model == "no_roll_moment" || model == "model2") {
+        return ContactWrenchModel::NoRollMoment;
+    }
+
+    throw std::runtime_error(
+        "Invalid mpc.contact_wrench_model. Expected full_wrench or no_roll_moment");
+}
+
 ControllerConfig loadControllerConfigFromYaml() {
     ControllerConfig params;
 
@@ -143,6 +160,7 @@ ControllerConfig loadControllerConfigFromYaml() {
     readScalarIfPresent(mpc, "normal_force_max", params.mpc.normalForceMax);
     readScalarIfPresent(mpc, "normal_force_min", params.mpc.normalForceMin);
     readScalarIfPresent(mpc, "iterations_between_solve", params.mpc.iterationsBetweenSolve);
+    params.mpc.contactWrenchModel = parseContactWrenchModel(mpc["contact_wrench_model"]);
     if (mpc && mpc["state_weight_diag"]) {
         fillDiagonal(params.mpc.stateWeight, mpc["state_weight_diag"], "mpc.state_weight_diag");
     }
@@ -266,4 +284,14 @@ const DMat<double>& getK() {
 
 LocomotionMode locomotionMode() {
     return getControllerConfig().locomotionMode;
+}
+
+std::string contactWrenchModelName(const ContactWrenchModel model) {
+    switch (model) {
+        case ContactWrenchModel::FullWrench:
+            return "full_wrench";
+        case ContactWrenchModel::NoRollMoment:
+            return "no_roll_moment";
+    }
+    return "unknown";
 }

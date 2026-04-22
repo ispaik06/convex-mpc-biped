@@ -1,6 +1,9 @@
 #ifndef CONTROLLER_CONFIG_H
 #define CONTROLLER_CONFIG_H
 
+#include <string>
+#include <vector>
+
 #include "cppTypes.h"
 #include "RobotController.h"
 
@@ -15,6 +18,11 @@ enum class LocomotionMode {
 enum class TouchdownTargetMode {
     BodyVelocityHalfStance,
     LegacyComYawCorrected,
+};
+
+enum class ContactWrenchModel {
+    FullWrench,
+    NoRollMoment,
 };
 
 struct TimingParameters {
@@ -39,6 +47,7 @@ struct MPCParameters {
     StateWeightMat stateWeight = StateWeightMat::Identity();
     InputWeightMat inputWeight = InputWeightMat::Identity();
     int iterationsBetweenSolve{10};
+    ContactWrenchModel contactWrenchModel{ContactWrenchModel::FullWrench};
 };
 
 struct SwingParameters {
@@ -95,5 +104,6 @@ double dtMpc();
 const DMat<double>& getL();
 const DMat<double>& getK();
 LocomotionMode locomotionMode();
+std::string contactWrenchModelName(ContactWrenchModel model);
 
 #endif  // CONTROLLER_CONFIG_H

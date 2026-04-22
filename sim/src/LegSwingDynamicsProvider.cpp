@@ -103,6 +103,30 @@ Vec3<double> readSitePosition(const mjData* data, const int siteId) {
     return pos;
 }
 
+Mat3<double> readRotationMatrix(const mjtNum* raw) {
+    Mat3<double> rotation = Mat3<double>::Identity();
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            rotation(row, col) = static_cast<double>(raw[3 * row + col]);
+        }
+    }
+    return rotation;
+}
+
+Mat3<double> readBodyRotation(const mjData* data, const int bodyId) {
+    if (bodyId < 0) {
+        throw std::runtime_error("Invalid body id for world rotation query");
+    }
+    return readRotationMatrix(data->xmat + 9 * bodyId);
+}
+
+Mat3<double> readSiteRotation(const mjData* data, const int siteId) {
+    if (siteId < 0) {
+        throw std::runtime_error("Invalid site id for world rotation query");
+    }
+    return readRotationMatrix(data->site_xmat + 9 * siteId);
+}
+
 void readBodyComJacobians(const mjModel* model,
                           const mjData* data,
                           const int bodyId,
@@ -482,6 +506,7 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
                     throw std::runtime_error("Foot end-effector source is site, but no foot site was bound");
                 }
                 legState.footPos_W = readSitePosition(auxModel.data, auxModel.footSiteId);
+                legState.R_WF = readSiteRotation(auxModel.data, auxModel.footSiteId);
                 readSiteJacobians(auxModel.model,
                                   auxModel.data,
                                   auxModel.footSiteId,
@@ -497,6 +522,7 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
                 break;
             case FootEndEffectorSource::BodyCom:
                 legState.footPos_W = readBodyComPosition(auxModel.data, auxModel.footBodyId);
+                legState.R_WF = readBodyRotation(auxModel.data, auxModel.footBodyId);
                 readBodyComJacobians(auxModel.model,
                                      auxModel.data,
                                      auxModel.footBodyId,

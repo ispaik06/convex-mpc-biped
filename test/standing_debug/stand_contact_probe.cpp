@@ -426,6 +426,7 @@ void writeReport(std::ostream& out,
                  const double maxCtrlClampDelta,
                  const std::string& footSource,
                  const std::string& desiredReferencePoint,
+                 const std::string& contactWrenchModel,
                  const std::vector<FootContactResult>& results) {
     out << std::fixed << std::setprecision(9);
     out << "[stand_contact_probe]\n"
@@ -435,6 +436,7 @@ void writeReport(std::ostream& out,
         << "  max_ctrl_clamp_delta: " << maxCtrlClampDelta << "\n"
         << "  foot_end_effector_source: " << footSource << "\n"
         << "  desired_wrench_reference_point: " << desiredReferencePoint << "\n"
+        << "  contact_wrench_model: " << contactWrenchModel << "\n"
         << "  sign convention: positive contact-frame wrench is treated as acting on geom2\n\n";
 
     for (const FootContactResult& result : results) {
@@ -486,6 +488,8 @@ int main(int argc, char** argv) {
         readJsonStringOr(metadata, "foot_end_effector_source", "unknown");
     const std::string desiredReferencePoint =
         readJsonStringOr(metadata, "desired_wrench_reference_point", "unknown");
+    const std::string contactWrenchModel =
+        readJsonStringOr(metadata, "contact_wrench_model", "unknown");
 
     const std::vector<double> qpos =
         readJsonVector(log.at("robot_state").at("full_qpos"), "robot_state.full_qpos");
@@ -559,6 +563,7 @@ int main(int argc, char** argv) {
                 maxCtrlClampDelta,
                 footSource,
                 desiredReferencePoint,
+                contactWrenchModel,
                 results);
 
     std::ofstream report(outputPaths.report, std::ios::out | std::ios::trunc);
@@ -572,6 +577,7 @@ int main(int argc, char** argv) {
                 maxCtrlClampDelta,
                 footSource,
                 desiredReferencePoint,
+                contactWrenchModel,
                 results);
     std::cout << "report: " << std::filesystem::absolute(outputPaths.report).string() << "\n";
 

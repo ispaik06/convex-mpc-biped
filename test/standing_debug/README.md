@@ -15,6 +15,12 @@ time, and the log is still written after the next scheduled standing MPC solve.
 The JSON metadata records `debug_request_source`, `debug_request_time`, and
 `debug_trigger_time`.
 
+`mpc.contact_wrench_model` in `config/my_controller.yaml` selects the MPC
+contact wrench assumption. `full_wrench` leaves all 12 wrench inputs free.
+`no_roll_moment` keeps the 12-input QP shape but adds equality constraints
+`x_F^T M_W = 0` for each stance foot, where `x_F` is that foot/end-effector
+local x axis expressed in world.
+
 ## SRB Reconstruction
 
 ```sh
@@ -58,10 +64,10 @@ cmake --build build --target stand_rh_probe
 ```
 
 This is an internal SRB model test only. It reads the logged `x0`, fixed
-standing reference, desired foot positions, and logged reduced-body mass and
-inertia. Then every rollout step rebuilds the standing reference trajectory,
-gait constraints, SRB formulation, and QP. The first predicted state from that
-solve becomes the next rollout state.
+standing reference, desired foot positions, foot local x axes, and logged
+reduced-body mass and inertia. Then every rollout step rebuilds the standing
+reference trajectory, gait constraints, SRB formulation, and QP. The first
+predicted state from that solve becomes the next rollout state.
 
 Outputs are saved under
 `logs/debug/standing_mpc/receding_horizon/`:

@@ -499,6 +499,8 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         footEndEffectorSourceName(getControllerConfig().swing.footEndEffectorSource);
     metadata["desired_wrench_reference_point"] =
         desiredWrenchReferencePointName(getControllerConfig().swing.footEndEffectorSource);
+    metadata["contact_wrench_model"] =
+        contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel);
     root["metadata"] = std::move(metadata);
 
     json model = json::object();
@@ -544,6 +546,8 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         legJson["actuator_indices"] = intVectorToJson(legParams.joints.actuator_idx);
         legJson["foot_pos_W"] = vectorToJson(legState.footPos_W);
         legJson["foot_vel_W"] = vectorToJson(legState.footVel_W);
+        legJson["R_WF"] = matrixToFlatJson(legState.R_WF);
+        legJson["foot_x_axis_W"] = vectorToJson(legState.R_WF.col(0));
         legJson["q"] = vectorToJson(legState.q);
         legJson["qd"] = vectorToJson(legState.qd);
         legJson["tau_feedforward_command"] = vectorToJson(legCommand.tauFeedForward);

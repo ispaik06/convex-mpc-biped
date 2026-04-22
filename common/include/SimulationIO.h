@@ -12,6 +12,7 @@ struct RobotLegState {
     Vec3<T> footEndPos_W = Vec3<T>::Zero();   // same point, retained for trace compatibility
     Vec3<T> footVel_W = Vec3<T>::Zero();      // tracked foot end-effector velocity
     Vec3<T> footEndVel_W = Vec3<T>::Zero();   // same point, retained for trace compatibility
+    Mat3<T> R_WF = Mat3<T>::Identity();        // tracked foot/end-effector frame rotation
     DMat<T> Jv_W;
     DMat<T> JvDot_W;
     DMat<T> Jw_W;
@@ -49,6 +50,7 @@ struct RobotLegState {
         Jw_W.setZero(3, qd_size);
         massMatrix.setZero(qd_size, qd_size);
         bias.setZero(qd_size);
+        R_WF.setIdentity();
         hasFootKinematics = false;
         hasLegDynamics = false;
         contact = true;

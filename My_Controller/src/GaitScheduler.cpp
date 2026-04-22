@@ -1,11 +1,32 @@
 #include <sstream>
 #include <stdexcept>
 #include <cmath>
+#include <string>
 
 #include "GaitScheduler.h"
 
+namespace {
+Vec3<double> normalizedAxisOrThrow(const Vec3<double>& axis, const char* name) {
+    if (!axis.allFinite()) {
+        throw std::runtime_error(std::string("Non-finite ") + name);
+    }
+
+    const double norm = axis.norm();
+    if (norm <= 1e-9) {
+        throw std::runtime_error(std::string("Degenerate ") + name);
+    }
+    return axis / norm;
+}
+}  // namespace
+
 void GaitScheduler::setLocomotionMode(const LocomotionMode locomotionMode) {
     _locomotionMode = locomotionMode;
+}
+
+void GaitScheduler::setFootLocalXAxesWorld(const Vec3<double>& leftFootXAxis_W,
+                                           const Vec3<double>& rightFootXAxis_W) {
+    _leftFootXAxis_W = normalizedAxisOrThrow(leftFootXAxis_W, "left foot local x axis");
+    _rightFootXAxis_W = normalizedAxisOrThrow(rightFootXAxis_W, "right foot local x axis");
 }
 
 void GaitScheduler::rebuildContactConstraintTemplate() {
@@ -57,6 +78,8 @@ void GaitScheduler::buildConstraintMatrices() {
 
     const int steps = horizonSteps();
     const auto& mpc = getControllerConfig().mpc;
+    const bool constrainFootRollMoment =
+        mpc.contactWrenchModel == ContactWrenchModel::NoRollMoment;
 
     D.setZero(12 * steps, 12 * steps);
     C.setZero(24 * steps, 12 * steps);
@@ -69,7 +92,10 @@ void GaitScheduler::buildConstraintMatrices() {
         Mat3<double> S_right = Mat3<double>::Zero();
         Mat12<double> C_left = Mat12<double>::Zero();
         Mat12<double> C_right = Mat12<double>::Zero();
-        if (c(Side::Left, tk) == 0) {  // swing
+        const bool leftStance = c(Side::Left, tk);
+        const bool rightStance = c(Side::Right, tk);
+
+        if (!leftStance) {  // swing
             S_left = Mat3<double>::Identity();
         }
         else {  // stance
@@ -79,7 +105,7 @@ void GaitScheduler::buildConstraintMatrices() {
             Ck_bound(5) = -mpc.normalForceMin;
         }
 
-        if (c(Side::Right, tk) == 0) {  // swing
+        if (!rightStance) {  // swing
             S_right = Mat3<double>::Identity();
         }
         else {  // stance
@@ -94,6 +120,12 @@ void GaitScheduler::buildConstraintMatrices() {
         Dk.block<3, 3>(3, 3) = S_right;
         Dk.block<3, 3>(6, 6) = S_left;
         Dk.block<3, 3>(9, 9) = S_right;
+        if (constrainFootRollMoment && leftStance) {
+            Dk.block<1, 3>(6, 6) = _leftFootXAxis_W.transpose();
+        }
+        if (constrainFootRollMoment && rightStance) {
+            Dk.block<1, 3>(9, 9) = _rightFootXAxis_W.transpose();
+        }
 
         const Eigen::Index dOffset = static_cast<Eigen::Index>(12 * k);
         const Eigen::Index cOffset = static_cast<Eigen::Index>(24 * k);

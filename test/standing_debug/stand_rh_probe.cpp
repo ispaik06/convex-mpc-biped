@@ -85,6 +85,8 @@ struct RolloutResult {
     std::vector<RolloutRow> rows;
     Vec13<double> fixedReference = Vec13<double>::Zero();
     DesiredFootPositions desiredFootPositions;
+    Vec3<double> leftFootXAxis_W = Vec3<double>::UnitX();
+    Vec3<double> rightFootXAxis_W = Vec3<double>::UnitX();
     double sourceControllerTime{0.0};
     double sourceClockT0{0.0};
     int sourceHorizonSteps{0};
@@ -409,6 +411,44 @@ DesiredFootPositions desiredFootPositionsFromLog(const json& log) {
     return out;
 }
 
+Vec3<double> footXAxisFromLegJson(const json& leg) {
+    if (leg.contains("foot_x_axis_W")) {
+        return vec3FromJson(leg.at("foot_x_axis_W"), "feet.legs.foot_x_axis_W");
+    }
+    if (leg.contains("R_WF")) {
+        const DMat<double> rotation = readJsonMatrix(leg.at("R_WF"), "feet.legs.R_WF");
+        if (rotation.rows() != 3 || rotation.cols() != 3) {
+            throw std::runtime_error("feet.legs.R_WF must be 3x3");
+        }
+        return rotation.col(0);
+    }
+    return Vec3<double>::UnitX();
+}
+
+void readFootLocalXAxesFromLog(const json& log,
+                               Vec3<double>& leftFootXAxis_W,
+                               Vec3<double>& rightFootXAxis_W) {
+    leftFootXAxis_W = Vec3<double>::UnitX();
+    rightFootXAxis_W = Vec3<double>::UnitX();
+
+    if (!log.contains("feet") || !log.at("feet").contains("legs")) {
+        return;
+    }
+
+    for (const auto& leg : log.at("feet").at("legs")) {
+        if (!leg.contains("side") || !leg.at("side").is_string()) {
+            continue;
+        }
+
+        const std::string side = leg.at("side").get<std::string>();
+        if (side == "left") {
+            leftFootXAxis_W = footXAxisFromLegJson(leg);
+        } else if (side == "right") {
+            rightFootXAxis_W = footXAxisFromLegJson(leg);
+        }
+    }
+}
+
 Vec13<double> fixedReferenceFromLog(const json& log) {
     const DMat<double> xRefByStep =
         readJsonMatrix(log.at("reference_trajectory").at("X_ref_by_step"),
@@ -472,6 +512,7 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     RolloutResult result;
     result.fixedReference = fixedReferenceFromLog(log);
     result.desiredFootPositions = desiredFootPositionsFromLog(log);
+    readFootLocalXAxesFromLog(log, result.leftFootXAxis_W, result.rightFootXAxis_W);
     result.sourceControllerTime = metadataDoubleOr(metadata, "controller_time", 0.0);
     result.sourceClockT0 = clockT0FromLog(log, result.sourceControllerTime);
     result.sourceHorizonSteps = metadataIntOr(metadata, "horizon_steps", 0);
@@ -481,6 +522,7 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     HorizonClock horizonClock(result.sourceClockT0);
     GaitScheduler gaitScheduler(&horizonClock);
     gaitScheduler.setLocomotionMode(LocomotionMode::Standing);
+    gaitScheduler.setFootLocalXAxesWorld(result.leftFootXAxis_W, result.rightFootXAxis_W);
     MPCFormulation formulation(&robotParams);
     MPCFormulationOutput formulationOutput;
     ReferenceTrajectoryOutput referenceOutput;
@@ -620,10 +662,14 @@ void writeReport(std::ostream& out,
         << "  source_dt_mpc: " << result.sourceDtMpc << "\n"
         << "  source_controller_time: " << result.sourceControllerTime << "\n"
         << "  source_clock_t0: " << result.sourceClockT0 << "\n"
+        << "  contact_wrench_model: "
+        << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << "\n"
         << "  rollout_model: SRB-only true receding horizon, fixed standing reference, fixed foot points\n\n";
 
     writeVector(out, "desired_left_foot_W", result.desiredFootPositions.left_des_W);
     writeVector(out, "desired_right_foot_W", result.desiredFootPositions.right_des_W);
+    writeVector(out, "left_foot_x_axis_W", result.leftFootXAxis_W);
+    writeVector(out, "right_foot_x_axis_W", result.rightFootXAxis_W);
     writeStateVector(out, "fixed_reference", result.fixedReference);
     writeStateVector(out, "final_state", finalStateFromResult(result));
     writeStateVector(out, "final_error", finalStateFromResult(result) - result.fixedReference);
@@ -697,6 +743,8 @@ void writeCsv(std::ostream& out,
     out << "# config_dt_mpc=" << dtMpc() << '\n';
     out << "# source_controller_time=" << result.sourceControllerTime << '\n';
     out << "# source_clock_t0=" << result.sourceClockT0 << '\n';
+    out << "# contact_wrench_model="
+        << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << '\n';
     out << "# state_order=" << joinNames(kStateNames) << '\n';
     out << "# input_order=" << joinInputNames() << '\n';
     writeCsvHeader(out);

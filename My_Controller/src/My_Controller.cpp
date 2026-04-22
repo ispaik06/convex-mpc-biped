@@ -79,6 +79,22 @@ Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstim
     // later, that should be an explicit model choice rather than an accidental truncation.
     return stateEstimate.torsoLinVel_W + stateEstimate.torsoAngVel_W.cross(bodyBOffset_W);
 }
+
+Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
+                                 const RobotParams<double>& robotParams,
+                                 const Side side) {
+    for (std::size_t leg = 0; leg < robotParams.legs.size(); ++leg) {
+        if (robotParams.legs[leg].side != side) {
+            continue;
+        }
+        if (leg >= stateEstimate.legs.size() || !stateEstimate.legs[leg].hasFootKinematics) {
+            throw std::runtime_error("Foot-local contact wrench model requires foot kinematics");
+        }
+        return stateEstimate.legs[leg].R_WF.col(0);
+    }
+
+    throw std::runtime_error("Foot-local contact wrench model requires left/right foot axes");
+}
 }  // namespace
 
 MyController::MyController() {
@@ -188,6 +204,7 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     if (!_bodyTarget.initialized) {
         _bodyTarget.position_W = x0.template segment<3>(3);
         _bodyTarget.euler_W = x0.template segment<3>(0);
+        _bodyTarget.euler_W.template segment<2>(0) << 0, 0;
         _bodyTarget.initialized = true;
         return;
     }
@@ -263,6 +280,11 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     }
 
     try {
+        if (getControllerConfig().mpc.contactWrenchModel == ContactWrenchModel::NoRollMoment) {
+            _gaitScheduler->setFootLocalXAxesWorld(
+                footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
+                footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Right));
+        }
         _gaitScheduler->buildConstraintMatrices();
 
         Vec13<double> referenceSeed = x0;
