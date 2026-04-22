@@ -88,6 +88,31 @@ void fillJointGroup(const mjModel* model,
 }
 
 template <typename T>
+void fillFixedJoints(const mjModel* model,
+                     const std::vector<FixedJointMujocoSpec>& jointSpecs,
+                     RobotParams<T>& params) {
+    params.fixedJoints.clear();
+    params.fixedJoints.reserve(jointSpecs.size());
+
+    for (const auto& spec : jointSpecs) {
+        const int jointId = requireId<T>(model, mjOBJ_JOINT, spec.joint, "fixed joint");
+        const int actuatorId = requireId<T>(model, mjOBJ_ACTUATOR, spec.actuator, "fixed joint actuator");
+        const int qIdx = model->jnt_qposadr[jointId];
+        const int qdIdx = model->jnt_dofadr[jointId];
+
+        FixedJointParams<T> joint;
+        joint.name = asString(spec.joint);
+        joint.q_idx = qIdx;
+        joint.qd_idx = qdIdx;
+        joint.actuator_idx = actuatorId;
+        joint.qDefault = static_cast<T>(model->qpos0[qIdx]);
+        joint.kp = static_cast<T>(spec.kp);
+        joint.kd = static_cast<T>(spec.kd);
+        params.fixedJoints.push_back(joint);
+    }
+}
+
+template <typename T>
 int firstJointBodyId(const mjModel* model, const std::vector<JointActuatorSpec>& jointSpecs) {
     if (jointSpecs.empty()) {
         throw std::runtime_error("Limb spec has no joints");
@@ -317,6 +342,7 @@ MujocoRobotSetup<T> buildRobotParamsFromSpec(const mjModel* model,
         bindings.hands.emplace_back();
         fillArm<T>(model, armSpec, params.arms.back(), bindings.hands.back());
     }
+    fillFixedJoints<T>(model, spec.fixedJoints, params);
 
     fillReducedBodyMassProperties(model, spec.baseBody, bindings, params);
 

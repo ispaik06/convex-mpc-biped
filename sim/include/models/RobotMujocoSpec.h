@@ -18,18 +18,24 @@ struct LimbMujocoSpec {
     std::vector<JointActuatorSpec> joints;
 };
 
+struct FixedJointMujocoSpec {
+    std::string_view joint{};
+    std::string_view actuator{};
+    double kp{0.0};
+    double kd{0.0};
+};
+
 struct RobotMujocoSpec {
     RobotType type = RobotType::MIT_HUMANOID;
     std::string_view baseBody{};
     std::vector<LimbMujocoSpec> legs;
     std::vector<LimbMujocoSpec> arms;
+    std::vector<FixedJointMujocoSpec> fixedJoints;
 };
 
 const RobotMujocoSpec& getMitHumanoidMujocoSpec();
+const RobotMujocoSpec& getUnitreeG1MujocoSpec();
 
-inline const RobotMujocoSpec& getRobotMujocoSpec(RobotType type) {
-    (void)type;
-    return getMitHumanoidMujocoSpec();
-}
+const RobotMujocoSpec& getRobotMujocoSpec(RobotType type);
 
 #endif  // ROBOT_MUJOCO_SPEC_H

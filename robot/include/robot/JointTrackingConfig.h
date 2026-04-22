@@ -3,6 +3,8 @@
 
 #include <vector>
 
+#include "Types.h"
+
 struct JointTrackingConfig {
     std::vector<double> legKp;
     std::vector<double> legKd;
@@ -19,5 +21,6 @@ struct JointTrackingConfig {
 };
 
 const JointTrackingConfig& getJointTrackingConfig();
+const JointTrackingConfig& getJointTrackingConfig(RobotType robotType);
 
 #endif  // JOINT_TRACKING_CONFIG_H

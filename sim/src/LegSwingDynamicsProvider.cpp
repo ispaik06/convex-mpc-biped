@@ -6,6 +6,7 @@
 #include <mujoco/mujoco.h>
 
 #include "LegSwingDynamicsProvider.h"
+#include "RobotConfig.h"
 #include "models/RobotMujocoSpec.h"
 
 namespace {
@@ -127,90 +128,6 @@ Mat3<double> readSiteRotation(const mjData* data, const int siteId) {
     return readRotationMatrix(data->site_xmat + 9 * siteId);
 }
 
-void readBodyComJacobians(const mjModel* model,
-                          const mjData* data,
-                          const int bodyId,
-                          std::vector<mjtNum>& jacpScratch,
-                          std::vector<mjtNum>& jacrScratch,
-                          DMat<double>& Jv_W,
-                          DMat<double>& Jw_W) {
-    mj_jacBodyCom(model, data, jacpScratch.data(), jacrScratch.data(), bodyId);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacpMap(jacpScratch.data(), 3, model->nv);
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacrMap(jacrScratch.data(), 3, model->nv);
-    Jv_W = jacpMap.template cast<double>();
-    Jw_W = jacrMap.template cast<double>();
-}
-
-void readBodyComJacobianDot(const mjModel* model,
-                            const mjData* data,
-                            const int bodyId,
-                            std::vector<mjtNum>& jacDotpScratch,
-                            DMat<double>& JvDot_W) {
-    const mjtNum point[3] = {
-        data->xipos[3 * bodyId + 0],
-        data->xipos[3 * bodyId + 1],
-        data->xipos[3 * bodyId + 2],
-    };
-
-    mj_jacDot(model, data, jacDotpScratch.data(), nullptr, point, bodyId);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacDotMap(jacDotpScratch.data(), 3, model->nv);
-    JvDot_W = jacDotMap.template cast<double>();
-}
-
-void readSiteJacobians(const mjModel* model,
-                       const mjData* data,
-                       const int siteId,
-                       std::vector<mjtNum>& jacpScratch,
-                       std::vector<mjtNum>& jacrScratch,
-                       DMat<double>& Jv_W,
-                       DMat<double>& Jw_W) {
-    mj_jacSite(model, data, jacpScratch.data(), jacrScratch.data(), siteId);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacpMap(jacpScratch.data(), 3, model->nv);
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacrMap(jacrScratch.data(), 3, model->nv);
-    Jv_W = jacpMap.template cast<double>();
-    Jw_W = jacrMap.template cast<double>();
-}
-
-void readSiteJacobianDot(const mjModel* model,
-                         const mjData* data,
-                         const int siteId,
-                         std::vector<mjtNum>& jacDotpScratch,
-                         DMat<double>& JvDot_W) {
-    if (siteId < 0) {
-        throw std::runtime_error("Invalid site id for Jacobian time-derivative query");
-    }
-
-    const mjtNum point[3] = {
-        data->site_xpos[3 * siteId + 0],
-        data->site_xpos[3 * siteId + 1],
-        data->site_xpos[3 * siteId + 2],
-    };
-
-    mj_jacDot(model, data, jacDotpScratch.data(), nullptr, point, model->site_bodyid[siteId]);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> jacDotMap(jacDotpScratch.data(), 3, model->nv);
-    JvDot_W = jacDotMap.template cast<double>();
-}
-
-void readDenseMassMatrix(const mjModel* model,
-                         const mjData* data,
-                         std::vector<mjtNum>& denseMassScratch,
-                         DMat<double>& massMatrix) {
-    mj_fullM(model, denseMassScratch.data(), data->qM);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> massMap(denseMassScratch.data(), model->nv, model->nv);
-    massMatrix = massMap.template cast<double>();
-}
-
-void copyBias(const mjData* data, DVec<double>& bias) {
-    for (Eigen::Index i = 0; i < bias.size(); ++i) {
-        bias[i] = static_cast<double>(data->qfrc_bias[i]);
-    }
-}
-
 void copySelectedJacobianColumns(const mjModel* model,
                                  const std::vector<mjtNum>& source,
                                  const std::vector<int>& columnIndices,
@@ -225,6 +142,108 @@ void copySelectedJacobianColumns(const mjModel* model,
             }
             target(rowOffset + row, col) = static_cast<double>(sourceMap(row, sourceCol));
         }
+    }
+}
+
+void readBodyComJacobiansSelected(const mjModel* model,
+                                  const mjData* data,
+                                  const int bodyId,
+                                  const std::vector<int>& columnIndices,
+                                  std::vector<mjtNum>& jacpScratch,
+                                  std::vector<mjtNum>& jacrScratch,
+                                  DMat<double>& Jv_W,
+                                  DMat<double>& Jw_W) {
+    mj_jacBodyCom(model, data, jacpScratch.data(), jacrScratch.data(), bodyId);
+    Jv_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
+    Jw_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
+    copySelectedJacobianColumns(model, jacpScratch, columnIndices, Jv_W, 0);
+    copySelectedJacobianColumns(model, jacrScratch, columnIndices, Jw_W, 0);
+}
+
+void readSiteJacobiansSelected(const mjModel* model,
+                               const mjData* data,
+                               const int siteId,
+                               const std::vector<int>& columnIndices,
+                               std::vector<mjtNum>& jacpScratch,
+                               std::vector<mjtNum>& jacrScratch,
+                               DMat<double>& Jv_W,
+                               DMat<double>& Jw_W) {
+    mj_jacSite(model, data, jacpScratch.data(), jacrScratch.data(), siteId);
+    Jv_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
+    Jw_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
+    copySelectedJacobianColumns(model, jacpScratch, columnIndices, Jv_W, 0);
+    copySelectedJacobianColumns(model, jacrScratch, columnIndices, Jw_W, 0);
+}
+
+void readBodyComJacobianDotSelected(const mjModel* model,
+                                    const mjData* data,
+                                    const int bodyId,
+                                    const std::vector<int>& columnIndices,
+                                    std::vector<mjtNum>& jacDotpScratch,
+                                    DMat<double>& JvDot_W) {
+    const mjtNum point[3] = {
+        data->xipos[3 * bodyId + 0],
+        data->xipos[3 * bodyId + 1],
+        data->xipos[3 * bodyId + 2],
+    };
+
+    mj_jacDot(model, data, jacDotpScratch.data(), nullptr, point, bodyId);
+    JvDot_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
+    copySelectedJacobianColumns(model, jacDotpScratch, columnIndices, JvDot_W, 0);
+}
+
+void readSiteJacobianDotSelected(const mjModel* model,
+                                 const mjData* data,
+                                 const int siteId,
+                                 const std::vector<int>& columnIndices,
+                                 std::vector<mjtNum>& jacDotpScratch,
+                                 DMat<double>& JvDot_W) {
+    if (siteId < 0) {
+        throw std::runtime_error("Invalid site id for Jacobian time-derivative query");
+    }
+
+    const mjtNum point[3] = {
+        data->site_xpos[3 * siteId + 0],
+        data->site_xpos[3 * siteId + 1],
+        data->site_xpos[3 * siteId + 2],
+    };
+
+    mj_jacDot(model, data, jacDotpScratch.data(), nullptr, point, model->site_bodyid[siteId]);
+    JvDot_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
+    copySelectedJacobianColumns(model, jacDotpScratch, columnIndices, JvDot_W, 0);
+}
+
+void readDenseMassSubmatrix(const mjModel* model,
+                            const mjData* data,
+                            const std::vector<int>& indices,
+                            std::vector<mjtNum>& denseMassScratch,
+                            DMat<double>& massMatrix) {
+    mj_fullM(model, denseMassScratch.data(), data->qM);
+
+    Eigen::Map<const RowMajorMatrix<mjtNum>> massMap(denseMassScratch.data(), model->nv, model->nv);
+    const Eigen::Index size = static_cast<Eigen::Index>(indices.size());
+    massMatrix.setZero(size, size);
+    for (Eigen::Index row = 0; row < size; ++row) {
+        const int sourceRow = indices[static_cast<std::size_t>(row)];
+        if (sourceRow < 0 || sourceRow >= model->nv) {
+            throw std::runtime_error("Mass matrix row index is out of range");
+        }
+        for (Eigen::Index col = 0; col < size; ++col) {
+            const int sourceCol = indices[static_cast<std::size_t>(col)];
+            if (sourceCol < 0 || sourceCol >= model->nv) {
+                throw std::runtime_error("Mass matrix column index is out of range");
+            }
+            massMatrix(row, col) = static_cast<double>(massMap(sourceRow, sourceCol));
+        }
+    }
+}
+
+void copySelectedBias(const mjData* data, const std::vector<int>& indices, DVec<double>& bias) {
+    if (bias.size() != static_cast<Eigen::Index>(indices.size())) {
+        throw std::runtime_error("Bias destination size does not match selected index count");
+    }
+    for (Eigen::Index i = 0; i < bias.size(); ++i) {
+        bias[i] = static_cast<double>(data->qfrc_bias[indices[static_cast<std::size_t>(i)]]);
     }
 }
 
@@ -507,44 +526,49 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
                 }
                 legState.footPos_W = readSitePosition(auxModel.data, auxModel.footSiteId);
                 legState.R_WF = readSiteRotation(auxModel.data, auxModel.footSiteId);
-                readSiteJacobians(auxModel.model,
-                                  auxModel.data,
-                                  auxModel.footSiteId,
-                                  auxModel.jacpScratch,
-                                  auxModel.jacrScratch,
-                                  legState.Jv_W,
-                                  legState.Jw_W);
-                readSiteJacobianDot(auxModel.model,
-                                    auxModel.data,
-                                    auxModel.footSiteId,
-                                    auxModel.jacDotpScratch,
-                                    legState.JvDot_W);
+                readSiteJacobiansSelected(auxModel.model,
+                                          auxModel.data,
+                                          auxModel.footSiteId,
+                                          auxModel.qvelIndex,
+                                          auxModel.jacpScratch,
+                                          auxModel.jacrScratch,
+                                          legState.Jv_W,
+                                          legState.Jw_W);
+                readSiteJacobianDotSelected(auxModel.model,
+                                            auxModel.data,
+                                            auxModel.footSiteId,
+                                            auxModel.qvelIndex,
+                                            auxModel.jacDotpScratch,
+                                            legState.JvDot_W);
                 break;
             case FootEndEffectorSource::BodyCom:
                 legState.footPos_W = readBodyComPosition(auxModel.data, auxModel.footBodyId);
                 legState.R_WF = readBodyRotation(auxModel.data, auxModel.footBodyId);
-                readBodyComJacobians(auxModel.model,
-                                     auxModel.data,
-                                     auxModel.footBodyId,
-                                     auxModel.jacpScratch,
-                                     auxModel.jacrScratch,
-                                     legState.Jv_W,
-                                     legState.Jw_W);
-                readBodyComJacobianDot(auxModel.model,
-                                       auxModel.data,
-                                       auxModel.footBodyId,
-                                       auxModel.jacDotpScratch,
-                                       legState.JvDot_W);
+                readBodyComJacobiansSelected(auxModel.model,
+                                             auxModel.data,
+                                             auxModel.footBodyId,
+                                             auxModel.qvelIndex,
+                                             auxModel.jacpScratch,
+                                             auxModel.jacrScratch,
+                                             legState.Jv_W,
+                                             legState.Jw_W);
+                readBodyComJacobianDotSelected(auxModel.model,
+                                               auxModel.data,
+                                               auxModel.footBodyId,
+                                               auxModel.qvelIndex,
+                                               auxModel.jacDotpScratch,
+                                               legState.JvDot_W);
                 break;
         }
         legState.footVel_W = legState.Jv_W * legState.qd;
         legState.footEndPos_W = legState.footPos_W;
         legState.footEndVel_W = legState.footVel_W;
-        readDenseMassMatrix(auxModel.model,
-                            auxModel.data,
-                            auxModel.denseMassScratch,
-                            legState.massMatrix);
-        copyBias(auxModel.data, legState.bias);
+        readDenseMassSubmatrix(auxModel.model,
+                               auxModel.data,
+                               auxModel.qvelIndex,
+                               auxModel.denseMassScratch,
+                               legState.massMatrix);
+        copySelectedBias(auxModel.data, auxModel.qvelIndex, legState.bias);
         legState.hasFootKinematics = true;
         legState.hasLegDynamics = true;
     }
@@ -603,9 +627,8 @@ void LegSwingDynamicsProvider::update(StateEstimate<double>& stateEstimate) {
 }
 
 std::string LegSwingDynamicsProvider::robotXmlPath(const RobotType robotType) {
-    (void)robotType;
-    const std::string root(PROJECT_ROOT_DIR);
-    return root + "/models/mit_humanoid/mit_humanoid.xml";
+    const auto& runtimeConfig = getRobotRuntimeConfig(robotType);
+    return resolveProjectPath(runtimeConfig.auxiliaryModelXmlPath);
 }
 
 void LegSwingDynamicsProvider::destroy(AuxiliaryLegModel& auxModel) {

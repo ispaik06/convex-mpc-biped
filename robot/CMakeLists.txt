@@ -3,6 +3,7 @@ add_library(robot
 	src/InitialPoseConfig.cpp
 	src/JointTrackingConfig.cpp
 	src/LegPosInitializer.cpp
+	src/RobotConfig.cpp
 	src/RobotRunner.cpp
 )
 

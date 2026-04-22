@@ -10,6 +10,7 @@ void printUsage() {
 	printf(
 		"Usage: robot [robot-id] Viewer [y/n] \n"
 		"\t where robot-id:    m for MIT humanoid\n"
+		"\t                    g for Unitree G1\n"
 		"\t where default viewer mode  :    GUI viewer");
 }
 

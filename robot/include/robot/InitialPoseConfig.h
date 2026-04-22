@@ -12,6 +12,7 @@ struct InitialPoseConfig {
 };
 
 const InitialPoseConfig& getInitialPoseConfig();
+const InitialPoseConfig& getInitialPoseConfig(RobotType robotType);
 
 template <typename T, typename LimbParamsT>
 void applyConfiguredJointOffsets(std::vector<T>& target,

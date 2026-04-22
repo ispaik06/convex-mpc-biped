@@ -9,13 +9,15 @@
 #include <mujoco/mujoco.h>
 
 #include "MujocoCheaterStateReader.h"
+#include "RobotConfig.h"
 #include "SimulationRunner.h"
 #include "setupRobotParams.h"
 
 void SimulationRunner::init() {
-	_modelPath = "/models/mit_humanoid/scene.xml";
-
-	_modelPath = std::string(PROJECT_ROOT_DIR) + _modelPath;
+	setActiveRobotType(_robot);
+	const auto& runtimeConfig = getRobotRuntimeConfig(_robot);
+	_modelPath = resolveProjectPath(runtimeConfig.modelXmlPath);
+	_footEndEffectorSource = runtimeConfig.footEndEffectorSource;
 
 	if (mjVERSION_HEADER != mj_version()) {
 		throw std::runtime_error("MuJoCo header/library version mismatch");
@@ -112,7 +114,7 @@ void SimulationRunner::runRobotControl() {
 		const auto robotSetup = setupRobotParams<double>(
 			_robot,
 			model,
-			_robotRunner->_robot_ctrl->footEndEffectorSource());
+			_footEndEffectorSource);
 		_params = robotSetup.params;
 		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);
@@ -125,7 +127,6 @@ void SimulationRunner::runRobotControl() {
 		std::cout << model->opt.timestep << std::endl;
 	}
 
-	// 매 제어 주기마다 동적인 상체 자세(팔 스윙 등)를 반영하여 SRB 모델 파라미터 업데이트
 	updateReducedBodyMassPropertiesFromData(model, data, _bindings, _params);
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
@@ -140,8 +141,22 @@ void SimulationRunner::runRobotControl() {
 		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
 		// }
 	_robotRunner->run(_stateEstimate, _robotCommand);
+	applyFixedJointCommands();
 	updateDebugVisualization();
 	applyRobotCommand();
+}
+
+void SimulationRunner::applyFixedJointCommands() {
+	if (model == nullptr || data == nullptr || _robotCommand.tau.size() != model->nu) {
+		return;
+	}
+
+	for (const auto& joint : _params.fixedJoints) {
+		const double q = static_cast<double>(data->qpos[joint.q_idx]);
+		const double qd = static_cast<double>(data->qvel[joint.qd_idx]);
+		_robotCommand.tau[joint.actuator_idx] =
+			joint.kp * (joint.qDefault - q) - joint.kd * qd;
+	}
 }
 
 void SimulationRunner::updateDebugVisualization() {
@@ -172,14 +187,12 @@ void SimulationRunner::updateDebugVisualization() {
 			binding.name = marker.name;
 			binding.bodyId = mj_name2id(model, mjOBJ_BODY, marker.name.c_str());
 			if (binding.bodyId < 0) {
-				throw std::runtime_error(
-					"Debug visualization body not found in MuJoCo model: " + marker.name);
+				continue;
 			}
 
 			binding.mocapId = model->body_mocapid[binding.bodyId];
 			if (binding.mocapId < 0) {
-				throw std::runtime_error(
-					"Debug visualization body is not a mocap body: " + marker.name);
+				continue;
 			}
 
 			_debugMocapBindings.push_back(binding);

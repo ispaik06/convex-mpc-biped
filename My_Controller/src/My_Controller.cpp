@@ -97,9 +97,7 @@ Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
 }
 }  // namespace
 
-MyController::MyController() {
-    setFootEndEffectorSource(getControllerConfig().swing.footEndEffectorSource);
-}
+MyController::MyController() = default;
 
 Mat3<double> MyController::makeDiagonal(const double x, const double y, const double z) {
     Mat3<double> diagonal = Mat3<double>::Zero();
@@ -133,6 +131,7 @@ void MyController::initializeRuntimeObjects() {
     _convexMPC = std::make_unique<ConvexMPC>();
 
     const auto& config = getControllerConfig();
+    setFootEndEffectorSource(config.swing.footEndEffectorSource);
     _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
     _swingHeight = config.swing.height;
@@ -203,8 +202,7 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
 
     if (!_bodyTarget.initialized) {
         _bodyTarget.position_W = x0.template segment<3>(3);
-        _bodyTarget.euler_W = x0.template segment<3>(0);
-        _bodyTarget.euler_W.template segment<2>(0) << 0, 0;
+        _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0.template segment<3>(0);
         _bodyTarget.initialized = true;
         return;
     }

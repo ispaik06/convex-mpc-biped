@@ -36,6 +36,7 @@ public:
 
 
 private:
+	void applyFixedJointCommands();
 	void applyRobotCommand();
 	void updateDebugVisualization();
 
@@ -58,6 +59,7 @@ private:
 	std::vector<DebugMocapBinding> _debugMocapBindings;
 	bool _firstControllerRun = true;
 	std::string _modelPath;
+	FootEndEffectorSource _footEndEffectorSource{FootEndEffectorSource::Site};
 	u64 _iterations = 0;
 	MainThread _mainThread;
 	mjModel* model = nullptr;

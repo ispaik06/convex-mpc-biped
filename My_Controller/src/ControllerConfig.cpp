@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include <yaml-cpp/yaml.h>
+
+#include "RobotConfig.h"
 
 namespace {
 template <typename T>
@@ -127,10 +131,10 @@ ContactWrenchModel parseContactWrenchModel(const YAML::Node& node) {
         "Invalid mpc.contact_wrench_model. Expected full_wrench or no_roll_moment");
 }
 
-ControllerConfig loadControllerConfigFromYaml() {
+ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     ControllerConfig params;
 
-    const std::string configPath = std::string(PROJECT_ROOT_DIR) + "/config/my_controller.yaml";
+    const std::string configPath = robotConfigPath(robotType);
 
     YAML::Node config;
     try {
@@ -150,6 +154,8 @@ ControllerConfig loadControllerConfigFromYaml() {
     readScalarIfPresent(timing, "horizon_steps", params.timing.horizonSteps);
 
     const YAML::Node model = config["model"];
+    readScalarIfPresent(model, "xml_path", params.model.xmlPath);
+    readScalarIfPresent(model, "auxiliary_xml_path", params.model.auxiliaryXmlPath);
     readScalarIfPresent(model, "gravity", params.model.gravity);
 
     const YAML::Node mpc = config["mpc"];
@@ -228,8 +234,16 @@ ControllerConfig loadControllerConfigFromYaml() {
 }  // namespace
 
 const ControllerConfig& getControllerConfig() {
-    static const ControllerConfig params = loadControllerConfigFromYaml();
-    return params;
+    return getControllerConfig(activeRobotType());
+}
+
+const ControllerConfig& getControllerConfig(const RobotType robotType) {
+    static std::map<RobotType, ControllerConfig> paramsByRobot;
+    auto it = paramsByRobot.find(robotType);
+    if (it == paramsByRobot.end()) {
+        it = paramsByRobot.emplace(robotType, loadControllerConfigFromYaml(robotType)).first;
+    }
+    return it->second;
 }
 
 double cycleTime() {
@@ -257,29 +271,37 @@ double dtMpc() {
 }
 
 const DMat<double>& getL() {
-    static const DMat<double> L = [] {
-        const int steps = horizonSteps();
+    static std::map<RobotType, DMat<double>> cache;
+    const RobotType robotType = activeRobotType();
+    auto it = cache.find(robotType);
+    if (it == cache.end()) {
+        const auto& config = getControllerConfig(robotType);
+        const int steps = config.timing.horizonSteps;
         DMat<double> out = DMat<double>::Zero(13 * steps, 13 * steps);
         for (int k = 0; k < steps; ++k) {
-            out.block(13 * k, 13 * k, 13, 13) = getControllerConfig().mpc.stateWeight;
+            out.block(13 * k, 13 * k, 13, 13) = config.mpc.stateWeight;
         }
-        return out;
-    }();
+        it = cache.emplace(robotType, std::move(out)).first;
+    }
 
-    return L;
+    return it->second;
 }
 
 const DMat<double>& getK() {
-    static const DMat<double> K = [] {
-        const int steps = horizonSteps();
+    static std::map<RobotType, DMat<double>> cache;
+    const RobotType robotType = activeRobotType();
+    auto it = cache.find(robotType);
+    if (it == cache.end()) {
+        const auto& config = getControllerConfig(robotType);
+        const int steps = config.timing.horizonSteps;
         DMat<double> out = DMat<double>::Zero(12 * steps, 12 * steps);
         for (int k = 0; k < steps; ++k) {
-            out.block(12 * k, 12 * k, 12, 12) = getControllerConfig().mpc.inputWeight;
+            out.block(12 * k, 12 * k, 12, 12) = config.mpc.inputWeight;
         }
-        return out;
-    }();
+        it = cache.emplace(robotType, std::move(out)).first;
+    }
 
-    return K;
+    return it->second;
 }
 
 LocomotionMode locomotionMode() {

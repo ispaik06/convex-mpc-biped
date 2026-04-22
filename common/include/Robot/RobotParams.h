@@ -54,6 +54,17 @@ struct ArmParams {
 };
 
 template <typename T>
+struct FixedJointParams {
+    std::string name;
+    int q_idx{-1};
+    int qd_idx{-1};
+    int actuator_idx{-1};
+    T qDefault{0};
+    T kp{0};
+    T kd{0};
+};
+
+template <typename T>
 struct RobotParams {
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -71,6 +82,7 @@ struct RobotParams {
 
   vectorAligned<LegParams<T>> legs;
   vectorAligned<ArmParams<T>> arms;
+  std::vector<FixedJointParams<T>> fixedJoints;
 };
 
 #endif  // ROBOT_PARAMS_H

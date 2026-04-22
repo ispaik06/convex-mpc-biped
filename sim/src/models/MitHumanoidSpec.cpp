@@ -45,7 +45,8 @@ const RobotMujocoSpec& getMitHumanoidMujocoSpec() {
                  {"right_shoulder_yaw_joint", "right_shoulder_yaw"},
                  {"right_elbow_joint", "right_elbow"},
              }},
-        }};
+        },
+        {}};
 
     return spec;
 }

@@ -96,6 +96,17 @@ bool RobotModel<T>::validate() const {
         }
     }
 
+    for (const auto& joint : _params->fixedJoints) {
+        if (joint.q_idx < 0 || joint.q_idx >= _params->nq ||
+            joint.qd_idx < 0 || joint.qd_idx >= _params->nv ||
+            joint.actuator_idx < 0 || joint.actuator_idx >= _params->nu) {
+            return false;
+        }
+        if (joint.kp < T(0) || joint.kd < T(0)) {
+            return false;
+        }
+    }
+
     return true;
 }
 

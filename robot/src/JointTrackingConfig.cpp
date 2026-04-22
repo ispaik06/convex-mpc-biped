@@ -1,10 +1,13 @@
 #include "JointTrackingConfig.h"
 
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <yaml-cpp/yaml.h>
+
+#include "RobotConfig.h"
 
 namespace {
 template <typename T>
@@ -56,9 +59,9 @@ void readLimbJointGainsIfPresent(const YAML::Node& node,
     }
 }
 
-JointTrackingConfig loadJointTrackingConfigFromYaml() {
+JointTrackingConfig loadJointTrackingConfigFromYaml(const RobotType robotType) {
     JointTrackingConfig config;
-    const std::string configPath = std::string(PROJECT_ROOT_DIR) + "/config/my_controller.yaml";
+    const std::string configPath = robotConfigPath(robotType);
 
     YAML::Node root;
     try {
@@ -76,6 +79,14 @@ JointTrackingConfig loadJointTrackingConfigFromYaml() {
 }  // namespace
 
 const JointTrackingConfig& getJointTrackingConfig() {
-    static const JointTrackingConfig config = loadJointTrackingConfigFromYaml();
-    return config;
+    return getJointTrackingConfig(activeRobotType());
+}
+
+const JointTrackingConfig& getJointTrackingConfig(const RobotType robotType) {
+    static std::map<RobotType, JointTrackingConfig> configs;
+    auto it = configs.find(robotType);
+    if (it == configs.end()) {
+        it = configs.emplace(robotType, loadJointTrackingConfigFromYaml(robotType)).first;
+    }
+    return it->second;
 }

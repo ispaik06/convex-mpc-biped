@@ -1,0 +1,63 @@
+locomotion_mode: standing  # walking or standing
+
+timing:
+  cycle: 1.0
+  swing: 0.4
+  stance: 0.6
+  horizon: 0.5
+  horizon_steps: 20
+
+model:
+  xml_path: models/unitree_robots/g1/scene_23dof.xml
+  auxiliary_xml_path: models/unitree_robots/g1/g1_23dof.xml
+  gravity: -9.81
+
+mpc:
+  friction_coefficient: 0.6
+  foot_half_length: 0.09
+  foot_half_width: 0.04
+  torsional_friction_scale: 0.08
+  normal_force_max: 1000.0
+  normal_force_min: 5.0
+  iterations_between_solve: 10
+  contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
+  state_weight_diag: [10000.0, 500.0, 100.0, 900.0, 10700.0, 900.0, 2600.0, 100.0, 1.0, 500.0, 550.0, 10.0, 1.0]
+  input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
+
+swing:
+  natural_frequency: [600.0, 600.0, 500.0]
+  kd_diag: [25.0, 25.0, 10.0]
+  height: 0.06
+  min_remaining_time: 0.001
+  touchdown_target_mode: body_velocity_half_stance
+  foot_end_effector_source: body_com  # G1 23dof XML has no foot contact sites.
+
+foot_placement:
+  velocity_feedback_gain: 0.03
+  placement_clamp: 0.2
+  touchdown_height: -0.005
+  nominal_lateral_offset: 0.0
+  swing_bias: 0.0
+
+logging:
+  gait_status_interval: 50
+  standing_mpc_debug_trigger_times: []
+
+joint_tracking:
+  leg:
+    # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]
+    kp: [70.0, 70.0, 50.0, 80.0, 45.0, 45.0]
+    kd: [8.0, 8.0, 5.0, 8.0, 4.0, 4.0]
+  arm:
+    # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]
+    kp: [60.0, 60.0, 50.0, 45.0, 20.0]
+    kd: [4.0, 4.0, 3.0, 3.0, 2.0]
+
+initial_pose:
+  # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]
+  leg_joint_offsets: [-0.15, 0.0, 0.0, 0.60, -0.15, 0.0]
+  # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]
+  arm_joint_offsets: [0.0, 0.0, 0.0, 0.40, 0.0]
+
+left_swing_hold_test:
+  touchdown_target_mode: body_velocity_half_stance

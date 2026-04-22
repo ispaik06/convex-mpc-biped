@@ -34,6 +34,8 @@ struct TimingParameters {
 };
 
 struct ModelParameters {
+    std::string xmlPath;
+    std::string auxiliaryXmlPath;
     double gravity{-9.81};
 };
 
@@ -94,6 +96,7 @@ struct ControllerConfig {
 };
 
 const ControllerConfig& getControllerConfig();
+const ControllerConfig& getControllerConfig(RobotType robotType);
 double cycleTime();
 double swingTime();
 double stanceTime();

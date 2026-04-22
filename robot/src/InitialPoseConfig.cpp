@@ -1,9 +1,12 @@
 #include "InitialPoseConfig.h"
 
+#include <map>
 #include <stdexcept>
 #include <string>
 
 #include <yaml-cpp/yaml.h>
+
+#include "RobotConfig.h"
 
 namespace {
 template <typename T>
@@ -26,9 +29,9 @@ void readOffsetVectorIfPresent(const YAML::Node& node,
     }
 }
 
-InitialPoseConfig loadInitialPoseConfigFromYaml() {
+InitialPoseConfig loadInitialPoseConfigFromYaml(const RobotType robotType) {
     InitialPoseConfig config;
-    const std::string configPath = std::string(PROJECT_ROOT_DIR) + "/config/my_controller.yaml";
+    const std::string configPath = robotConfigPath(robotType);
 
     YAML::Node root;
     try {
@@ -47,6 +50,14 @@ InitialPoseConfig loadInitialPoseConfigFromYaml() {
 }  // namespace
 
 const InitialPoseConfig& getInitialPoseConfig() {
-    static const InitialPoseConfig config = loadInitialPoseConfigFromYaml();
-    return config;
+    return getInitialPoseConfig(activeRobotType());
+}
+
+const InitialPoseConfig& getInitialPoseConfig(const RobotType robotType) {
+    static std::map<RobotType, InitialPoseConfig> configs;
+    auto it = configs.find(robotType);
+    if (it == configs.end()) {
+        it = configs.emplace(robotType, loadInitialPoseConfigFromYaml(robotType)).first;
+    }
+    return it->second;
 }

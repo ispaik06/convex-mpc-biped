@@ -2,6 +2,8 @@ add_library(sim
 	src/LegSwingDynamicsProvider.cpp
 	src/MujocoCheaterStateReader.cpp
 	src/models/MitHumanoidSpec.cpp
+	src/models/RobotMujocoSpec.cpp
+	src/models/UnitreeG1Spec.cpp
 	src/main_thread.cpp
 	src/SimulationRunner.cpp
 	src/setupRobotParams.cpp
@@ -19,6 +21,7 @@ target_include_directories(sim PRIVATE
 target_link_libraries(sim
 	PUBLIC
 		common
+		robot
 		mujoco::libmujoco_simulate
 		mujoco::mujoco
 		glfw
