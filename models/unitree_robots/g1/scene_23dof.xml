@@ -32,4 +32,8 @@
     </body>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" group="2"/>
   </worldbody>
+
+  <keyframe>
+    <key name="nominal_stance" qpos="0 0 0.95 1 0 0 0 -0.2 0 0 0.42 -0.23 0 -0.2 0 0 0.42 -0.23 0 0 0 0 0 0.3 0 0 0 0 0.3 0 0 0 0 0 0 0" />
+  </keyframe>
 </mujoco>

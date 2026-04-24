@@ -7,7 +7,7 @@ const RobotMujocoSpec& getUnitreeG1MujocoSpec() {
         {
             {Side::Left,
              "left_ankle_roll_link",
-             "",
+             "left_foot_contact_site",
              {
                  {"left_hip_pitch_joint", "left_hip_pitch"},
                  {"left_hip_roll_joint", "left_hip_roll"},
@@ -18,7 +18,7 @@ const RobotMujocoSpec& getUnitreeG1MujocoSpec() {
              }},
             {Side::Right,
              "right_ankle_roll_link",
-             "",
+             "right_foot_contact_site",
              {
                  {"right_hip_pitch_joint", "right_hip_pitch"},
                  {"right_hip_roll_joint", "right_hip_roll"},

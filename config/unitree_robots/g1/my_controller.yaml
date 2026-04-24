@@ -31,7 +31,7 @@ swing:
   height: 0.06
   min_remaining_time: 0.001
   touchdown_target_mode: body_velocity_half_stance
-  foot_end_effector_source: body_com  # G1 23dof XML has no foot contact sites.
+  foot_end_effector_source: site  # Use the foot bottom-center contact sites in the G1 XML.
 
 foot_placement:
   velocity_feedback_gain: 0.03
