@@ -18,7 +18,8 @@ struct RobotLegState {
     DMat<T> Jw_W;
     DMat<T> massMatrix;
     DVec<T> bias;
-    bool hasFootKinematics = false;
+    bool hasFootFrame = false;       // foot pose/orientation is available
+    bool hasFootJacobians = false;    // foot Jacobians/time-derivatives are available
     bool hasLegDynamics = false;
     bool contact = true;
 
@@ -51,7 +52,8 @@ struct RobotLegState {
         massMatrix.setZero(qd_size, qd_size);
         bias.setZero(qd_size);
         R_WF.setIdentity();
-        hasFootKinematics = false;
+        hasFootFrame = false;
+        hasFootJacobians = false;
         hasLegDynamics = false;
         contact = true;
     }
@@ -84,28 +86,6 @@ struct StandingFootKinematics {
         Jv_W.setZero(Jv_W.rows(), Jv_W.cols());
         Jw_W.setZero(Jw_W.rows(), Jw_W.cols());
         hasFootJacobians = false;
-    }
-};
-
-template <typename T>
-struct WholeBodyDynamicsState {
-    DVec<T> qd;
-    DVec<T> bias;
-    DMat<T> massMatrix;
-
-    bool matchesLayout(Eigen::Index nv) const {
-        return qd.size() == nv && bias.size() == nv &&
-               massMatrix.rows() == nv && massMatrix.cols() == nv;
-    }
-
-    void resize(Eigen::Index nv) {
-        if (matchesLayout(nv)) {
-            return;
-        }
-
-        qd.setZero(nv);
-        bias.setZero(nv);
-        massMatrix.setZero(nv, nv);
     }
 };
 
@@ -147,11 +127,8 @@ struct CheaterState {
     Vec3<T> torsoAngAcc_W = Vec3<T>::Zero();
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
-    WholeBodyDynamicsState<T> dynamics;
 
     void resize(const RobotParams<T>& params) {
-        dynamics.resize(params.nv);
-
         legs.resize(params.legs.size());
         for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
             const auto& joints = params.legs[leg].joints;

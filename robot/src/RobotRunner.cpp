@@ -166,7 +166,7 @@ void RobotRunner::setupStep(const StateEstimate<double>& state) {
                 "RobotLegState tauEstimate dimension does not match RobotModel");
         }
 
-        if (legState.hasFootKinematics) {
+        if (legState.hasFootJacobians) {
             _legController->setLegCartesianData(static_cast<int>(leg),
                                                 legState.footPos_W,
                                                 legState.footVel_W,

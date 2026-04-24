@@ -97,6 +97,8 @@ struct ControllerConfig {
 
 const ControllerConfig& getControllerConfig();
 const ControllerConfig& getControllerConfig(RobotType robotType);
+void setControllerConfigOverride(const ControllerConfig* config);
+void clearControllerConfigOverride();
 double cycleTime();
 double swingTime();
 double stanceTime();

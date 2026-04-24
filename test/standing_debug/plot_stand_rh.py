@@ -81,7 +81,8 @@ def read_csv(csv_path: Path) -> tuple[list[dict[str, float | int]], dict[str, st
 
 def title_prefix(csv_path: Path, metadata: dict[str, str]) -> str:
     source_json = metadata.get("source_json_file", "unknown json")
-    return f"{csv_path.name}\nsource json: {source_json}"
+    robot_type = metadata.get("robot_type", "unknown robot")
+    return f"{csv_path.name}\n{robot_type}\nsource json: {source_json}"
 
 
 def state_trajectory(rows: list[dict[str, float | int]], name: str, dt: float):

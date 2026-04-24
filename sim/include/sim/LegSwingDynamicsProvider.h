@@ -15,12 +15,18 @@ struct mjData_;
 using mjModel = mjModel_;
 using mjData = mjData_;
 
+enum class LegSwingDynamicsProviderMode {
+    Full,         // per-leg kinematics, Jacobians, and leg dynamics
+    StandingOnly,  // combined standing-foot Jacobians only
+};
+
 class LegSwingDynamicsProvider {
 public:
     LegSwingDynamicsProvider(RobotType robotType,
                              const mjModel* fullModel,
                              const RobotParams<double>& params,
-                             const MujocoRobotBindings& bindings);
+                             const MujocoRobotBindings& bindings,
+                             LegSwingDynamicsProviderMode mode = LegSwingDynamicsProviderMode::Full);
     ~LegSwingDynamicsProvider();
 
     LegSwingDynamicsProvider(const LegSwingDynamicsProvider&) = delete;
@@ -63,6 +69,7 @@ private:
     static void destroy(AuxiliaryLegModel& auxModel);
     static void destroy(StandingAuxiliaryModel& auxModel);
 
+    LegSwingDynamicsProviderMode _mode{LegSwingDynamicsProviderMode::Full};
     std::vector<AuxiliaryLegModel> _auxiliaryLegModels;
     StandingAuxiliaryModel _standingAuxiliaryModel;
 };

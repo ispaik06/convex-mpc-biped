@@ -21,7 +21,8 @@ mpc:
   normal_force_min: 5.0
   iterations_between_solve: 10
   contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
-  state_weight_diag: [10000.0, 500.0, 100.0, 900.0, 10700.0, 900.0, 2600.0, 100.0, 1.0, 500.0, 550.0, 10.0, 1.0]
+  #                    roll   theta  psi  px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
+  state_weight_diag: [10000.0, 500.0, 100.0, 2000.0, 10700.0, 900.0, 2600.0, 100.0, 1.0, 500.0, 550.0, 10.0, 1.0]
   input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
 
 swing:
@@ -55,9 +56,9 @@ joint_tracking:
 
 initial_pose:
   # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]
-  leg_joint_offsets: [-0.15, 0.0, 0.0, 0.60, -0.15, 0.0]
+  leg_joint_offsets: [-0.18, 0.0, 0.0, 0.60, -0.13, 0.0]
   # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]
-  arm_joint_offsets: [0.0, 0.0, 0.0, 0.40, 0.0]
+  arm_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
 
 left_swing_hold_test:
   touchdown_target_mode: body_velocity_half_stance

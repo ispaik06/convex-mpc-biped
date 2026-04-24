@@ -17,6 +17,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ControllerConfig.h"
 #include "Utilities/MatrixUtils.h"
 
 namespace {
@@ -268,6 +269,129 @@ std::string desiredWrenchReferencePointName(const FootEndEffectorSource source) 
     return "unknown";
 }
 
+std::string locomotionModeName(const LocomotionMode mode) {
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking";
+        case LocomotionMode::Standing:
+            return "standing";
+    }
+    return "unknown";
+}
+
+std::string touchdownTargetModeName(const TouchdownTargetMode mode) {
+    switch (mode) {
+        case TouchdownTargetMode::BodyVelocityHalfStance:
+            return "body_velocity_half_stance";
+        case TouchdownTargetMode::LegacyComYawCorrected:
+            return "legacy_com_yaw_corrected";
+    }
+    return "unknown";
+}
+
+std::string robotTypeName(const RobotType type) {
+    switch (type) {
+        case RobotType::MIT_HUMANOID:
+            return "mit_humanoid";
+        case RobotType::UNITREE_G1:
+            return "unitree_g1";
+        case RobotType::UNITREE_H1:
+            return "unitree_h1";
+    }
+    return "unknown";
+}
+
+template <typename T>
+json stdVectorToJson(const std::vector<T>& values) {
+    json out = json::array();
+    for (const T& value : values) {
+        out.push_back(scalarToJson(value));
+    }
+    return out;
+}
+
+template <typename Derived>
+json matrixDiagonalToJson(const Eigen::MatrixBase<Derived>& matrix) {
+    if (matrix.rows() != matrix.cols()) {
+        throw std::runtime_error("Expected square matrix for diagonal serialization");
+    }
+
+    json out = json::array();
+    for (Eigen::Index i = 0; i < matrix.rows(); ++i) {
+        out.push_back(scalarToJson(matrix.derived()(i, i)));
+    }
+    return out;
+}
+
+json controllerConfigJson(const ControllerConfig& config, const RobotType robotType) {
+    json root = json::object();
+    root["robot_type"] = robotTypeName(robotType);
+    root["locomotion_mode"] = locomotionModeName(config.locomotionMode);
+
+    json timing = json::object();
+    timing["cycle"] = config.timing.cycle;
+    timing["swing"] = config.timing.swing;
+    timing["stance"] = config.timing.stance;
+    timing["horizon"] = config.timing.horizon;
+    timing["horizon_steps"] = config.timing.horizonSteps;
+    root["timing"] = std::move(timing);
+
+    json model = json::object();
+    model["xml_path"] = config.model.xmlPath;
+    model["auxiliary_xml_path"] = config.model.auxiliaryXmlPath;
+    model["gravity"] = config.model.gravity;
+    root["model"] = std::move(model);
+
+    json mpc = json::object();
+    mpc["friction_coefficient"] = config.mpc.frictionCoefficient;
+    mpc["foot_half_length"] = config.mpc.footHalfLength;
+    mpc["foot_half_width"] = config.mpc.footHalfWidth;
+    mpc["torsional_friction_scale"] = config.mpc.torsionalFrictionScale;
+    mpc["normal_force_max"] = config.mpc.normalForceMax;
+    mpc["normal_force_min"] = config.mpc.normalForceMin;
+    mpc["iterations_between_solve"] = config.mpc.iterationsBetweenSolve;
+    mpc["contact_wrench_model"] = contactWrenchModelName(config.mpc.contactWrenchModel);
+    mpc["state_weight_diag"] = matrixDiagonalToJson(config.mpc.stateWeight);
+    mpc["input_weight_diag"] = matrixDiagonalToJson(config.mpc.inputWeight);
+    root["mpc"] = std::move(mpc);
+
+    json swing = json::object();
+    swing["natural_frequency"] = vectorToJson(config.swing.naturalFrequency);
+    swing["kd_diag"] = vectorToJson(config.swing.kdDiag);
+    swing["height"] = config.swing.height;
+    swing["min_remaining_time"] = config.swing.minRemainingTime;
+    swing["touchdown_target_mode"] = touchdownTargetModeName(config.swing.touchdownTargetMode);
+    swing["foot_end_effector_source"] =
+        footEndEffectorSourceName(config.swing.footEndEffectorSource);
+    root["swing"] = std::move(swing);
+
+    json footPlacement = json::object();
+    footPlacement["velocity_feedback_gain"] = config.footPlacement.velocityFeedbackGain;
+    footPlacement["placement_clamp"] = config.footPlacement.placementClamp;
+    footPlacement["touchdown_height"] = config.footPlacement.touchdownHeight;
+    footPlacement["nominal_lateral_offset"] = config.footPlacement.nominalLateralOffset;
+    footPlacement["swing_bias"] = config.footPlacement.swingBias;
+    root["foot_placement"] = std::move(footPlacement);
+
+    json logging = json::object();
+    logging["gait_status_interval"] = config.logging.gaitStatusInterval;
+    logging["standing_mpc_debug_trigger_times"] =
+        stdVectorToJson(config.logging.standingMpcDebugTriggerTimes);
+    root["logging"] = std::move(logging);
+
+    json initialPose = json::object();
+    initialPose["leg_joint_offsets"] = stdVectorToJson(config.initialPose.legJointOffsets);
+    initialPose["arm_joint_offsets"] = stdVectorToJson(config.initialPose.armJointOffsets);
+    root["initial_pose"] = std::move(initialPose);
+
+    json leftSwingHoldTest = json::object();
+    leftSwingHoldTest["touchdown_target_mode"] =
+        touchdownTargetModeName(config.leftSwingHoldTest.touchdownTargetMode);
+    root["left_swing_hold_test"] = std::move(leftSwingHoldTest);
+
+    return root;
+}
+
 void writePrettyJson(std::ostream& out, const json& value, const int indent = 0) {
     if (value.is_object()) {
         if (value.empty()) {
@@ -458,6 +582,7 @@ Mat3<double> inertiaWorldFromX0(const RobotParams<double>& robotParams,
 json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
                        const std::string& logPath,
                        const TimestampStrings& timestamp) {
+    const ControllerConfig& config = getControllerConfig();
     const int steps = horizonSteps();
     if (snapshot.wrenchHorizon.size() != kInputDim * steps) {
         throw std::runtime_error("Standing MPC debug log received an unexpected wrench horizon size");
@@ -495,17 +620,20 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     metadata["debug_trigger_time"] = scalarToJson(snapshot.debugTriggerTime);
     metadata["horizon_steps"] = steps;
     metadata["dt_mpc"] = dtMpc();
+    metadata["robot_type"] = robotTypeName(snapshot.robotParams.roboType);
     metadata["foot_end_effector_source"] =
-        footEndEffectorSourceName(getControllerConfig().swing.footEndEffectorSource);
+        footEndEffectorSourceName(config.swing.footEndEffectorSource);
     metadata["desired_wrench_reference_point"] =
-        desiredWrenchReferencePointName(getControllerConfig().swing.footEndEffectorSource);
+        desiredWrenchReferencePointName(config.swing.footEndEffectorSource);
     metadata["contact_wrench_model"] =
-        contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel);
+        contactWrenchModelName(config.mpc.contactWrenchModel);
     root["metadata"] = std::move(metadata);
+
+    root["controller_config"] = controllerConfigJson(config, snapshot.robotParams.roboType);
 
     json model = json::object();
     model["mass"] = snapshot.robotParams.bodyMass;
-    model["gravity"] = getControllerConfig().model.gravity;
+    model["gravity"] = config.model.gravity;
     model["body_com_location_yaw_frame"] = vectorToJson(snapshot.robotParams.bodyComLocation);
     model["body_inertia_yaw_frame"] = matrixToFlatJson(snapshot.robotParams.bodyInertia);
     model["inertia_world_from_x0"] =

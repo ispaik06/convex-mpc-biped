@@ -23,11 +23,8 @@ struct StateEstimate {
     vectorAligned<RobotLegState<T>> legs;
     vectorAligned<RobotArmState<T>> arms;
     StandingFootKinematics<T> standingFeet;
-    WholeBodyDynamicsState<T> dynamics;
 
     void resize(const RobotParams<T>& params) {
-        dynamics.resize(params.nv);
-
         Eigen::Index total_leg_qd_size = 0;
         legs.resize(params.legs.size());
         for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
@@ -62,7 +59,7 @@ struct StateEstimate {
         torsoAngAcc_W = cheater_state.torsoAngAcc_W;
         legs = cheater_state.legs;
         arms = cheater_state.arms;
-        dynamics = cheater_state.dynamics;
+        standingFeet.zero();
     }
 };
 

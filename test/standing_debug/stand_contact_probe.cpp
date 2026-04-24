@@ -347,11 +347,13 @@ void writeCsvRowsForVec3(std::ostream& out,
 
 void writePlotCsv(std::ostream& out,
                   const std::filesystem::path& logPath,
+                  const std::string& robotType,
                   const std::string& desiredReferencePoint,
                   const std::vector<FootContactResult>& results) {
     out << std::setprecision(17);
     out << "# source_json_file=" << logPath.filename().string() << '\n';
     out << "# source_json_path=" << std::filesystem::absolute(logPath).string() << '\n';
+    out << "# robot_type=" << robotType << '\n';
     out << "side,measurement_point,quantity,axis,desired,measured,error,contacts,comparable\n";
 
     for (const FootContactResult& result : results) {
@@ -424,6 +426,7 @@ void writeReport(std::ostream& out,
                  const std::string& modelPath,
                  const int totalContacts,
                  const double maxCtrlClampDelta,
+                 const std::string& robotType,
                  const std::string& footSource,
                  const std::string& desiredReferencePoint,
                  const std::string& contactWrenchModel,
@@ -431,6 +434,7 @@ void writeReport(std::ostream& out,
     out << std::fixed << std::setprecision(9);
     out << "[stand_contact_probe]\n"
         << "  log: " << std::filesystem::absolute(logPath).string() << "\n"
+        << "  robot_type: " << robotType << "\n"
         << "  model: " << modelPath << "\n"
         << "  total_contacts: " << totalContacts << "\n"
         << "  max_ctrl_clamp_delta: " << maxCtrlClampDelta << "\n"
@@ -484,6 +488,7 @@ int main(int argc, char** argv) {
     logStream >> log;
 
     const json metadata = log.value("metadata", json::object());
+    const std::string robotType = readJsonStringOr(metadata, "robot_type", "unknown");
     const std::string footSource =
         readJsonStringOr(metadata, "foot_end_effector_source", "unknown");
     const std::string desiredReferencePoint =
@@ -561,6 +566,7 @@ int main(int argc, char** argv) {
                 modelPath,
                 data->ncon,
                 maxCtrlClampDelta,
+                robotType,
                 footSource,
                 desiredReferencePoint,
                 contactWrenchModel,
@@ -575,6 +581,7 @@ int main(int argc, char** argv) {
                 modelPath,
                 data->ncon,
                 maxCtrlClampDelta,
+                robotType,
                 footSource,
                 desiredReferencePoint,
                 contactWrenchModel,
@@ -585,7 +592,7 @@ int main(int argc, char** argv) {
     if (!csv.is_open()) {
         throw std::runtime_error("Failed to open plot CSV output: " + outputPaths.csv.string());
     }
-    writePlotCsv(csv, logPath, desiredReferencePoint, results);
+    writePlotCsv(csv, logPath, robotType, desiredReferencePoint, results);
     csv.close();
     if (!csv.good()) {
         throw std::runtime_error("Failed while writing plot CSV output: " + outputPaths.csv.string());

@@ -80,6 +80,10 @@ Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstim
     return stateEstimate.torsoLinVel_W + stateEstimate.torsoAngVel_W.cross(bodyBOffset_W);
 }
 
+Quat<double> reducedBodyOrientationWorld(const StateEstimate<double>& stateEstimate) {
+    return stateEstimate.torsoQuat_W;
+}
+
 Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
                                  const RobotParams<double>& robotParams,
                                  const Side side) {
@@ -87,8 +91,8 @@ Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
         if (robotParams.legs[leg].side != side) {
             continue;
         }
-        if (leg >= stateEstimate.legs.size() || !stateEstimate.legs[leg].hasFootKinematics) {
-            throw std::runtime_error("Foot-local contact wrench model requires foot kinematics");
+        if (leg >= stateEstimate.legs.size() || !stateEstimate.legs[leg].hasFootFrame) {
+            throw std::runtime_error("Foot-local contact wrench model requires foot frame data");
         }
         return stateEstimate.legs[leg].R_WF.col(0);
     }
@@ -98,6 +102,10 @@ Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
 }  // namespace
 
 MyController::MyController() = default;
+
+bool MyController::usesStandingOnlyLegDynamics() const {
+    return getControllerConfig().locomotionMode == LocomotionMode::Standing;
+}
 
 Mat3<double> MyController::makeDiagonal(const double x, const double y, const double z) {
     Mat3<double> diagonal = Mat3<double>::Zero();
@@ -202,7 +210,7 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
 
     if (!_bodyTarget.initialized) {
         _bodyTarget.position_W = x0.template segment<3>(3);
-        _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0.template segment<3>(0);
+        _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
         _bodyTarget.initialized = true;
         return;
     }
@@ -435,16 +443,23 @@ void MyController::maybeWriteStandingMpcDebugLog(
 }
 
 void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) const {
-    if (!_bodyTarget.initialized) {
-        return;
+    if (_stateEstimate != nullptr && _robotParams != nullptr) {
+        DebugVizMarker<double> marker;
+        marker.name = "debug_reduced_body_com";
+        marker.position_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
+        marker.orientation_W = reducedBodyOrientationWorld(*_stateEstimate);
+        marker.active = true;
+        debugViz.markers.push_back(marker);
     }
 
-    DebugVizMarker<double> marker;
-    marker.name = "debug_body_target";
-    marker.position_W = _bodyTarget.position_W;
-    marker.orientation_W = rollPitchYawToQuaternion(_bodyTarget.euler_W);
-    marker.active = true;
-    debugViz.markers.push_back(marker);
+    if (_bodyTarget.initialized) {
+        DebugVizMarker<double> marker;
+        marker.name = "debug_body_target";
+        marker.position_W = _bodyTarget.position_W;
+        marker.orientation_W = rollPitchYawToQuaternion(_bodyTarget.euler_W);
+        marker.active = true;
+        debugViz.markers.push_back(marker);
+    }
 }
 
 void MyController::maybePrintGaitScheduler() const {

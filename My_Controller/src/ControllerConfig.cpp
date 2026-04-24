@@ -12,6 +12,8 @@
 #include "RobotConfig.h"
 
 namespace {
+thread_local const ControllerConfig* g_controllerConfigOverride = nullptr;
+
 template <typename T>
 void readScalarIfPresent(const YAML::Node& node, const char* key, T& value) {
     if (node && node[key]) {
@@ -233,11 +235,23 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
 }
 }  // namespace
 
+void setControllerConfigOverride(const ControllerConfig* config) {
+    g_controllerConfigOverride = config;
+}
+
+void clearControllerConfigOverride() {
+    g_controllerConfigOverride = nullptr;
+}
+
 const ControllerConfig& getControllerConfig() {
     return getControllerConfig(activeRobotType());
 }
 
 const ControllerConfig& getControllerConfig(const RobotType robotType) {
+    if (g_controllerConfigOverride != nullptr) {
+        return *g_controllerConfigOverride;
+    }
+
     static std::map<RobotType, ControllerConfig> paramsByRobot;
     auto it = paramsByRobot.find(robotType);
     if (it == paramsByRobot.end()) {

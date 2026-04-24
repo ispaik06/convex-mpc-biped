@@ -6,10 +6,6 @@
 #include <mujoco/mujoco.h>
 
 namespace {
-template <typename Scalar>
-using RowMajorMatrix =
-    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
-
 Vec3<double> readBodyPosition(const mjData* data, int body_id) {
     if (body_id < 0) {
         throw std::runtime_error("Invalid body id for world position query");
@@ -175,25 +171,6 @@ Vec3<double> readEndEffectorVelocity(const mjModel* model,
     return readBodyLinearVelocity(model, data, body_id);
 }
 
-void readDenseMassMatrix(const mjModel* model, const mjData* data, DMat<double>& massMatrix) {
-    thread_local std::vector<mjtNum> rawMassMatrix;
-    rawMassMatrix.resize(static_cast<std::size_t>(model->nv * model->nv));
-    mj_fullM(model, rawMassMatrix.data(), data->qM);
-
-    Eigen::Map<const RowMajorMatrix<mjtNum>> massMap(rawMassMatrix.data(), model->nv, model->nv);
-    massMatrix = massMap.template cast<double>();
-}
-
-void copyContiguous(const mjtNum* src, Eigen::Index size, DVec<double>& dst, const char* name) {
-    if (dst.size() != size) {
-        throw std::runtime_error(std::string(name) + " size does not match destination");
-    }
-
-    for (Eigen::Index i = 0; i < size; ++i) {
-        dst[i] = static_cast<double>(src[i]);
-    }
-}
-
 void copyIndexed(const mjtNum* src, const std::vector<int>& indices, DVec<double>& dst) {
     if (dst.size() != static_cast<Eigen::Index>(indices.size())) {
         throw std::runtime_error("CheaterState segment size does not match index count");
@@ -201,6 +178,43 @@ void copyIndexed(const mjtNum* src, const std::vector<int>& indices, DVec<double
     for (Eigen::Index i = 0; i < dst.size(); ++i) {
         dst[i] = static_cast<double>(src[indices[static_cast<std::size_t>(i)]]);
     }
+}
+
+Mat3<double> readFootEndEffectorRotation(const mjData* data,
+                                         const MujocoEndEffectorBinding& foot,
+                                         const FootEndEffectorSource source) {
+    switch (source) {
+        case FootEndEffectorSource::Site:
+            if (foot.siteId < 0) {
+                throw std::runtime_error("Foot end-effector source is site, but no siteId is bound");
+            }
+            {
+                Mat3<double> rotation = Mat3<double>::Identity();
+                const mjtNum* raw = data->site_xmat + 9 * foot.siteId;
+                for (int row = 0; row < 3; ++row) {
+                    for (int col = 0; col < 3; ++col) {
+                        rotation(row, col) = static_cast<double>(raw[3 * row + col]);
+                    }
+                }
+                return rotation;
+            }
+        case FootEndEffectorSource::BodyCom:
+            {
+                if (foot.bodyId < 0) {
+                    throw std::runtime_error("Foot end-effector source is body COM, but no bodyId is bound");
+                }
+                Mat3<double> rotation = Mat3<double>::Identity();
+                const mjtNum* raw = data->xmat + 9 * foot.bodyId;
+                for (int row = 0; row < 3; ++row) {
+                    for (int col = 0; col < 3; ++col) {
+                        rotation(row, col) = static_cast<double>(raw[3 * row + col]);
+                    }
+                }
+                return rotation;
+            }
+    }
+
+    throw std::runtime_error("Unsupported foot end-effector source");
 }
 }  // namespace
 
@@ -223,9 +237,6 @@ void fillCheaterState(const mjModel* model,
     cheater_state.torsoAngVel_W = readBodyAngularVelocity(model, data, bindings.torsoBodyId);
     cheater_state.torsoLinAcc_W = readBodyLinearAcceleration(model, data, bindings.torsoBodyId);
     cheater_state.torsoAngAcc_W = readBodyAngularAcceleration(model, data, bindings.torsoBodyId);
-    copyContiguous(data->qvel, model->nv, cheater_state.dynamics.qd, "qvel");
-    copyContiguous(data->qfrc_bias, model->nv, cheater_state.dynamics.bias, "qfrc_bias");
-    readDenseMassMatrix(model, data, cheater_state.dynamics.massMatrix);
 
     for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
         const auto& joints = params.legs[leg].joints;
@@ -241,7 +252,9 @@ void fillCheaterState(const mjModel* model,
         leg_state.footEndPos_W = leg_state.footPos_W;
         leg_state.footVel_W = readFootEndEffectorVelocity(model, data, foot, bindings.footSource);
         leg_state.footEndVel_W = leg_state.footVel_W;
-        leg_state.hasFootKinematics = true;
+        leg_state.R_WF = readFootEndEffectorRotation(data, foot, bindings.footSource);
+        leg_state.hasFootFrame = true;
+        leg_state.hasFootJacobians = false;
         leg_state.hasLegDynamics = false;
     }
 

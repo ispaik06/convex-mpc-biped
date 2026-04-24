@@ -25,6 +25,7 @@ public:
 
 	virtual void runController() override;
 	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const override;
+	virtual bool usesStandingOnlyLegDynamics() const override;
 
 private:
 	struct BodyTargetState {

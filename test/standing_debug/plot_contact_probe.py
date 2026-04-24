@@ -162,8 +162,9 @@ def plot(csv_path: Path, save_path: Path) -> None:
 
     moment_reference = moment_rows[0]["measurement_point"]
     source_json = metadata.get("source_json_file", "unknown json")
+    robot_type = metadata.get("robot_type", "unknown robot")
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
-    fig.suptitle(f"{csv_path.name}\nsource json: {source_json}", fontsize=12)
+    fig.suptitle(f"{csv_path.name}\n{robot_type}\nsource json: {source_json}", fontsize=12)
 
     plot_pair(axes[0, 0], force_rows, "Force at foot_site", "N")
     plot_error(axes[1, 0], force_rows, "Force error at foot_site", "N")

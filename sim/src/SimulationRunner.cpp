@@ -119,8 +119,13 @@ void SimulationRunner::runRobotControl() {
 		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
+		const auto dynamicsMode =
+			(_robotRunner != nullptr && _robotRunner->_robot_ctrl != nullptr &&
+			 _robotRunner->_robot_ctrl->usesStandingOnlyLegDynamics())
+				? LegSwingDynamicsProviderMode::StandingOnly
+				: LegSwingDynamicsProviderMode::Full;
 		_legSwingDynamicsProvider =
-			std::make_unique<LegSwingDynamicsProvider>(_robot, model, _params, _bindings);
+			std::make_unique<LegSwingDynamicsProvider>(_robot, model, _params, _bindings, dynamicsMode);
 		_robotRunner->init(&_params, model->opt.timestep, &_userCommand);
 		_firstControllerRun = false;
 

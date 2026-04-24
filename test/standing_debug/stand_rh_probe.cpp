@@ -22,7 +22,9 @@
 #include "HorizonClock.h"
 #include "MPCFormulation.h"
 #include "ReferenceTrajectory.h"
+#include "ControllerConfig.h"
 #include "Robot/RobotParams.h"
+#include "RobotConfig.h"
 #include "Utilities/UserCommand.h"
 
 namespace {
@@ -255,6 +257,286 @@ DMat<double> readJsonMatrix(const json& value, const std::string& name) {
     return out;
 }
 
+RobotType robotTypeFromString(const std::string& value) {
+    if (value == "mit_humanoid") {
+        return RobotType::MIT_HUMANOID;
+    }
+    if (value == "unitree_g1") {
+        return RobotType::UNITREE_G1;
+    }
+    if (value == "unitree_h1") {
+        return RobotType::UNITREE_H1;
+    }
+    throw std::runtime_error("Invalid controller_config.robot_type: " + value);
+}
+
+std::string robotTypeLabelFromLog(const json& log) {
+    if (log.contains("metadata") && log.at("metadata").is_object() &&
+        log.at("metadata").contains("robot_type") &&
+        log.at("metadata").at("robot_type").is_string()) {
+        return log.at("metadata").at("robot_type").get<std::string>();
+    }
+    if (log.contains("controller_config") && log.at("controller_config").is_object() &&
+        log.at("controller_config").contains("robot_type") &&
+        log.at("controller_config").at("robot_type").is_string()) {
+        return log.at("controller_config").at("robot_type").get<std::string>();
+    }
+    return "unknown";
+}
+
+LocomotionMode locomotionModeFromString(const std::string& value) {
+    if (value == "walking" || value == "walk") {
+        return LocomotionMode::Walking;
+    }
+    if (value == "standing" || value == "stand") {
+        return LocomotionMode::Standing;
+    }
+    throw std::runtime_error("Invalid controller_config.locomotion_mode: " + value);
+}
+
+TouchdownTargetMode touchdownTargetModeFromString(const std::string& value) {
+    if (value == "body_velocity_half_stance") {
+        return TouchdownTargetMode::BodyVelocityHalfStance;
+    }
+    if (value == "legacy_com_yaw_corrected") {
+        return TouchdownTargetMode::LegacyComYawCorrected;
+    }
+    throw std::runtime_error("Invalid controller_config.swing.touchdown_target_mode: " + value);
+}
+
+FootEndEffectorSource footEndEffectorSourceFromString(const std::string& value) {
+    if (value == "site") {
+        return FootEndEffectorSource::Site;
+    }
+    if (value == "body_com" || value == "com") {
+        return FootEndEffectorSource::BodyCom;
+    }
+    throw std::runtime_error("Invalid controller_config.swing.foot_end_effector_source: " + value);
+}
+
+ContactWrenchModel contactWrenchModelFromString(const std::string& value) {
+    if (value == "full_wrench" || value == "model1") {
+        return ContactWrenchModel::FullWrench;
+    }
+    if (value == "no_roll_moment" || value == "model2") {
+        return ContactWrenchModel::NoRollMoment;
+    }
+    throw std::runtime_error("Invalid controller_config.mpc.contact_wrench_model: " + value);
+}
+
+Vec3<double> vec3FromJson(const json& value, const std::string& name);
+
+std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
+    if (!log.contains("controller_config") || !log.at("controller_config").is_object()) {
+        return std::nullopt;
+    }
+
+    const json& cfg = log.at("controller_config");
+    ControllerConfig out;
+
+    if (cfg.contains("robot_type") && cfg.at("robot_type").is_string()) {
+        const RobotType robotType = robotTypeFromString(cfg.at("robot_type").get<std::string>());
+        setActiveRobotType(robotType);
+    }
+
+    if (cfg.contains("locomotion_mode") && cfg.at("locomotion_mode").is_string()) {
+        out.locomotionMode = locomotionModeFromString(cfg.at("locomotion_mode").get<std::string>());
+    }
+
+    if (cfg.contains("timing") && cfg.at("timing").is_object()) {
+        const json& timing = cfg.at("timing");
+        if (timing.contains("cycle")) {
+            out.timing.cycle = timing.at("cycle").get<double>();
+        }
+        if (timing.contains("swing")) {
+            out.timing.swing = timing.at("swing").get<double>();
+        }
+        if (timing.contains("stance")) {
+            out.timing.stance = timing.at("stance").get<double>();
+        }
+        if (timing.contains("horizon")) {
+            out.timing.horizon = timing.at("horizon").get<double>();
+        }
+        if (timing.contains("horizon_steps")) {
+            out.timing.horizonSteps = timing.at("horizon_steps").get<int>();
+        }
+    }
+
+    if (cfg.contains("model") && cfg.at("model").is_object()) {
+        const json& model = cfg.at("model");
+        if (model.contains("xml_path") && model.at("xml_path").is_string()) {
+            out.model.xmlPath = model.at("xml_path").get<std::string>();
+        }
+        if (model.contains("auxiliary_xml_path") && model.at("auxiliary_xml_path").is_string()) {
+            out.model.auxiliaryXmlPath = model.at("auxiliary_xml_path").get<std::string>();
+        }
+        if (model.contains("gravity")) {
+            out.model.gravity = model.at("gravity").get<double>();
+        }
+    }
+
+    if (cfg.contains("mpc") && cfg.at("mpc").is_object()) {
+        const json& mpc = cfg.at("mpc");
+        if (mpc.contains("friction_coefficient")) {
+            out.mpc.frictionCoefficient = mpc.at("friction_coefficient").get<double>();
+        }
+        if (mpc.contains("foot_half_length")) {
+            out.mpc.footHalfLength = mpc.at("foot_half_length").get<double>();
+        }
+        if (mpc.contains("foot_half_width")) {
+            out.mpc.footHalfWidth = mpc.at("foot_half_width").get<double>();
+        }
+        if (mpc.contains("torsional_friction_scale")) {
+            out.mpc.torsionalFrictionScale = mpc.at("torsional_friction_scale").get<double>();
+        }
+        if (mpc.contains("normal_force_max")) {
+            out.mpc.normalForceMax = mpc.at("normal_force_max").get<double>();
+        }
+        if (mpc.contains("normal_force_min")) {
+            out.mpc.normalForceMin = mpc.at("normal_force_min").get<double>();
+        }
+        if (mpc.contains("iterations_between_solve")) {
+            out.mpc.iterationsBetweenSolve = mpc.at("iterations_between_solve").get<int>();
+        }
+        if (mpc.contains("contact_wrench_model") && mpc.at("contact_wrench_model").is_string()) {
+            out.mpc.contactWrenchModel =
+                contactWrenchModelFromString(mpc.at("contact_wrench_model").get<std::string>());
+        }
+        if (mpc.contains("state_weight_diag")) {
+            const std::vector<double> diag =
+                readJsonVector(mpc.at("state_weight_diag"), "controller_config.mpc.state_weight_diag");
+            if (diag.size() != 13) {
+                throw std::runtime_error("controller_config.mpc.state_weight_diag must have size 13");
+            }
+            out.mpc.stateWeight.setZero();
+            for (int i = 0; i < 13; ++i) {
+                out.mpc.stateWeight(i, i) = diag[static_cast<std::size_t>(i)];
+            }
+        } else if (mpc.contains("state_weight")) {
+            const DMat<double> stateWeight =
+                readJsonMatrix(mpc.at("state_weight"), "controller_config.mpc.state_weight");
+            if (stateWeight.rows() != 13 || stateWeight.cols() != 13) {
+                throw std::runtime_error("controller_config.mpc.state_weight must be 13x13");
+            }
+            out.mpc.stateWeight.setZero();
+            for (int i = 0; i < 13; ++i) {
+                out.mpc.stateWeight(i, i) = stateWeight(i, i);
+            }
+        }
+        if (mpc.contains("input_weight_diag")) {
+            const std::vector<double> diag =
+                readJsonVector(mpc.at("input_weight_diag"), "controller_config.mpc.input_weight_diag");
+            if (diag.size() != 12) {
+                throw std::runtime_error("controller_config.mpc.input_weight_diag must have size 12");
+            }
+            out.mpc.inputWeight.setZero();
+            for (int i = 0; i < 12; ++i) {
+                out.mpc.inputWeight(i, i) = diag[static_cast<std::size_t>(i)];
+            }
+        } else if (mpc.contains("input_weight")) {
+            const DMat<double> inputWeight =
+                readJsonMatrix(mpc.at("input_weight"), "controller_config.mpc.input_weight");
+            if (inputWeight.rows() != 12 || inputWeight.cols() != 12) {
+                throw std::runtime_error("controller_config.mpc.input_weight must be 12x12");
+            }
+            out.mpc.inputWeight.setZero();
+            for (int i = 0; i < 12; ++i) {
+                out.mpc.inputWeight(i, i) = inputWeight(i, i);
+            }
+        }
+    }
+
+    if (cfg.contains("swing") && cfg.at("swing").is_object()) {
+        const json& swing = cfg.at("swing");
+        if (swing.contains("natural_frequency")) {
+            out.swing.naturalFrequency =
+                vec3FromJson(swing.at("natural_frequency"),
+                             "controller_config.swing.natural_frequency");
+        }
+        if (swing.contains("kd_diag")) {
+            out.swing.kdDiag = vec3FromJson(swing.at("kd_diag"), "controller_config.swing.kd_diag");
+        }
+        if (swing.contains("height")) {
+            out.swing.height = swing.at("height").get<double>();
+        }
+        if (swing.contains("min_remaining_time")) {
+            out.swing.minRemainingTime = swing.at("min_remaining_time").get<double>();
+        }
+        if (swing.contains("touchdown_target_mode") &&
+            swing.at("touchdown_target_mode").is_string()) {
+            out.swing.touchdownTargetMode =
+                touchdownTargetModeFromString(swing.at("touchdown_target_mode").get<std::string>());
+        }
+        if (swing.contains("foot_end_effector_source") &&
+            swing.at("foot_end_effector_source").is_string()) {
+            out.swing.footEndEffectorSource =
+                footEndEffectorSourceFromString(
+                    swing.at("foot_end_effector_source").get<std::string>());
+        }
+    }
+
+    if (cfg.contains("foot_placement") && cfg.at("foot_placement").is_object()) {
+        const json& footPlacement = cfg.at("foot_placement");
+        if (footPlacement.contains("velocity_feedback_gain")) {
+            out.footPlacement.velocityFeedbackGain =
+                footPlacement.at("velocity_feedback_gain").get<double>();
+        }
+        if (footPlacement.contains("placement_clamp")) {
+            out.footPlacement.placementClamp = footPlacement.at("placement_clamp").get<double>();
+        }
+        if (footPlacement.contains("touchdown_height")) {
+            out.footPlacement.touchdownHeight = footPlacement.at("touchdown_height").get<double>();
+        }
+        if (footPlacement.contains("nominal_lateral_offset")) {
+            out.footPlacement.nominalLateralOffset =
+                footPlacement.at("nominal_lateral_offset").get<double>();
+        }
+        if (footPlacement.contains("swing_bias")) {
+            out.footPlacement.swingBias = footPlacement.at("swing_bias").get<double>();
+        }
+    }
+
+    if (cfg.contains("logging") && cfg.at("logging").is_object()) {
+        const json& logging = cfg.at("logging");
+        if (logging.contains("gait_status_interval")) {
+            out.logging.gaitStatusInterval = logging.at("gait_status_interval").get<int>();
+        }
+        if (logging.contains("standing_mpc_debug_trigger_times")) {
+            out.logging.standingMpcDebugTriggerTimes =
+                readJsonVector(logging.at("standing_mpc_debug_trigger_times"),
+                               "controller_config.logging.standing_mpc_debug_trigger_times");
+        }
+        std::sort(out.logging.standingMpcDebugTriggerTimes.begin(),
+                  out.logging.standingMpcDebugTriggerTimes.end());
+    }
+
+    if (cfg.contains("initial_pose") && cfg.at("initial_pose").is_object()) {
+        const json& initialPose = cfg.at("initial_pose");
+        if (initialPose.contains("leg_joint_offsets")) {
+            out.initialPose.legJointOffsets =
+                readJsonVector(initialPose.at("leg_joint_offsets"),
+                               "controller_config.initial_pose.leg_joint_offsets");
+        }
+        if (initialPose.contains("arm_joint_offsets")) {
+            out.initialPose.armJointOffsets =
+                readJsonVector(initialPose.at("arm_joint_offsets"),
+                               "controller_config.initial_pose.arm_joint_offsets");
+        }
+    }
+
+    if (cfg.contains("left_swing_hold_test") && cfg.at("left_swing_hold_test").is_object()) {
+        const json& leftSwingHoldTest = cfg.at("left_swing_hold_test");
+        if (leftSwingHoldTest.contains("touchdown_target_mode") &&
+            leftSwingHoldTest.at("touchdown_target_mode").is_string()) {
+            out.leftSwingHoldTest.touchdownTargetMode =
+                touchdownTargetModeFromString(
+                    leftSwingHoldTest.at("touchdown_target_mode").get<std::string>());
+        }
+    }
+
+    return out;
+}
+
 Vec13<double> vec13FromJson(const json& value, const std::string& name) {
     const std::vector<double> raw = readJsonVector(value, name);
     if (static_cast<int>(raw.size()) != kStateDim) {
@@ -390,7 +672,15 @@ double vectorNormRange(const Vec13<double>& value, const int begin, const int co
 
 RobotParams<double> robotParamsFromLog(const json& log) {
     RobotParams<double> params;
-    params.roboType = RobotType::MIT_HUMANOID;
+    if (log.contains("controller_config") &&
+        log.at("controller_config").is_object() &&
+        log.at("controller_config").contains("robot_type") &&
+        log.at("controller_config").at("robot_type").is_string()) {
+        params.roboType =
+            robotTypeFromString(log.at("controller_config").at("robot_type").get<std::string>());
+    } else {
+        params.roboType = RobotType::MIT_HUMANOID;
+    }
     params.bodyMass = log.at("model").at("mass").get<double>();
     params.bodyInertia =
         mat3FromJson(log.at("model").at("body_inertia_yaw_frame"),
@@ -649,11 +939,13 @@ double maxAbsTrajectoryError(const RolloutResult& result, const int index) {
 void writeReport(std::ostream& out,
                  const std::filesystem::path& logPath,
                  const Options& options,
+                 const std::string& robotType,
                  const RolloutResult& result,
                  const OutputPaths& outputPaths) {
     out << std::fixed << std::setprecision(9);
     out << "[stand_rh_probe]\n"
         << "  source_log: " << std::filesystem::absolute(logPath).string() << "\n"
+        << "  robot_type: " << robotType << "\n"
         << "  requested_rollout_steps: " << options.steps << "\n"
         << "  completed_rows: " << result.rows.size() << "\n"
         << "  config_horizon_steps: " << horizonSteps() << "\n"
@@ -676,8 +968,8 @@ void writeReport(std::ostream& out,
     out << "\n";
 
     out << "first_solve_delta_to_source_log\n";
-    out << "  note: comparison uses the current config/my_controller.yaml; "
-        << "nonzero values are expected if weights/constraints changed after the source log was captured\n";
+    out << "  note: comparison uses the logged controller_config snapshot when available; "
+        << "otherwise it falls back to the current config/my_controller.yaml\n";
     writeOptionalDouble(out, "first_wrench_max_abs_delta", result.firstWrenchDeltaToLog);
     writeOptionalDouble(out, "wrench_horizon_max_abs_delta", result.firstHorizonWrenchDeltaToLog);
     writeOptionalDouble(out, "predicted_horizon_state_max_abs_delta",
@@ -734,10 +1026,12 @@ void writeEigenVectorCsv(std::ostream& out, const Eigen::MatrixBase<Derived>& va
 void writeCsv(std::ostream& out,
               const std::filesystem::path& logPath,
               const Options& options,
+              const std::string& robotType,
               const RolloutResult& result) {
     out << std::setprecision(17);
     out << "# source_json_file=" << logPath.filename().string() << '\n';
     out << "# source_json_path=" << std::filesystem::absolute(logPath).string() << '\n';
+    out << "# robot_type=" << robotType << '\n';
     out << "# requested_rollout_steps=" << options.steps << '\n';
     out << "# config_horizon_steps=" << horizonSteps() << '\n';
     out << "# config_dt_mpc=" << dtMpc() << '\n';
@@ -854,15 +1148,21 @@ int main(int argc, char** argv) {
         json log;
         logStream >> log;
 
+        const std::optional<ControllerConfig> loggedConfig = controllerConfigFromLog(log);
+        if (loggedConfig.has_value()) {
+            setControllerConfigOverride(&*loggedConfig);
+        }
+        const std::string robotType = robotTypeLabelFromLog(log);
+
         const RolloutResult result = runRollout(log, options.steps);
 
-        writeReport(std::cout, options.logPath, options, result, outputPaths);
+        writeReport(std::cout, options.logPath, options, robotType, result, outputPaths);
 
         std::ofstream report(outputPaths.report, std::ios::out | std::ios::trunc);
         if (!report.is_open()) {
             throw std::runtime_error("Failed to open report output: " + outputPaths.report.string());
         }
-        writeReport(report, options.logPath, options, result, outputPaths);
+        writeReport(report, options.logPath, options, robotType, result, outputPaths);
         report.close();
         if (!report.good()) {
             throw std::runtime_error("Failed while writing report output: " + outputPaths.report.string());
@@ -873,7 +1173,7 @@ int main(int argc, char** argv) {
         if (!csv.is_open()) {
             throw std::runtime_error("Failed to open CSV output: " + outputPaths.csv.string());
         }
-        writeCsv(csv, options.logPath, options, result);
+        writeCsv(csv, options.logPath, options, robotType, result);
         csv.close();
         if (!csv.good()) {
             throw std::runtime_error("Failed while writing CSV output: " + outputPaths.csv.string());
@@ -881,6 +1181,7 @@ int main(int argc, char** argv) {
         std::cout << "csv: " << std::filesystem::absolute(outputPaths.csv).string() << "\n";
 
         runPlotScript(outputPaths);
+        clearControllerConfigOverride();
         return EXIT_SUCCESS;
     } catch (const std::exception& exception) {
         std::cerr << "stand_rh_probe: " << exception.what() << "\n";

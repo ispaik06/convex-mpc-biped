@@ -158,11 +158,18 @@ def plot_trajectory(log_path: Path, log: dict, x0, x_horizon, max_abs_error: flo
         raise RuntimeError("matplotlib is required for plotting") from exc
 
     dt = float(log.get("metadata", {}).get("dt_mpc", 1.0))
+    robot_type = (
+        log.get("metadata", {}).get("robot_type")
+        or log.get("controller_config", {}).get("robot_type")
+        or "unknown robot"
+    )
     states = [x0] + x_horizon
     time = [step * dt for step in range(len(states))]
 
     fig = plt.figure(figsize=(11, 8))
-    fig.suptitle(f"{log_path.name} | max reconstruction error {max_abs_error:.3e}")
+    fig.suptitle(
+        f"{robot_type} | {log_path.name} | max reconstruction error {max_abs_error:.3e}"
+    )
 
     ax_xy = fig.add_subplot(2, 2, 1)
     ax_xy.plot([state[3] for state in states], [state[4] for state in states], marker="o")

@@ -26,6 +26,7 @@ public:
 	virtual ~RobotController(){}
 
 	FootEndEffectorSource footEndEffectorSource() const { return _footEndEffectorSource; }
+	virtual bool usesStandingOnlyLegDynamics() const { return false; }
 
 	virtual void initializeController() = 0;
 
