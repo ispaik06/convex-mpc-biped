@@ -34,7 +34,7 @@ The scene XML must be passed explicitly. Relative paths are resolved against the
 Example for another scene once it defines the relevant body/site names and a `nominal_stance` key:
 
 ```bash
-./build/test/scene_posture/scene_posture_clearance --xml models/unitree_robots/g1/scene_23dof.xml --body torso_link --site left_foot_contact_site --site right_foot_contact_site --key nominal_stance
+./build/test/scene_posture/scene_posture_clearance --xml models/unitree_robots/g1/scene_23dof.xml --body pelvis --site left_foot_contact_site --site right_foot_contact_site --key nominal_stance
 ```
 
 If the scene has no keyframes yet, the utility falls back to `qpos0`.
