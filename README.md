@@ -26,7 +26,9 @@ flowchart TD
 ## Frame Conventions
 
 - `W`: simulation world frame.
-- `T`: torso body frame at the MuJoCo torso origin.
+- `T`: robot MJCF root floating body frame, i.e. the base body used as the robot pose reference.
+  - For MIT humanoid this is the `torso` body.
+  - For Unitree G1 this is the `pelvis` body.
 - `B`: yaw-aligned reduced-body COM frame.
 
 The code suffixes vectors and matrices with their frame, for example `R_WT`, `R_WB`, `p_W`, and `p_B`, so the reference frame stays explicit.
@@ -38,6 +40,8 @@ The code suffixes vectors and matrices with their frame, for example `R_WT`, `R_
 - angular velocity: torso angular velocity as the reduced-body rate estimate
 - linear velocity: reduced-body COM velocity
 - gravity: scalar `g`
+
+In other words, the current MPC state mixes quantities from `T` and `B`: orientation and angular velocity are read from the floating base body `T`, while position and linear velocity are taken from the reduced-body COM model `B`. Because the upper body is held close to a rigid lump by the internal PD loops, treating it as a rigid body is a reasonable approximation for the current controller.
 
 This is a reduced-body SRB state, not a torso-origin MPC state. The reduced-body COM and inertia are recomputed from the current robot pose, so the model is posture-dependent.
 
