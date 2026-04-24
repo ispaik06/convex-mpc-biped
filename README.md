@@ -83,6 +83,12 @@ The MPC optimizes stance wrenches. Swing-foot tracking is handled separately by 
 - `foot_placement`: touchdown heuristics
 - `logging`: gait status and standing MPC debug triggers
 
+`config/simulation.yaml` controls simulation runtime settings:
+
+- `physics_timestep_sec`: MuJoCo simulation timestep
+- `physics_integrator`: MuJoCo integrator mode (`euler`, `rk4`, `implicit`, `implicitfast`)
+- `viewer_sync_hz`: how often physics state is pushed into the MuJoCo viewer
+
 Standing debug logs record a serialized `controller_config` snapshot plus the runtime model/state needed for replay. The MPC weights are stored as YAML-style diagonal arrays, and `robot_type` is recorded for plot/report labels. Probe behavior is documented in `test/standing_debug/README.md`.
 
 ## Build

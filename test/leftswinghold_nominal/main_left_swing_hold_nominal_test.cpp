@@ -14,6 +14,7 @@
 #include "MujocoCheaterStateReader.h"
 #include "RobotController.h"
 #include "RobotRunner.h"
+#include "SimulationConfig.h"
 #include "StateEstimator/StateEstimator.h"
 #include "Utilities/MatrixUtils.h"
 #include "setupRobotParams.h"
@@ -120,8 +121,7 @@ int main(int argc, char** argv) {
     }
 
     try {
-        model->opt.timestep = 0.002;
-        model->opt.integrator = mjINT_IMPLICITFAST;
+        configureSimulationModel(model);
 
         auto robotSetup =
             setupRobotParams<double>(RobotType::MIT_HUMANOID, model, FootEndEffectorSource::Site);

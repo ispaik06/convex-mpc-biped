@@ -10,7 +10,9 @@
 
 #include "MujocoCheaterStateReader.h"
 #include "RobotConfig.h"
+#include "SimulationConfig.h"
 #include "SimulationRunner.h"
+#include "ViewerSyncThrottle.h"
 #include "setupRobotParams.h"
 
 void SimulationRunner::init() {
@@ -35,11 +37,9 @@ void SimulationRunner::init() {
 		throw std::runtime_error("mj_makeData failed");
 	}
 
+	configureSimulationModel(model);
 	mj_forward(model, data);
 	_debugMocapBindings.clear();
-
-	model->opt.timestep = 0.002;
-	model->opt.integrator = mjINT_IMPLICITFAST;
 
 	std::cout << "Loaded MuJoCo model: " << _modelPath << '\n';
 	std::cout << "nq=" << model->nq
@@ -77,10 +77,16 @@ void SimulationRunner::run() {
 void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 	const auto wallStart = std::chrono::steady_clock::now();
 	const double simStart = data->time;
+	const auto& simulationConfig = getSimulationConfig();
+	const auto viewerSyncPeriod =
+		std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+			std::chrono::duration<double>(1.0 / simulationConfig.viewerSyncHz));
+	std::chrono::steady_clock::time_point nextViewerSync = std::chrono::steady_clock::now();
 
 	if (syncViewer) {
 		_mainThread.load(model, data, _modelPath);
 		_mainThread.sync();
+		nextViewerSync = std::chrono::steady_clock::now() + viewerSyncPeriod;
 	}
 
 	while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
@@ -88,7 +94,7 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 		mj_step(model, data);
 		++_iterations;
 
-		if (syncViewer) {
+		if (syncViewer && sim::shouldSyncViewer(nextViewerSync, viewerSyncPeriod)) {
 			_mainThread.sync();
 		}
 
