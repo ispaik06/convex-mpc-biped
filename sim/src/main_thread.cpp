@@ -26,6 +26,9 @@ void MainThread::ensureInitialized() {
 
 	mjv_defaultCamera(_camera.get());
 	mjv_defaultOption(_option.get());
+	// Keep geom group 4 visible at startup so debug / helper geoms do not need
+	// to be enabled manually in the viewer every run.
+	_option->geomgroup[4] = 1;
 	mjv_defaultPerturb(_perturb.get());
 
 	_simulate = std::make_unique<mujoco::Simulate>(
