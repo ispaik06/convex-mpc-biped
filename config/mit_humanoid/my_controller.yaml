@@ -60,7 +60,6 @@ initial_pose:
   base_position_W: [0.0, 0.0, 0.679472]  # 0.625972 / 0.679472
   base_rpy_W: [0.0, 0.0, 0.0]
   leg_joint_offsets: [0, 0, -0.735, 1.2, -0.70]
-  # 0 0 -0.628901 1.3493 -0.720399
   arm_joint_offsets: [0.0, 0.0, 0.0, -0.65]
 
 left_swing_hold_test:

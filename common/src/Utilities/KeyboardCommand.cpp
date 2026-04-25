@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cctype>
 #include <cstring>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -15,6 +16,35 @@ namespace {
 
 termios g_originalTermios{};
 bool g_termiosSaved = false;
+constexpr double kCommandZeroEpsilon = 1e-12;
+constexpr double kStandingOrientationStepRad = 2.0 * 3.141592653589793238462643383279502884 / 180.0;
+constexpr double kRadToDeg = 180.0 / 3.141592653589793238462643383279502884;
+
+double zeroTinyValue(const double value) {
+    return (std::abs(value) < kCommandZeroEpsilon) ? 0.0 : value;
+}
+
+void sanitizeCommand(UserCommand& command) {
+    command.x_dot = zeroTinyValue(command.x_dot);
+    command.y_dot = zeroTinyValue(command.y_dot);
+    command.psi_dot = zeroTinyValue(command.psi_dot);
+    command.z_dot = zeroTinyValue(command.z_dot);
+    command.standing_roll_offset_rad = zeroTinyValue(command.standing_roll_offset_rad);
+    command.standing_pitch_offset_rad = zeroTinyValue(command.standing_pitch_offset_rad);
+}
+
+void printCommand(const UserCommand& command) {
+    std::cout << "UserCommand | x_dot: " << zeroTinyValue(command.x_dot)
+              << "  y_dot: " << zeroTinyValue(command.y_dot)
+              << "  psi_dot: " << zeroTinyValue(command.psi_dot)
+              << "  z_dot: " << zeroTinyValue(command.z_dot)
+              << "  standing_pitch_deg: "
+              << zeroTinyValue(command.standing_pitch_offset_rad) * kRadToDeg
+              << "  standing_roll_deg: "
+              << zeroTinyValue(command.standing_roll_offset_rad) * kRadToDeg
+              << "  standing_mpc_debug_log_request: "
+              << command.standing_mpc_debug_log_request << '\n';
+}
 
 bool configureTerminalRawMode(bool& terminalConfigured) {
     if (!isatty(STDIN_FILENO)) {
@@ -72,7 +102,7 @@ void KeyboardCommand::start() {
 
     _running.store(true);
     std::cout << "KeyboardCommand active: w/s x_dot, a/d y_dot, q/e psi_dot, "
-              << "l log next standing MPC, space reset\n";
+              << "up/down z_dot, standing i/k pitch, j/l roll, Shift+L log, space reset\n";
     _inputThread = std::thread(&KeyboardCommand::inputLoop, this);
 }
 
@@ -96,6 +126,8 @@ UserCommand KeyboardCommand::getUserCommand() const {
 }
 
 void KeyboardCommand::inputLoop() {
+    EscapeState escapeState = EscapeState::None;
+
     while (_running.load()) {
         fd_set readSet;
         FD_ZERO(&readSet);
@@ -120,13 +152,84 @@ void KeyboardCommand::inputLoop() {
         char key = 0;
         const ssize_t bytesRead = read(STDIN_FILENO, &key, 1);
         if (bytesRead == 1) {
-            applyKey(key);
+            switch (escapeState) {
+                case EscapeState::None:
+                    if (key == '\x1b') {
+                        escapeState = EscapeState::SawEscape;
+                        continue;
+                    }
+                    applyKey(key);
+                    break;
+                case EscapeState::SawEscape:
+                    if (key == '[') {
+                        escapeState = EscapeState::SawEscapeBracket;
+                        continue;
+                    }
+                    escapeState = EscapeState::None;
+                    break;
+                case EscapeState::SawEscapeBracket:
+                    if (key == 'A') {
+                        applyVerticalKey(true);
+                    } else if (key == 'B') {
+                        applyVerticalKey(false);
+                    }
+                    escapeState = EscapeState::None;
+                    break;
+            }
         }
     }
 }
 
+void KeyboardCommand::applyVerticalKey(bool increase) {
+    std::lock_guard<std::mutex> lock(_commandMutex);
+
+    const double delta = increase ? _verticalStep : -_verticalStep;
+    _userCommand.z_dot =
+        std::clamp(_userCommand.z_dot + delta, -_verticalLimit, _verticalLimit);
+    sanitizeCommand(_userCommand);
+    printCommand(_userCommand);
+}
+
+void KeyboardCommand::applyStandingOrientationKey(char key) {
+    std::lock_guard<std::mutex> lock(_commandMutex);
+
+    switch (key) {
+        case 'i':
+            _userCommand.standing_pitch_offset_rad += kStandingOrientationStepRad;
+            break;
+        case 'k':
+            _userCommand.standing_pitch_offset_rad -= kStandingOrientationStepRad;
+            break;
+        case 'j':
+            _userCommand.standing_roll_offset_rad -= kStandingOrientationStepRad;
+            break;
+        case 'l':
+            _userCommand.standing_roll_offset_rad += kStandingOrientationStepRad;
+            break;
+        default:
+            return;
+    }
+
+    sanitizeCommand(_userCommand);
+    printCommand(_userCommand);
+}
+
 void KeyboardCommand::applyKey(char key) {
+    if (key == 'L') {
+        std::lock_guard<std::mutex> lock(_commandMutex);
+        ++_userCommand.standing_mpc_debug_log_request;
+        std::cout << "StandingMPCDebug request #"
+                  << _userCommand.standing_mpc_debug_log_request
+                  << " queued for the next MPC solve\n";
+        return;
+    }
+
     const char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+
+    if (lowerKey == 'i' || lowerKey == 'k' || lowerKey == 'j' || lowerKey == 'l') {
+        applyStandingOrientationKey(lowerKey);
+        return;
+    }
 
     std::lock_guard<std::mutex> lock(_commandMutex);
 
@@ -161,12 +264,6 @@ void KeyboardCommand::applyKey(char key) {
                                               -_yawLimit,
                                               _yawLimit);
             break;
-        case 'l':
-            ++_userCommand.standing_mpc_debug_log_request;
-            std::cout << "StandingMPCDebug request #"
-                      << _userCommand.standing_mpc_debug_log_request
-                      << " queued for the next MPC solve\n";
-            return;
         case ' ':
         {
             const unsigned long long requestCount =
@@ -179,9 +276,6 @@ void KeyboardCommand::applyKey(char key) {
             return;
     }
 
-    std::cout << "UserCommand | x_dot: " << _userCommand.x_dot
-              << "  y_dot: " << _userCommand.y_dot
-              << "  psi_dot: " << _userCommand.psi_dot
-              << "  standing_mpc_debug_log_request: "
-              << _userCommand.standing_mpc_debug_log_request << '\n';
+    sanitizeCommand(_userCommand);
+    printCommand(_userCommand);
 }

@@ -244,13 +244,25 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
             _bodyTarget.position_W = x0.template segment<3>(3);
             _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
         }
+        _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
         _bodyTarget.initialized = true;
     }
 
     if (_locomotionMode == LocomotionMode::Standing) {
         const Vec2<double> avgFootSiteXY = averageFootSiteXY(*_stateEstimate, *_robotParams);
+        // Keep the stance footprint centered under the feet and move only in height.
         _bodyTarget.position_W[0] = avgFootSiteXY[0];
         _bodyTarget.position_W[1] = avgFootSiteXY[1];
+        const double z_dot = (_userCommand != nullptr) ? _userCommand->z_dot : 0.0;
+        const double standingRollOffset =
+            (_userCommand != nullptr) ? _userCommand->standing_roll_offset_rad : 0.0;
+        const double standingPitchOffset =
+            (_userCommand != nullptr) ? _userCommand->standing_pitch_offset_rad : 0.0;
+        _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
+        _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
+        if (dt > 0.0) {
+            _bodyTarget.position_W[2] += z_dot * dt;
+        }
         return;
     }
 
@@ -336,11 +348,17 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
         referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
 
-        const UserCommand standingCommand{};
-        const UserCommand* referenceCommand =
-            (_locomotionMode == LocomotionMode::Standing) ? &standingCommand : _userCommand;
+        UserCommand referenceCommand{};
+        if (_userCommand != nullptr) {
+            if (_locomotionMode == LocomotionMode::Standing) {
+                referenceCommand.z_dot = _userCommand->z_dot;
+            } else {
+                referenceCommand = *_userCommand;
+                referenceCommand.z_dot = 0.0;
+            }
+        }
 
-        ReferenceTrajectory(referenceCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
+        ReferenceTrajectory(&referenceCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
             .build(_referenceTrajectoryOutput);
         _mpcFormulation->build(_referenceTrajectoryOutput, _mpcFormulationOutput);
 

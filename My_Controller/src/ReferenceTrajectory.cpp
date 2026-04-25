@@ -13,10 +13,12 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
     out.setZero();
 
     const double psi_dot_des = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    const double z_dot_des = (_userCommand != nullptr) ? _userCommand->z_dot : 0.0;
+    // Yaw only changes x/y; the vertical command is passed through directly.
     const Vec3<double> u_des_B(
         _userCommand != nullptr ? _userCommand->x_dot : 0.0,
         _userCommand != nullptr ? _userCommand->y_dot : 0.0,
-        0.0);
+        z_dot_des);
 
     const double psi0 = _x0[2];
     const double gravity = _x0[12];
