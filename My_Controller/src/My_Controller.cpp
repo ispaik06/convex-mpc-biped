@@ -84,6 +84,23 @@ Quat<double> reducedBodyOrientationWorld(const StateEstimate<double>& stateEstim
     return stateEstimate.torsoQuat_W;
 }
 
+double averageFootSiteX(const StateEstimate<double>& stateEstimate,
+                        const RobotParams<double>& robotParams) {
+    if (robotParams.legs.empty()) {
+        throw std::runtime_error("Standing target seed requires at least one leg");
+    }
+
+    double sumX = 0.0;
+    for (std::size_t leg = 0; leg < robotParams.legs.size(); ++leg) {
+        if (leg >= stateEstimate.legs.size()) {
+            throw std::runtime_error("Standing target seed requires matching leg state");
+        }
+        sumX += stateEstimate.legs[leg].footPos_W.x();
+    }
+
+    return sumX / static_cast<double>(robotParams.legs.size());
+}
+
 Vec3<double> reducedBodyComWorldFromBasePose(const Vec3<double>& basePosition_W,
                                              const Vec3<double>& baseEuler_W,
                                              const RobotParams<double>& robotParams) {
@@ -227,6 +244,10 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
             _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
         }
         _bodyTarget.initialized = true;
+    }
+
+    if (_locomotionMode == LocomotionMode::Standing) {
+        _bodyTarget.position_W[0] = averageFootSiteX(*_stateEstimate, *_robotParams);
         return;
     }
 
@@ -312,7 +333,11 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
         referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
 
-        ReferenceTrajectory(_userCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
+        const UserCommand standingCommand{};
+        const UserCommand* referenceCommand =
+            (_locomotionMode == LocomotionMode::Standing) ? &standingCommand : _userCommand;
+
+        ReferenceTrajectory(referenceCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
             .build(_referenceTrajectoryOutput);
         _mpcFormulation->build(_referenceTrajectoryOutput, _mpcFormulationOutput);
 
