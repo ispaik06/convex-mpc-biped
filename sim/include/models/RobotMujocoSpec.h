@@ -35,6 +35,7 @@ struct RobotMujocoSpec {
 
 const RobotMujocoSpec& getMitHumanoidMujocoSpec();
 const RobotMujocoSpec& getUnitreeG1MujocoSpec();
+const RobotMujocoSpec& getUnitreeH1MujocoSpec();
 
 const RobotMujocoSpec& getRobotMujocoSpec(RobotType type);
 

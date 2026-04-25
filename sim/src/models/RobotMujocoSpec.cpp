@@ -9,7 +9,7 @@ const RobotMujocoSpec& getRobotMujocoSpec(const RobotType type) {
         case RobotType::UNITREE_G1:
             return getUnitreeG1MujocoSpec();
         case RobotType::UNITREE_H1:
-            break;
+            return getUnitreeH1MujocoSpec();
     }
 
     throw std::runtime_error("No MuJoCo spec is registered for the requested robot type");

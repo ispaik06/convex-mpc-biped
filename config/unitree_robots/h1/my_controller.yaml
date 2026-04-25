@@ -8,8 +8,8 @@ timing:
   horizon_steps: 20
 
 model:
-  xml_path: models/unitree_robots/g1/scene_23dof.xml
-  auxiliary_xml_path: models/unitree_robots/g1/g1_23dof.xml
+  xml_path: models/unitree_robots/h1/scene.xml
+  auxiliary_xml_path: models/unitree_robots/h1/h1.xml
   gravity: -9.81
 
 mpc:
@@ -31,7 +31,7 @@ swing:
   height: 0.06
   min_remaining_time: 0.001
   touchdown_target_mode: body_velocity_half_stance
-  foot_end_effector_source: site  # Use the foot bottom-center contact sites in the G1 XML.
+  foot_end_effector_source: site  # Uses the foot bottom-center contact sites in h1.xml.
 
 foot_placement:
   velocity_feedback_gain: 0.03
@@ -46,24 +46,24 @@ logging:
 
 joint_tracking:
   leg:
-    # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]
-    kp: [100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
-    kd: [10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+    # H1 order: [hip_yaw, hip_roll, hip_pitch, knee, ankle]
+    kp: [100.0, 100.0, 200.0, 200.0, 400.0]
+    kd: [10.0, 10.0, 10.0, 10.0, 30.0]
   arm:
-    # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]
-    kp: [60.0, 60.0, 50.0, 45.0, 20.0]
-    kd: [4.0, 4.0, 3.0, 3.0, 2.0]
+    # H1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow]
+    kp: [60.0, 60.0, 50.0, 45.0]
+    kd: [4.0, 4.0, 3.0, 3.0]
 
 initial_pose:
-  # Floating-base pose from the scene keyframe. Used once to seed the reduced-body target.
-  base_position_W: [0.0, 0.0, 0.75]
+  # Floating-base pose placeholder from the scene keyframe.
+  base_position_W: [0.0, 0.0, 0.941049]
   base_rpy_W: [0.0, 0.0, 0.0]
   leg_initialization_time: 2.0
   arm_initialization_time: 1.0
-  # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]
-  leg_joint_offsets: [-0.09, 0.0, 0.0, 0.42, -0.12, 0.0]
-  # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]
-  arm_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
+  # H1 order: [hip_yaw, hip_roll, hip_pitch, knee, ankle]
+  leg_joint_offsets: [0.0, 0.0, -0.5, 0.9, -1.0]
+  # H1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow]
+  arm_joint_offsets: [0.0, 0.0, 0.0, 0.0]
 
 left_swing_hold_test:
   touchdown_target_mode: body_velocity_half_stance
