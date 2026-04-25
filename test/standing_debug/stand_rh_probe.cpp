@@ -512,6 +512,22 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
 
     if (cfg.contains("initial_pose") && cfg.at("initial_pose").is_object()) {
         const json& initialPose = cfg.at("initial_pose");
+        const bool hasBasePosition = initialPose.contains("base_position_W");
+        const bool hasBaseEuler = initialPose.contains("base_rpy_W");
+        if (hasBasePosition != hasBaseEuler) {
+            throw std::runtime_error(
+                "controller_config.initial_pose.base_position_W and "
+                "controller_config.initial_pose.base_rpy_W must be provided together");
+        }
+        if (hasBasePosition) {
+            out.initialPose.hasBasePose = true;
+            out.initialPose.basePosition_W =
+                vec3FromJson(initialPose.at("base_position_W"),
+                             "controller_config.initial_pose.base_position_W");
+            out.initialPose.baseEuler_W =
+                vec3FromJson(initialPose.at("base_rpy_W"),
+                             "controller_config.initial_pose.base_rpy_W");
+        }
         if (initialPose.contains("leg_joint_offsets")) {
             out.initialPose.legJointOffsets =
                 readJsonVector(initialPose.at("leg_joint_offsets"),

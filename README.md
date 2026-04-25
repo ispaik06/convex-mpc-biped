@@ -43,6 +43,8 @@ The code suffixes vectors and matrices with their frame, for example `R_WT`, `R_
 
 In other words, the current MPC state mixes quantities from `T` and `B`: orientation and angular velocity are read from the floating base body `T`, while position and linear velocity are taken from the reduced-body COM model `B`. Because the upper body is held close to a rigid lump by the internal PD loops, treating it as a rigid body is a reasonable approximation for the current controller.
 
+If `initial_pose.base_position_W` and `initial_pose.base_rpy_W` are provided in `my_controller.yaml`, the first `_bodyTarget` seed is computed from that floating-base pose and converted to the reduced-body COM target once at initialization.
+
 This is a reduced-body SRB state, not a torso-origin MPC state. The reduced-body COM and inertia are recomputed from the current robot pose, so the model is posture-dependent.
 
 ## Repository Layout

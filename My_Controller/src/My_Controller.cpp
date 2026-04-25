@@ -84,6 +84,13 @@ Quat<double> reducedBodyOrientationWorld(const StateEstimate<double>& stateEstim
     return stateEstimate.torsoQuat_W;
 }
 
+Vec3<double> reducedBodyComWorldFromBasePose(const Vec3<double>& basePosition_W,
+                                             const Vec3<double>& baseEuler_W,
+                                             const RobotParams<double>& robotParams) {
+    // Keep the same yaw-aligned COM-offset convention as the online reduced-body model.
+    return basePosition_W + Rz(baseEuler_W[2]) * robotParams.bodyComLocation;
+}
+
 Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
                                  const RobotParams<double>& robotParams,
                                  const Side side) {
@@ -209,8 +216,16 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     }
 
     if (!_bodyTarget.initialized) {
-        _bodyTarget.position_W = x0.template segment<3>(3);
-        _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
+        const auto& initialPose = getControllerConfig().initialPose;
+        if (initialPose.hasBasePose) {
+            _bodyTarget.position_W = reducedBodyComWorldFromBasePose(initialPose.basePosition_W,
+                                                                     initialPose.baseEuler_W,
+                                                                     *_robotParams);
+            _bodyTarget.euler_W = initialPose.baseEuler_W;
+        } else {
+            _bodyTarget.position_W = x0.template segment<3>(3);
+            _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
+        }
         _bodyTarget.initialized = true;
         return;
     }

@@ -77,6 +77,10 @@ struct LoggingParameters {
 struct InitialPoseParameters {
     std::vector<double> legJointOffsets{0.0, 0.0, -0.65, 0.80, -0.35};
     std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
+    // Optional floating-base pose seed copied from the scene keyframe.
+    bool hasBasePose{false};
+    Vec3<double> basePosition_W = Vec3<double>::Zero();
+    Vec3<double> baseEuler_W = Vec3<double>::Zero();
 };
 
 struct LeftSwingHoldTestParameters {

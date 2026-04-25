@@ -215,6 +215,19 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     const YAML::Node initialPose = config["initial_pose"];
     readVectorIfPresent(initialPose, "leg_joint_offsets", params.initialPose.legJointOffsets);
     readVectorIfPresent(initialPose, "arm_joint_offsets", params.initialPose.armJointOffsets);
+    const bool hasBasePosition = initialPose && initialPose["base_position_W"];
+    const bool hasBaseEuler = initialPose && initialPose["base_rpy_W"];
+    if (hasBasePosition != hasBaseEuler) {
+        throw std::runtime_error(
+            "initial_pose.base_position_W and initial_pose.base_rpy_W must be provided together");
+    }
+    if (hasBasePosition) {
+        params.initialPose.basePosition_W = readVec3(initialPose["base_position_W"],
+                                                     "initial_pose.base_position_W");
+        params.initialPose.baseEuler_W =
+            readVec3(initialPose["base_rpy_W"], "initial_pose.base_rpy_W");
+        params.initialPose.hasBasePose = true;
+    }
 
     const YAML::Node leftSwingHoldTest = config["left_swing_hold_test"];
     params.leftSwingHoldTest.touchdownTargetMode =

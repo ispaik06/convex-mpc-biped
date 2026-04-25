@@ -380,6 +380,10 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     root["logging"] = std::move(logging);
 
     json initialPose = json::object();
+    if (config.initialPose.hasBasePose) {
+        initialPose["base_position_W"] = vectorToJson(config.initialPose.basePosition_W);
+        initialPose["base_rpy_W"] = vectorToJson(config.initialPose.baseEuler_W);
+    }
     initialPose["leg_joint_offsets"] = stdVectorToJson(config.initialPose.legJointOffsets);
     initialPose["arm_joint_offsets"] = stdVectorToJson(config.initialPose.armJointOffsets);
     root["initial_pose"] = std::move(initialPose);
