@@ -84,21 +84,22 @@ Quat<double> reducedBodyOrientationWorld(const StateEstimate<double>& stateEstim
     return stateEstimate.torsoQuat_W;
 }
 
-double averageFootSiteX(const StateEstimate<double>& stateEstimate,
-                        const RobotParams<double>& robotParams) {
+Vec2<double> averageFootSiteXY(const StateEstimate<double>& stateEstimate,
+                              const RobotParams<double>& robotParams) {
     if (robotParams.legs.empty()) {
         throw std::runtime_error("Standing target seed requires at least one leg");
     }
 
-    double sumX = 0.0;
+    Vec2<double> sumXY = Vec2<double>::Zero();
     for (std::size_t leg = 0; leg < robotParams.legs.size(); ++leg) {
         if (leg >= stateEstimate.legs.size()) {
             throw std::runtime_error("Standing target seed requires matching leg state");
         }
-        sumX += stateEstimate.legs[leg].footPos_W.x();
+        sumXY[0] += stateEstimate.legs[leg].footPos_W.x();
+        sumXY[1] += stateEstimate.legs[leg].footPos_W.y();
     }
 
-    return sumX / static_cast<double>(robotParams.legs.size());
+    return sumXY / static_cast<double>(robotParams.legs.size());
 }
 
 Vec3<double> reducedBodyComWorldFromBasePose(const Vec3<double>& basePosition_W,
@@ -247,7 +248,9 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     }
 
     if (_locomotionMode == LocomotionMode::Standing) {
-        _bodyTarget.position_W[0] = averageFootSiteX(*_stateEstimate, *_robotParams);
+        const Vec2<double> avgFootSiteXY = averageFootSiteXY(*_stateEstimate, *_robotParams);
+        _bodyTarget.position_W[0] = avgFootSiteXY[0];
+        _bodyTarget.position_W[1] = avgFootSiteXY[1];
         return;
     }
 

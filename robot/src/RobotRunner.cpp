@@ -51,7 +51,7 @@ void RobotRunner::init(RobotParams<double>* params, double timestep, const UserC
     _robot_ctrl->_robotParams = _params;
     _robot_ctrl->_legController = _legController.get();
     _robot_ctrl->_armController = _armController.get();
-    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 1.1, _timestep);
+    _legPosInitializer = std::make_unique<LegPosInitializer<double>>(_params, 2.0, _timestep);
     _armPosInitializer = std::make_unique<ArmPosInitializer<double>>(_params, 1.0, _timestep);
     initializeJointTrackingGains();
 }
