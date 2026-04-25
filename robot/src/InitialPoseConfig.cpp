@@ -1,5 +1,6 @@
 #include "InitialPoseConfig.h"
 
+#include <cmath>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,21 @@ void readOffsetVectorIfPresent(const YAML::Node& node,
     }
 }
 
+template <typename T>
+void readPositiveScalarIfPresent(const YAML::Node& node, const char* key, T& value) {
+    if (!node || !node[key]) {
+        return;
+    }
+
+    const T parsedValue = node[key].as<T>();
+    if (!(parsedValue > T(0)) || !std::isfinite(static_cast<double>(parsedValue))) {
+        throw std::runtime_error(std::string("initial_pose.") + key +
+                                 " must be a finite, positive scalar");
+    }
+
+    value = parsedValue;
+}
+
 InitialPoseConfig loadInitialPoseConfigFromYaml(const RobotType robotType) {
     InitialPoseConfig config;
     const std::string configPath = robotConfigPath(robotType);
@@ -44,6 +60,10 @@ InitialPoseConfig loadInitialPoseConfigFromYaml(const RobotType robotType) {
     const YAML::Node initialPose = root["initial_pose"];
     readOffsetVectorIfPresent(initialPose, "leg_joint_offsets", config.legJointOffsets);
     readOffsetVectorIfPresent(initialPose, "arm_joint_offsets", config.armJointOffsets);
+    readPositiveScalarIfPresent(initialPose, "leg_initialization_time",
+                                config.legInitializationTime);
+    readPositiveScalarIfPresent(initialPose, "arm_initialization_time",
+                                config.armInitializationTime);
 
     return config;
 }

@@ -39,6 +39,10 @@ void readVectorIfPresent(const YAML::Node& node, const char* key, std::vector<T>
     }
 }
 
+bool isPositiveFinite(const double value) {
+    return value > 0.0 && std::isfinite(value);
+}
+
 template <typename Derived>
 void fillDiagonal(Eigen::MatrixBase<Derived>& matrix,
                   const YAML::Node& diagonalNode,
@@ -227,6 +231,16 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.initialPose.baseEuler_W =
             readVec3(initialPose["base_rpy_W"], "initial_pose.base_rpy_W");
         params.initialPose.hasBasePose = true;
+    }
+    readScalarIfPresent(initialPose,
+                        "leg_initialization_time",
+                        params.initialPose.legInitializationTime);
+    readScalarIfPresent(initialPose,
+                        "arm_initialization_time",
+                        params.initialPose.armInitializationTime);
+    if (!isPositiveFinite(params.initialPose.legInitializationTime) ||
+        !isPositiveFinite(params.initialPose.armInitializationTime)) {
+        throw std::runtime_error("initial_pose initialization times must be finite and positive");
     }
 
     const YAML::Node leftSwingHoldTest = config["left_swing_hold_test"];

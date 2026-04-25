@@ -386,6 +386,8 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     }
     initialPose["leg_joint_offsets"] = stdVectorToJson(config.initialPose.legJointOffsets);
     initialPose["arm_joint_offsets"] = stdVectorToJson(config.initialPose.armJointOffsets);
+    initialPose["leg_initialization_time"] = config.initialPose.legInitializationTime;
+    initialPose["arm_initialization_time"] = config.initialPose.armInitializationTime;
     root["initial_pose"] = std::move(initialPose);
 
     json leftSwingHoldTest = json::object();

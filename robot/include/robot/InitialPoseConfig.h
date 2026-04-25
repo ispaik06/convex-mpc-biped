@@ -9,6 +9,8 @@
 struct InitialPoseConfig {
     std::vector<double> legJointOffsets{0.0, 0.0, -0.65, 0.80, -0.35};
     std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
+    double legInitializationTime{2.0};
+    double armInitializationTime{1.0};
 };
 
 const InitialPoseConfig& getInitialPoseConfig();

@@ -538,6 +538,14 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
                 readJsonVector(initialPose.at("arm_joint_offsets"),
                                "controller_config.initial_pose.arm_joint_offsets");
         }
+        if (initialPose.contains("leg_initialization_time")) {
+            out.initialPose.legInitializationTime =
+                initialPose.at("leg_initialization_time").get<double>();
+        }
+        if (initialPose.contains("arm_initialization_time")) {
+            out.initialPose.armInitializationTime =
+                initialPose.at("arm_initialization_time").get<double>();
+        }
     }
 
     if (cfg.contains("left_swing_hold_test") && cfg.at("left_swing_hold_test").is_object()) {
