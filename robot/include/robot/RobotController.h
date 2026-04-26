@@ -10,6 +10,11 @@ enum class FootEndEffectorSource {
 	Site,
 };
 
+struct LegDynamicsRequest {
+	bool swingLegDynamics{true};
+	bool standingFootJacobians{false};
+};
+
 class RobotRunner;
 template <typename T>
 class LegController;
@@ -27,6 +32,8 @@ public:
 
 	FootEndEffectorSource footEndEffectorSource() const { return _footEndEffectorSource; }
 	virtual bool usesStandingOnlyLegDynamics() const { return false; }
+	virtual void prepareController() {}
+	virtual LegDynamicsRequest legDynamicsRequest() const { return {}; }
 
 	virtual void initializeController() = 0;
 

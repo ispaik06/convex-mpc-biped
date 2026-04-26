@@ -19,6 +19,8 @@ public:
         : _robot_ctrl(robot_ctrl), _params(nullptr), _model(nullptr) {}
 
     void init(RobotParams<double>*, double, const UserCommand*);
+    void prepareController(const StateEstimate<double>& state);
+    LegDynamicsRequest legDynamicsRequest() const;
     void setupStep(const StateEstimate<double>& state);
     void composeCommand(RobotCommand<double>& command) const;
     void run(const StateEstimate<double>& state, RobotCommand<double>& command);

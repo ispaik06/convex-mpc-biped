@@ -1,11 +1,11 @@
-#ifndef CONTROL_FSM_H
-#define CONTROL_FSM_H
+#ifndef SWING_FOOT_PLANNER_H
+#define SWING_FOOT_PLANNER_H
 
 #include <vector>
 
+#include "GaitScheduler.h"
 #include "HorizonClock.h"
 #include "StateEstimator/StateEstimator.h"
-#include "GaitScheduler.h"
 #include "Utilities/UserCommand.h"
 
 struct DesiredFootPositions {
@@ -13,24 +13,24 @@ struct DesiredFootPositions {
     Vec3<double> right_des_W = Vec3<double>::Zero();
 };
 
-
-class ControlFSM {
+class SwingFootPlanner {
 public:
-    ControlFSM(GaitScheduler* gaitScheduler,
-               HorizonClock* horizonClock,
-               const StateEstimate<double>* stateEstimate,
-               const RobotParams<double>* robotParams,
-               const UserCommand* userCommand)
+    SwingFootPlanner(GaitScheduler* gaitScheduler,
+                     HorizonClock* horizonClock,
+                     const StateEstimate<double>* stateEstimate,
+                     const RobotParams<double>* robotParams,
+                     const UserCommand* userCommand)
         : _gaitScheduler(gaitScheduler),
           _horizonClock(horizonClock),
           _stateEstimate(stateEstimate),
           _robotParams(robotParams),
           _userCommand(userCommand) {}
 
-    void syncHorizonClock();
-    DesiredFootPositions SwingFootDesPos();
+    void reset();
+    DesiredFootPositions desiredFootPositions();
 
 private:
+    void syncHorizonClock();
     void ensureSwingTouchdownCache();
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex) const;
     Vec3<double> touchdownTargetWorldLegacy(std::size_t legIndex) const;
@@ -45,4 +45,4 @@ private:
     std::vector<bool> _wasInStance;
 };
 
-#endif  // CONTROL_FSM_H
+#endif  // SWING_FOOT_PLANNER_H

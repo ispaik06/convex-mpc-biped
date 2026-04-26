@@ -44,6 +44,10 @@ logging:
   gait_status_interval: 50
   standing_mpc_debug_trigger_times: []
 
+startup:
+  # If locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
+  post_init_standing_settle_time: 10.0
+
 joint_tracking:
   leg:
     # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]

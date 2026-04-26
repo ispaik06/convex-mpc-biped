@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 
 #include <Eigen/Geometry>
@@ -59,6 +61,23 @@ Quat<double> rollPitchYawToQuaternion(const Vec3<double>& euler_W) {
     Quat<double> quat = q_yaw * q_pitch * q_roll;
     quat.normalize();
     return quat;
+}
+
+const char* locomotionModeName(const LocomotionMode mode) {
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking";
+        case LocomotionMode::Standing:
+            return "standing";
+    }
+
+    return "unknown";
+}
+
+std::string formatTimeSeconds(const double time) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2) << time;
+    return out.str();
 }
 
 Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
@@ -129,7 +148,7 @@ Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
 MyController::MyController() = default;
 
 bool MyController::usesStandingOnlyLegDynamics() const {
-    return getControllerConfig().locomotionMode == LocomotionMode::Standing;
+    return false;
 }
 
 Mat3<double> MyController::makeDiagonal(const double x, const double y, const double z) {
@@ -158,18 +177,22 @@ void MyController::initializeRuntimeObjects() {
 
     _horizonClock = std::make_unique<HorizonClock>(_stateEstimate->time);
     _gaitScheduler = std::make_unique<GaitScheduler>(_horizonClock.get());
-    _controlFSM = std::make_unique<ControlFSM>(
+    _swingFootPlanner = std::make_unique<SwingFootPlanner>(
         _gaitScheduler.get(), _horizonClock.get(), _stateEstimate, _robotParams, _userCommand);
     _mpcFormulation = std::make_unique<MPCFormulation>(_robotParams);
     _convexMPC = std::make_unique<ConvexMPC>();
 
     const auto& config = getControllerConfig();
+    _locomotionFSM = std::make_unique<LocomotionFSM>(
+        config.locomotionMode, config.startup.postInitStandingSettleTime, _stateEstimate->time);
     setFootEndEffectorSource(config.swing.footEndEffectorSource);
     _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
     _swingHeight = config.swing.height;
     _iterationsBetweenMpc = static_cast<u64>(std::max(config.mpc.iterationsBetweenSolve, 1));
-    _locomotionMode = config.locomotionMode;
+    const LocomotionFSMOutput locomotionOutput = _locomotionFSM->output();
+    _locomotionMode = locomotionOutput.mode;
+    _legDynamicsRequest = locomotionOutput.dynamicsRequest;
     _gaitScheduler->setLocomotionMode(_locomotionMode);
 
     _legRuntime.assign(_robotParams->legs.size(), LegRuntimeState{});
@@ -193,6 +216,36 @@ void MyController::initializeRuntimeObjects() {
     _initialized = true;
 }
 
+void MyController::prepareController() {
+    if (!_initialized) {
+        return;
+    }
+
+    if (_stateEstimate == nullptr || _locomotionFSM == nullptr) {
+        throw std::runtime_error("MyController::prepareController requires initialized runtime");
+    }
+
+    syncLocomotionFSM();
+}
+
+LegDynamicsRequest MyController::legDynamicsRequest() const {
+    if (_initialized) {
+        return _legDynamicsRequest;
+    }
+
+    const auto& config = getControllerConfig();
+    LegDynamicsRequest request;
+    if (config.locomotionMode == LocomotionMode::Walking &&
+        config.startup.postInitStandingSettleTime <= 0.0) {
+        request.swingLegDynamics = true;
+        request.standingFootJacobians = false;
+    } else {
+        request.swingLegDynamics = false;
+        request.standingFootJacobians = true;
+    }
+    return request;
+}
+
 int MyController::findLegIndex(const Side side) const {
     if (_robotParams == nullptr) {
         throw std::runtime_error("MyController::findLegIndex requires robot params");
@@ -205,6 +258,67 @@ int MyController::findLegIndex(const Side side) const {
     }
 
     throw std::runtime_error("MyController could not find requested leg side");
+}
+
+void MyController::seedBodyTargetFromCurrentState() {
+    if (_stateEstimate == nullptr || _robotParams == nullptr) {
+        throw std::runtime_error("MyController::seedBodyTargetFromCurrentState requires state and params");
+    }
+
+    const Vec2<double> rollPitch = quaternionToRollPitch(_stateEstimate->torsoQuat_W);
+    _bodyTarget.position_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
+    _bodyTarget.euler_W << rollPitch[0], rollPitch[1], _stateEstimate->psi;
+    _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
+    _bodyTarget.initialized = true;
+}
+
+void MyController::resetSwingState() {
+    if (_stateEstimate == nullptr || _gaitScheduler == nullptr || _robotParams == nullptr) {
+        throw std::runtime_error("MyController::resetSwingState requires initialized runtime");
+    }
+
+    for (std::size_t leg = 0; leg < _legRuntime.size(); ++leg) {
+        _legRuntime[leg].swingTrajectory.deactivate();
+        _legRuntime[leg].wasInStance =
+            _gaitScheduler->c(_robotParams->legs[leg].side, _stateEstimate->time);
+    }
+
+    if (_swingFootPlanner != nullptr) {
+        _swingFootPlanner->reset();
+    }
+    _lastControlTime = _stateEstimate->time;
+}
+
+void MyController::applyLocomotionOutput(const LocomotionFSMOutput& output) {
+    if (_gaitScheduler == nullptr || _horizonClock == nullptr || _stateEstimate == nullptr) {
+        throw std::runtime_error("MyController::applyLocomotionOutput requires initialized runtime");
+    }
+
+    _locomotionMode = output.mode;
+    _legDynamicsRequest = output.dynamicsRequest;
+    _gaitScheduler->setLocomotionMode(_locomotionMode);
+
+    if (output.resetGaitClock) {
+        _horizonClock->reset(_stateEstimate->time);
+    }
+    if (output.resetSwingState) {
+        resetSwingState();
+    }
+    if (output.justTransitioned) {
+        seedBodyTargetFromCurrentState();
+        std::cout << "[LocomotionFSM] switched to " << locomotionModeName(output.mode)
+                  << " at t=" << formatTimeSeconds(_stateEstimate->time) << std::endl;
+    }
+}
+
+LocomotionFSMOutput MyController::syncLocomotionFSM() {
+    if (_locomotionFSM == nullptr || _stateEstimate == nullptr) {
+        throw std::runtime_error("MyController::syncLocomotionFSM requires initialized runtime");
+    }
+
+    const LocomotionFSMOutput output = _locomotionFSM->update(_stateEstimate->time);
+    applyLocomotionOutput(output);
+    return output;
 }
 
 Vec13<double> MyController::buildCurrentMpcState() const {
@@ -639,10 +753,12 @@ void MyController::runController() {
         initializeController();
     }
 
-    if (_stateEstimate == nullptr || _horizonClock == nullptr || _controlFSM == nullptr) {
+    if (_stateEstimate == nullptr || _horizonClock == nullptr || _locomotionFSM == nullptr ||
+        _swingFootPlanner == nullptr) {
         throw std::runtime_error("MyController::runController requires initialized runtime");
     }
 
+    syncLocomotionFSM();
     _horizonClock->sync(_stateEstimate->time);
     // maybePrintGaitScheduler();
 
@@ -658,7 +774,7 @@ void MyController::runController() {
         (_locomotionMode == LocomotionMode::Standing)
             ? DesiredFootPositions{standingFootTarget(Side::Left),
                                    standingFootTarget(Side::Right)}
-            : _controlFSM->SwingFootDesPos();
+            : _swingFootPlanner->desiredFootPositions();
 
     updateSwingTrajectories(desiredFootPositions);
     updateStandingMpcDebugRequest();

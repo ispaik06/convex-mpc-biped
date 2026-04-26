@@ -16,8 +16,9 @@ using mjModel = mjModel_;
 using mjData = mjData_;
 
 enum class LegSwingDynamicsProviderMode {
-    Full,         // per-leg kinematics, Jacobians, and leg dynamics
+    Full,          // per-leg kinematics, Jacobians, and leg dynamics
     StandingOnly,  // combined standing-foot Jacobians only
+    Lazy,          // instantiate and compute only the requested dynamics
 };
 
 class LegSwingDynamicsProvider {
@@ -33,6 +34,7 @@ public:
     LegSwingDynamicsProvider& operator=(const LegSwingDynamicsProvider&) = delete;
 
     void update(StateEstimate<double>& stateEstimate);
+    void update(StateEstimate<double>& stateEstimate, const LegDynamicsRequest& request);
 
 private:
     struct AuxiliaryLegModel {
@@ -68,8 +70,18 @@ private:
     static std::string robotXmlPath(RobotType robotType);
     static void destroy(AuxiliaryLegModel& auxModel);
     static void destroy(StandingAuxiliaryModel& auxModel);
+    void ensureAuxiliaryLegModels();
+    void ensureStandingAuxiliaryModel();
+    void updateSwingLegDynamics(StateEstimate<double>& stateEstimate);
+    void updateStandingFootJacobians(StateEstimate<double>& stateEstimate);
 
     LegSwingDynamicsProviderMode _mode{LegSwingDynamicsProviderMode::Full};
+    RobotType _robotType{RobotType::MIT_HUMANOID};
+    const mjModel* _fullModel{nullptr};
+    const RobotParams<double>* _params{nullptr};
+    const MujocoRobotBindings* _bindings{nullptr};
+    std::string _xmlPath;
+    std::string _floatingJointName;
     std::vector<AuxiliaryLegModel> _auxiliaryLegModels;
     StandingAuxiliaryModel _standingAuxiliaryModel;
 };

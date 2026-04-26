@@ -1,21 +1,28 @@
-#include "ControlFSM.h"
+#include "SwingFootPlanner.h"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 #include "Utilities/MatrixUtils.h"
 
-void ControlFSM::syncHorizonClock() {
+void SwingFootPlanner::reset() {
+    _bodyVelocityHalfStanceTouchdownTargets.clear();
+    _bodyVelocityHalfStanceTouchdownTargetValid.clear();
+    _wasInStance.clear();
+}
+
+void SwingFootPlanner::syncHorizonClock() {
     if (_horizonClock == nullptr || _stateEstimate == nullptr) {
-        throw std::runtime_error("ControlFSM::syncHorizonClock requires initialized pointers");
+        throw std::runtime_error("SwingFootPlanner::syncHorizonClock requires initialized pointers");
     }
 
     _horizonClock->sync(_stateEstimate->time);
 }
 
-void ControlFSM::ensureSwingTouchdownCache() {
+void SwingFootPlanner::ensureSwingTouchdownCache() {
     if (_robotParams == nullptr) {
-        throw std::runtime_error("ControlFSM::ensureSwingTouchdownCache requires robot params");
+        throw std::runtime_error("SwingFootPlanner::ensureSwingTouchdownCache requires robot params");
     }
 
     const std::size_t legCount = _robotParams->legs.size();
@@ -30,7 +37,7 @@ void ControlFSM::ensureSwingTouchdownCache() {
     _wasInStance.assign(legCount, true);
 }
 
-Vec3<double> ControlFSM::touchdownTargetWorldBodyVelocityHalfStance(
+Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex) const {
     const Vec3<double> p_init_W = _stateEstimate->legs[legIndex].footPos_W;
     const Vec3<double> v_body_cmd(
@@ -42,7 +49,7 @@ Vec3<double> ControlFSM::touchdownTargetWorldBodyVelocityHalfStance(
     return target;
 }
 
-Vec3<double> ControlFSM::touchdownTargetWorldLegacy(const std::size_t legIndex) const {
+Vec3<double> SwingFootPlanner::touchdownTargetWorldLegacy(const std::size_t legIndex) const {
     const auto& footPlacement = getControllerConfig().footPlacement;
     const auto& model = getControllerConfig().model;
 
@@ -65,13 +72,7 @@ Vec3<double> ControlFSM::touchdownTargetWorldLegacy(const std::size_t legIndex) 
     const double phase = _gaitScheduler->p(_robotParams->legs[legIndex].side, time);
     const double T_rem = std::max(cycleTime() * (1.0 - phase), 0.0);
 
-    const Vec3<double> hipWorld =
-        _stateEstimate->torsoPos_W +
-        _stateEstimate->torsoQuat_W.toRotationMatrix() *
-            _robotParams->legs[legIndex].hipLocationFromBody;
-    Vec3<double> p_nom_B(-0.002851214,  0.072812741, -0.752981881);
-    // p_nom_B[1] += (_robotParams->legs[legIndex].side == Side::Left ? 1.0 : -1.0) *
-    //               footPlacement.nominalLateralOffset;
+    Vec3<double> p_nom_B(-0.002851214, 0.072812741, -0.752981881);
 
     const double yaw_correction = psi_dot * stanceTime() / 2.0;
     const Mat3<double> R_yaw_correction = Rz(yaw_correction);
@@ -95,10 +96,10 @@ Vec3<double> ControlFSM::touchdownTargetWorldLegacy(const std::size_t legIndex) 
     return target;
 }
 
-DesiredFootPositions ControlFSM::SwingFootDesPos() {
+DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
     if (_gaitScheduler == nullptr || _horizonClock == nullptr || _stateEstimate == nullptr ||
         _robotParams == nullptr) {
-        throw std::runtime_error("ControlFSM::SwingFootDesPos requires initialized pointers");
+        throw std::runtime_error("SwingFootPlanner::desiredFootPositions requires initialized pointers");
     }
 
     syncHorizonClock();
@@ -116,7 +117,7 @@ DesiredFootPositions ControlFSM::SwingFootDesPos() {
             }
         }
         if (legIndex < 0) {
-            throw std::runtime_error("ControlFSM::SwingFootDesPos could not find requested leg");
+            throw std::runtime_error("SwingFootPlanner could not find requested leg");
         }
 
         const bool isStance = _gaitScheduler->c(side, time);

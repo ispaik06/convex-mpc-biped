@@ -216,6 +216,16 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     std::sort(params.logging.standingMpcDebugTriggerTimes.begin(),
               params.logging.standingMpcDebugTriggerTimes.end());
 
+    const YAML::Node startup = config["startup"];
+    readScalarIfPresent(startup,
+                        "post_init_standing_settle_time",
+                        params.startup.postInitStandingSettleTime);
+    if (startup && !startup["post_init_standing_settle_time"]) {
+        readScalarIfPresent(startup,
+                            "standing_settle_time",
+                            params.startup.postInitStandingSettleTime);
+    }
+
     const YAML::Node initialPose = config["initial_pose"];
     readVectorIfPresent(initialPose, "leg_joint_offsets", params.initialPose.legJointOffsets);
     readVectorIfPresent(initialPose, "arm_joint_offsets", params.initialPose.armJointOffsets);
@@ -241,6 +251,11 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     if (!isPositiveFinite(params.initialPose.legInitializationTime) ||
         !isPositiveFinite(params.initialPose.armInitializationTime)) {
         throw std::runtime_error("initial_pose initialization times must be finite and positive");
+    }
+    if (params.startup.postInitStandingSettleTime < 0.0 ||
+        !std::isfinite(params.startup.postInitStandingSettleTime)) {
+        throw std::runtime_error(
+            "startup.post_init_standing_settle_time must be finite and non-negative");
     }
 
     const YAML::Node leftSwingHoldTest = config["left_swing_hold_test"];

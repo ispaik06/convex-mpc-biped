@@ -6,12 +6,13 @@
 #include <vector>
 
 #include "Controllers/ControlGains.h"
-#include "ControlFSM.h"
 #include "ConvexMPC.h"
 #include "GaitScheduler.h"
 #include "HorizonClock.h"
+#include "LocomotionFSM.h"
 #include "MPCFormulation.h"
 #include "RobotController.h"
+#include "SwingFootPlanner.h"
 #include "SwingFootTrajectory.h"
 
 class MyController : public RobotController {
@@ -22,6 +23,8 @@ public:
 	virtual ~MyController() {}
 
 	virtual void initializeController() override;
+	virtual void prepareController() override;
+	virtual LegDynamicsRequest legDynamicsRequest() const override;
 
 	virtual void runController() override;
 	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const override;
@@ -49,6 +52,10 @@ private:
 	void initializeRuntimeObjects();
 	int findLegIndex(Side side) const;
 	Vec13<double> buildCurrentMpcState() const;
+	void seedBodyTargetFromCurrentState();
+	void resetSwingState();
+	void applyLocomotionOutput(const LocomotionFSMOutput& output);
+	LocomotionFSMOutput syncLocomotionFSM();
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
 	void maybeUpdateMpc(const Vec13<double>& x0,
@@ -78,7 +85,8 @@ private:
 	vectorAligned<LegRuntimeState> _legRuntime;
 	std::unique_ptr<HorizonClock> _horizonClock;
 	std::unique_ptr<GaitScheduler> _gaitScheduler;
-	std::unique_ptr<ControlFSM> _controlFSM;
+	std::unique_ptr<LocomotionFSM> _locomotionFSM;
+	std::unique_ptr<SwingFootPlanner> _swingFootPlanner;
 	std::unique_ptr<MPCFormulation> _mpcFormulation;
 	std::unique_ptr<ConvexMPC> _convexMPC;
 	ReferenceTrajectoryOutput _referenceTrajectoryOutput;
@@ -88,6 +96,7 @@ private:
 	double _swingHeight{0.0};
 	u64 _iterationsBetweenMpc{10};
 	LocomotionMode _locomotionMode{LocomotionMode::Walking};
+	LegDynamicsRequest _legDynamicsRequest;
 	BodyTargetState _bodyTarget;
 
 };

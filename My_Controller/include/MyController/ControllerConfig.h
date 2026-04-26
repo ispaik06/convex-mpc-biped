@@ -74,6 +74,10 @@ struct LoggingParameters {
     std::vector<double> standingMpcDebugTriggerTimes;
 };
 
+struct StartupParameters {
+    double postInitStandingSettleTime{2.0};
+};
+
 struct InitialPoseParameters {
     std::vector<double> legJointOffsets{0.0, 0.0, -0.65, 0.80, -0.35};
     std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
@@ -97,6 +101,7 @@ struct ControllerConfig {
     SwingParameters swing;
     FootPlacementParameters footPlacement;
     LoggingParameters logging;
+    StartupParameters startup;
     InitialPoseParameters initialPose;
     LeftSwingHoldTestParameters leftSwingHoldTest;
 };

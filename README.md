@@ -14,7 +14,7 @@ flowchart TD
     F --> G["sim/LegSwingDynamicsProvider"]
     G --> H["robot/RobotRunner"]
     H --> I["My_Controller/MyController"]
-    I --> J["ControlFSM"]
+    I --> J["LocomotionFSM / SwingFootPlanner"]
     I --> K["ReferenceTrajectory"]
     I --> L["MPCFormulation"]
     I --> M["ConvexMPC (OSQP)"]

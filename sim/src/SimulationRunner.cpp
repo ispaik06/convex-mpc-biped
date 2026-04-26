@@ -125,13 +125,9 @@ void SimulationRunner::runRobotControl() {
 		_bindings = robotSetup.bindings;
 		_cheaterState.resize(_params);
 		_stateEstimate.resize(_params);
-		const auto dynamicsMode =
-			(_robotRunner != nullptr && _robotRunner->_robot_ctrl != nullptr &&
-			 _robotRunner->_robot_ctrl->usesStandingOnlyLegDynamics())
-				? LegSwingDynamicsProviderMode::StandingOnly
-				: LegSwingDynamicsProviderMode::Full;
 		_legSwingDynamicsProvider =
-			std::make_unique<LegSwingDynamicsProvider>(_robot, model, _params, _bindings, dynamicsMode);
+			std::make_unique<LegSwingDynamicsProvider>(
+				_robot, model, _params, _bindings, LegSwingDynamicsProviderMode::Lazy);
 		_robotRunner->init(&_params, model->opt.timestep, &_userCommand);
 		_firstControllerRun = false;
 
@@ -142,11 +138,11 @@ void SimulationRunner::runRobotControl() {
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
-	if (_legSwingDynamicsProvider) {
-		_legSwingDynamicsProvider->update(_stateEstimate);
-	}
 	_userCommand = _keyboardCommand.getUserCommand();
-		// if ((_iterations % 50) == 0) {
+	_robotRunner->prepareController(_stateEstimate);
+	_legSwingDynamicsProvider->update(_stateEstimate, _robotRunner->legDynamicsRequest());
+
+	// if ((_iterations % 50) == 0) {
 		// 	std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
 		// 			  << "  y_dot: " << _userCommand.y_dot
 		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';

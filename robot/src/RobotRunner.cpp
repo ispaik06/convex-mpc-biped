@@ -1,5 +1,7 @@
 #include <stdexcept>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 #include "RobotRunner.h"
 #include "InitialPoseConfig.h"
@@ -10,6 +12,12 @@ namespace {
 Vec3<double> reducedBodyComWorld(const StateEstimate<double>& state,
                                  const RobotParams<double>& params) {
     return state.torsoPos_W + Rz(state.psi) * params.bodyComLocation;
+}
+
+std::string formatTimeSeconds(const double time) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2) << time;
+    return out.str();
 }
 
 void applyConfiguredJointTrackingGains(const char* limbName,
@@ -61,6 +69,24 @@ void RobotRunner::init(RobotParams<double>* params, double timestep, const UserC
     initializeJointTrackingGains();
 }
 
+void RobotRunner::prepareController(const StateEstimate<double>& state) {
+    if (_robot_ctrl == nullptr) {
+        throw std::runtime_error("RobotRunner requires a RobotController");
+    }
+
+    _robot_ctrl->_stateEstimate = &state;
+    if (_legInitializationComplete) {
+        _robot_ctrl->prepareController();
+    }
+}
+
+LegDynamicsRequest RobotRunner::legDynamicsRequest() const {
+    if (_robot_ctrl == nullptr) {
+        return {};
+    }
+    return _robot_ctrl->legDynamicsRequest();
+}
+
 void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& command) {
     if (!_legController) {
         throw std::runtime_error("RobotRunner::init must be called before run");
@@ -75,8 +101,13 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
         _armJointTrackingGains.applyTo(armCommand);
     }
 
+    const bool wasLegInitializationComplete = _legInitializationComplete;
     const bool legPosInitialized = _legPosInitializer->IsInitialized(_legController.get());
     _legInitializationComplete = legPosInitialized;
+    if (!wasLegInitializationComplete && _legInitializationComplete) {
+        std::cout << "[RobotRunner] PD leg initializer complete at t="
+                  << formatTimeSeconds(state.time) << std::endl;
+    }
 
     if(!legPosInitialized) {
         // Initial pose control

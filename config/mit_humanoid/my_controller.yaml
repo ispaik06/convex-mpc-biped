@@ -1,4 +1,4 @@
-locomotion_mode: standing  # walking or standing
+locomotion_mode: walking  # walking or standing
 
 timing:
   cycle: 1.0
@@ -44,6 +44,10 @@ foot_placement:
 logging:
   gait_status_interval: 50
   standing_mpc_debug_trigger_times: []
+
+startup:
+  # If locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
+  post_init_standing_settle_time: 3.0
 
 joint_tracking:
   leg:

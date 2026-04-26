@@ -379,6 +379,10 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
         stdVectorToJson(config.logging.standingMpcDebugTriggerTimes);
     root["logging"] = std::move(logging);
 
+    json startup = json::object();
+    startup["post_init_standing_settle_time"] = config.startup.postInitStandingSettleTime;
+    root["startup"] = std::move(startup);
+
     json initialPose = json::object();
     if (config.initialPose.hasBasePose) {
         initialPose["base_position_W"] = vectorToJson(config.initialPose.basePosition_W);

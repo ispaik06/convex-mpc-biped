@@ -2,8 +2,8 @@
 #define REFERENCE_TRAJECTORY_H
 
 #include "ControllerConfig.h"
-#include "ControlFSM.h"
 #include "HorizonClock.h"
+#include "SwingFootPlanner.h"
 #include "Utilities/UserCommand.h"
 #include "cppTypes.h"
 

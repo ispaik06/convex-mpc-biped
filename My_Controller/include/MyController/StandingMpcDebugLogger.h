@@ -5,7 +5,6 @@
 
 #include "Controllers/ArmController.h"
 #include "Controllers/LegController.h"
-#include "ControlFSM.h"
 #include "MPCFormulation.h"
 #include "ReferenceTrajectory.h"
 #include "StateEstimator/StateEstimator.h"

@@ -2,7 +2,8 @@ add_library(My_Controller
 	src/My_Controller.cpp
 	src/ControllerConfig.cpp
 	src/GaitScheduler.cpp
-	src/ControlFSM.cpp
+	src/LocomotionFSM.cpp
+	src/SwingFootPlanner.cpp
 	src/ReferenceTrajectory.cpp
 	src/SwingFootTrajectory.cpp
 	src/MPCFormulation.cpp
