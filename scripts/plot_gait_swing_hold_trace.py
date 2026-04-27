@@ -9,12 +9,12 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Plot left swing/hold trace CSV")
+    parser = argparse.ArgumentParser(description="Plot gait swing/hold trace CSV")
     parser.add_argument(
         "--csv",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "build" / "left_swing_hold_trace.csv",
-        help="Path to the trace CSV written by main_left_swing_hold_test",
+        default=Path(__file__).resolve().parents[1] / "build" / "gait_swing_hold_trace.csv",
+        help="Path to the trace CSV written by main_gait_swing_hold_test",
     )
     parser.add_argument(
         "--watch",

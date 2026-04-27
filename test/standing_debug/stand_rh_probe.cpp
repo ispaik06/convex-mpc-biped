@@ -408,46 +408,62 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.mpc.contactWrenchModel =
                 contactWrenchModelFromString(mpc.at("contact_wrench_model").get<std::string>());
         }
-        if (mpc.contains("state_weight_diag")) {
-            const std::vector<double> diag =
-                readJsonVector(mpc.at("state_weight_diag"), "controller_config.mpc.state_weight_diag");
-            if (diag.size() != 13) {
-                throw std::runtime_error("controller_config.mpc.state_weight_diag must have size 13");
+
+        auto readModeWeights = [&](const json& modeNode,
+                                   StateWeightMat& stateWeight,
+                                   InputWeightMat& inputWeight,
+                                   const std::string& modeName) {
+            if (!modeNode.is_object()) {
+                return false;
             }
-            out.mpc.stateWeight.setZero();
-            for (int i = 0; i < 13; ++i) {
-                out.mpc.stateWeight(i, i) = diag[static_cast<std::size_t>(i)];
+            if (modeNode.contains("state_weight_diag")) {
+                const std::vector<double> diag = readJsonVector(
+                    modeNode.at("state_weight_diag"),
+                    "controller_config.mpc." + modeName + ".state_weight_diag");
+                if (diag.size() != 13) {
+                    throw std::runtime_error("controller_config.mpc." + modeName +
+                                             ".state_weight_diag must have size 13");
+                }
+                stateWeight.setZero();
+                for (int i = 0; i < 13; ++i) {
+                    stateWeight(i, i) = diag[static_cast<std::size_t>(i)];
+                }
             }
-        } else if (mpc.contains("state_weight")) {
-            const DMat<double> stateWeight =
-                readJsonMatrix(mpc.at("state_weight"), "controller_config.mpc.state_weight");
-            if (stateWeight.rows() != 13 || stateWeight.cols() != 13) {
-                throw std::runtime_error("controller_config.mpc.state_weight must be 13x13");
+            if (modeNode.contains("input_weight_diag")) {
+                const std::vector<double> diag = readJsonVector(
+                    modeNode.at("input_weight_diag"),
+                    "controller_config.mpc." + modeName + ".input_weight_diag");
+                if (diag.size() != 12) {
+                    throw std::runtime_error("controller_config.mpc." + modeName +
+                                             ".input_weight_diag must have size 12");
+                }
+                inputWeight.setZero();
+                for (int i = 0; i < 12; ++i) {
+                    inputWeight(i, i) = diag[static_cast<std::size_t>(i)];
+                }
             }
-            out.mpc.stateWeight.setZero();
-            for (int i = 0; i < 13; ++i) {
-                out.mpc.stateWeight(i, i) = stateWeight(i, i);
-            }
-        }
-        if (mpc.contains("input_weight_diag")) {
-            const std::vector<double> diag =
-                readJsonVector(mpc.at("input_weight_diag"), "controller_config.mpc.input_weight_diag");
-            if (diag.size() != 12) {
-                throw std::runtime_error("controller_config.mpc.input_weight_diag must have size 12");
-            }
-            out.mpc.inputWeight.setZero();
-            for (int i = 0; i < 12; ++i) {
-                out.mpc.inputWeight(i, i) = diag[static_cast<std::size_t>(i)];
-            }
-        } else if (mpc.contains("input_weight")) {
-            const DMat<double> inputWeight =
-                readJsonMatrix(mpc.at("input_weight"), "controller_config.mpc.input_weight");
-            if (inputWeight.rows() != 12 || inputWeight.cols() != 12) {
-                throw std::runtime_error("controller_config.mpc.input_weight must be 12x12");
-            }
-            out.mpc.inputWeight.setZero();
-            for (int i = 0; i < 12; ++i) {
-                out.mpc.inputWeight(i, i) = inputWeight(i, i);
+            return true;
+        };
+
+        const bool hasWalking = mpc.contains("walking") &&
+                                readModeWeights(mpc.at("walking"),
+                                                out.mpc.walkingStateWeight,
+                                                out.mpc.walkingInputWeight,
+                                                "walking");
+        const bool hasStanding = mpc.contains("standing") &&
+                                 readModeWeights(mpc.at("standing"),
+                                                 out.mpc.standingStateWeight,
+                                                 out.mpc.standingInputWeight,
+                                                 "standing");
+
+        if (!hasWalking && !hasStanding) {
+            if (mpc.contains("state_weight_diag") || mpc.contains("input_weight_diag")) {
+                readModeWeights(mpc,
+                                out.mpc.walkingStateWeight,
+                                out.mpc.walkingInputWeight,
+                                "walking");
+                out.mpc.standingStateWeight = out.mpc.walkingStateWeight;
+                out.mpc.standingInputWeight = out.mpc.walkingInputWeight;
             }
         }
     }
@@ -467,6 +483,22 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         }
         if (swing.contains("min_remaining_time")) {
             out.swing.minRemainingTime = swing.at("min_remaining_time").get<double>();
+        }
+        if (swing.contains("body_velocity_half_stance_offset")) {
+            out.swing.bodyVelocityHalfStanceOffset =
+                swing.at("body_velocity_half_stance_offset").get<double>();
+        }
+        if (swing.contains("pitch_kp")) {
+            out.swing.pitchKp = swing.at("pitch_kp").get<double>();
+        }
+        if (swing.contains("pitch_kd")) {
+            out.swing.pitchKd = swing.at("pitch_kd").get<double>();
+        }
+        if (swing.contains("yaw_kp")) {
+            out.swing.yawKp = swing.at("yaw_kp").get<double>();
+        }
+        if (swing.contains("yaw_kd")) {
+            out.swing.yawKd = swing.at("yaw_kd").get<double>();
         }
         if (swing.contains("touchdown_target_mode") &&
             swing.at("touchdown_target_mode").is_string()) {
@@ -548,13 +580,13 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         }
     }
 
-    if (cfg.contains("left_swing_hold_test") && cfg.at("left_swing_hold_test").is_object()) {
-        const json& leftSwingHoldTest = cfg.at("left_swing_hold_test");
-        if (leftSwingHoldTest.contains("touchdown_target_mode") &&
-            leftSwingHoldTest.at("touchdown_target_mode").is_string()) {
-            out.leftSwingHoldTest.touchdownTargetMode =
+    if (cfg.contains("gait_swing_hold_test") && cfg.at("gait_swing_hold_test").is_object()) {
+        const json& gaitSwingHoldTest = cfg.at("gait_swing_hold_test");
+        if (gaitSwingHoldTest.contains("touchdown_target_mode") &&
+            gaitSwingHoldTest.at("touchdown_target_mode").is_string()) {
+            out.gaitSwingHoldTest.touchdownTargetMode =
                 touchdownTargetModeFromString(
-                    leftSwingHoldTest.at("touchdown_target_mode").get<std::string>());
+                    gaitSwingHoldTest.at("touchdown_target_mode").get<std::string>());
         }
     }
 
@@ -658,13 +690,13 @@ double maxAbsDeltaFirstBlock(const DVec<double>& horizon, const Vec12<double>& f
     return maxDelta;
 }
 
-double weightedHorizonErrorNorm(const DVec<double>& horizonError) {
+double weightedHorizonErrorNorm(const DVec<double>& horizonError,
+                                const StateWeightMat& weight) {
     const int steps = horizonSteps();
     if (horizonError.size() != kStateDim * steps) {
         throw std::runtime_error("weightedHorizonErrorNorm received unexpected dimension");
     }
 
-    const StateWeightMat& weight = getControllerConfig().mpc.stateWeight;
     double sum = 0.0;
     for (int k = 0; k < steps; ++k) {
         const Vec13<double> error = horizonError.segment<kStateDim>(k * kStateDim);
@@ -674,13 +706,12 @@ double weightedHorizonErrorNorm(const DVec<double>& horizonError) {
     return std::sqrt(sum);
 }
 
-double weightedInputNorm(const DVec<double>& wrenchHorizon) {
+double weightedInputNorm(const DVec<double>& wrenchHorizon, const InputWeightMat& weight) {
     const int steps = horizonSteps();
     if (wrenchHorizon.size() != kInputDim * steps) {
         throw std::runtime_error("weightedInputNorm received unexpected dimension");
     }
 
-    const InputWeightMat& weight = getControllerConfig().mpc.inputWeight;
     double sum = 0.0;
     for (int k = 0; k < steps; ++k) {
         const Vec12<double> wrench = wrenchHorizon.segment<kInputDim>(k * kInputDim);
@@ -822,6 +853,7 @@ RolloutRow makeRowSkeleton(const int step,
 
 RolloutResult runRollout(const json& log, const int rolloutSteps) {
     const json metadata = log.value("metadata", json::object());
+    const ControllerConfig& config = getControllerConfig();
 
     RolloutResult result;
     result.fixedReference = fixedReferenceFromLog(log);
@@ -835,7 +867,7 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     RobotParams<double> robotParams = robotParamsFromLog(log);
     HorizonClock horizonClock(result.sourceClockT0);
     GaitScheduler gaitScheduler(&horizonClock);
-    gaitScheduler.setLocomotionMode(LocomotionMode::Standing);
+    gaitScheduler.setLocomotionMode(config.locomotionMode);
     gaitScheduler.setFootLocalXAxesWorld(result.leftFootXAxis_W, result.rightFootXAxis_W);
     MPCFormulation formulation(&robotParams);
     MPCFormulationOutput formulationOutput;
@@ -870,7 +902,7 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
         try {
             gaitScheduler.buildConstraintMatrices();
             formulation.build(referenceOutput, formulationOutput);
-            mpc.updateInput(gaitScheduler, formulationOutput, referenceOutput, state);
+            mpc.updateInput(gaitScheduler, formulationOutput, referenceOutput, state, config.locomotionMode);
             mpc.solve();
         } catch (const std::exception& exception) {
             row.solveOk = false;
@@ -887,9 +919,17 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
         row.solveOk = true;
         row.nextState = predictedHorizon.segment<kStateDim>(0);
         row.firstWrench = wrenchHorizon.segment<kInputDim>(0);
-        row.weightedHorizonErrorNorm = weightedHorizonErrorNorm(horizonError);
+        row.weightedHorizonErrorNorm =
+            weightedHorizonErrorNorm(horizonError,
+                                     config.locomotionMode == LocomotionMode::Standing
+                                         ? config.mpc.standingStateWeight
+                                         : config.mpc.walkingStateWeight);
         row.inputNorm = wrenchHorizon.norm();
-        row.weightedInputNorm = weightedInputNorm(wrenchHorizon);
+        row.weightedInputNorm =
+            weightedInputNorm(wrenchHorizon,
+                              config.locomotionMode == LocomotionMode::Standing
+                                  ? config.mpc.standingInputWeight
+                                  : config.mpc.walkingInputWeight);
 
         if (step == 0) {
             if (loggedWrenchHorizon.has_value()) {

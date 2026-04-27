@@ -146,21 +146,19 @@ Keyboard commands:
 - `q / e`: yaw rate
 - `space`: clear the command
 
-Left swing hold tests:
+Gait swing hold tests:
 
 ```bash
-./build/test/leftswinghold/main_left_swing_hold_test m y
-./build/test/leftswinghold/main_left_swing_hold_test m n
-./build/test/leftswinghold_nominal/main_left_swing_hold_nominal_test m
+./build/test/gait_swing_hold/main_gait_swing_hold_test m y
+./build/test/gait_swing_hold/main_gait_swing_hold_test m n
 ```
 
-The first test family isolates left swing/hold behavior. The nominal probe compares the initializer output against the legacy touchdown nominal. The standing debug tools are documented in `test/standing_debug/README.md`.
+The first test family isolates gait-scheduled swing/hold behavior for both legs. The standing debug tools are documented in `test/standing_debug/README.md`.
 
 ## Test Utilities
 
-- `test/leftswinghold/`: manual left swing/hold experiments.
-- `test/leftswinghold_keyboard/`: keyboard-driven left swing/hold experiments.
-- `test/leftswinghold_nominal/`: compares initializer output with the legacy touchdown nominal.
+- `test/gait_swing_hold/`: manual gait swing/hold experiments.
+- `test/gait_swing_hold_keyboard/`: keyboard-driven gait swing/hold experiments.
 - `test/standing_debug/`: standing MPC log replay, contact probes, and receding-horizon probes.
 - `test/SwingTrajectory/`: MATLAB trajectory prototype files.
 

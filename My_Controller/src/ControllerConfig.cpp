@@ -61,6 +61,26 @@ void fillDiagonal(Eigen::MatrixBase<Derived>& matrix,
     }
 }
 
+void readModeWeights(const YAML::Node& node,
+                     const char* modeName,
+                     StateWeightMat& stateWeight,
+                     InputWeightMat& inputWeight) {
+    if (!node || !node.IsMap()) {
+        throw std::runtime_error(std::string("Missing controller_config.mpc.") + modeName);
+    }
+
+    if (node["state_weight_diag"]) {
+        fillDiagonal(stateWeight,
+                      node["state_weight_diag"],
+                      (std::string("mpc.") + modeName + ".state_weight_diag").c_str());
+    }
+    if (node["input_weight_diag"]) {
+        fillDiagonal(inputWeight,
+                      node["input_weight_diag"],
+                      (std::string("mpc.") + modeName + ".input_weight_diag").c_str());
+    }
+}
+
 Vec3<double> readVec3(const YAML::Node& node, const char* keyName) {
     if (!node || !node.IsSequence() || node.size() != 3) {
         throw std::runtime_error(std::string("Expected 3-element YAML sequence for key ") + keyName);
@@ -176,12 +196,14 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(mpc, "normal_force_min", params.mpc.normalForceMin);
     readScalarIfPresent(mpc, "iterations_between_solve", params.mpc.iterationsBetweenSolve);
     params.mpc.contactWrenchModel = parseContactWrenchModel(mpc["contact_wrench_model"]);
-    if (mpc && mpc["state_weight_diag"]) {
-        fillDiagonal(params.mpc.stateWeight, mpc["state_weight_diag"], "mpc.state_weight_diag");
-    }
-    if (mpc && mpc["input_weight_diag"]) {
-        fillDiagonal(params.mpc.inputWeight, mpc["input_weight_diag"], "mpc.input_weight_diag");
-    }
+    readModeWeights(mpc["walking"],
+                    "walking",
+                    params.mpc.walkingStateWeight,
+                    params.mpc.walkingInputWeight);
+    readModeWeights(mpc["standing"],
+                    "standing",
+                    params.mpc.standingStateWeight,
+                    params.mpc.standingInputWeight);
 
     const YAML::Node swing = config["swing"];
     if (swing && swing["natural_frequency"]) {
@@ -198,6 +220,8 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         params.swing.bodyVelocityHalfStanceOffset);
     readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
+    readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
+    readScalarIfPresent(swing, "yaw_kd", params.swing.yawKd);
     params.swing.touchdownTargetMode = parseTouchdownTargetMode(swing["touchdown_target_mode"]);
 
     const YAML::Node footPlacement = config["foot_placement"];
@@ -265,12 +289,12 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "startup.post_init_standing_settle_time must be finite and non-negative");
     }
 
-    const YAML::Node leftSwingHoldTest = config["left_swing_hold_test"];
-    readScalarIfPresent(leftSwingHoldTest,
+    const YAML::Node gaitSwingHoldTest = config["gait_swing_hold_test"];
+    readScalarIfPresent(gaitSwingHoldTest,
                         "xml_path",
-                        params.leftSwingHoldTest.xmlPath);
-    params.leftSwingHoldTest.touchdownTargetMode =
-        parseTouchdownTargetMode(leftSwingHoldTest["touchdown_target_mode"]);
+                        params.gaitSwingHoldTest.xmlPath);
+    params.gaitSwingHoldTest.touchdownTargetMode =
+        parseTouchdownTargetMode(gaitSwingHoldTest["touchdown_target_mode"]);
 
     if (params.timing.cycle <= 0.0 || params.timing.swing <= 0.0 || params.timing.stance <= 0.0 ||
         params.timing.horizon <= 0.0 || params.timing.horizonSteps <= 0) {
@@ -284,9 +308,11 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
     if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
         !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
-        params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0) {
+        !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
+        params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0 ||
+        params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
-            "swing.body_velocity_half_stance_offset, swing.pitch_kp, and swing.pitch_kd must be finite; pitch gains must be non-negative");
+            "swing.body_velocity_half_stance_offset, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; attitude gains must be non-negative");
     }
 
     return params;
@@ -342,38 +368,60 @@ double dtMpc() {
     return horizonTime() / static_cast<double>(horizonSteps());
 }
 
-const DMat<double>& getL() {
-    static std::map<RobotType, DMat<double>> cache;
+namespace {
+const StateWeightMat& stateWeightForMode(const MPCParameters& mpc, const LocomotionMode mode) {
+    return mode == LocomotionMode::Standing ? mpc.standingStateWeight : mpc.walkingStateWeight;
+}
+
+const InputWeightMat& inputWeightForMode(const MPCParameters& mpc, const LocomotionMode mode) {
+    return mode == LocomotionMode::Standing ? mpc.standingInputWeight : mpc.walkingInputWeight;
+}
+}  // namespace
+
+const DMat<double>& getL(const LocomotionMode mode) {
+    static std::map<RobotType, std::map<LocomotionMode, DMat<double>>> cache;
     const RobotType robotType = activeRobotType();
-    auto it = cache.find(robotType);
-    if (it == cache.end()) {
+    auto& robotCache = cache[robotType];
+    auto it = robotCache.find(mode);
+    if (it == robotCache.end()) {
         const auto& config = getControllerConfig(robotType);
         const int steps = config.timing.horizonSteps;
         DMat<double> out = DMat<double>::Zero(13 * steps, 13 * steps);
+        const StateWeightMat& weight = stateWeightForMode(config.mpc, mode);
         for (int k = 0; k < steps; ++k) {
-            out.block(13 * k, 13 * k, 13, 13) = config.mpc.stateWeight;
+            out.block(13 * k, 13 * k, 13, 13) = weight;
         }
-        it = cache.emplace(robotType, std::move(out)).first;
+        it = robotCache.emplace(mode, std::move(out)).first;
     }
 
     return it->second;
 }
 
-const DMat<double>& getK() {
-    static std::map<RobotType, DMat<double>> cache;
+const DMat<double>& getK(const LocomotionMode mode) {
+    static std::map<RobotType, std::map<LocomotionMode, DMat<double>>> cache;
     const RobotType robotType = activeRobotType();
-    auto it = cache.find(robotType);
-    if (it == cache.end()) {
+    auto& robotCache = cache[robotType];
+    auto it = robotCache.find(mode);
+    if (it == robotCache.end()) {
         const auto& config = getControllerConfig(robotType);
         const int steps = config.timing.horizonSteps;
         DMat<double> out = DMat<double>::Zero(12 * steps, 12 * steps);
+        const InputWeightMat& weight = inputWeightForMode(config.mpc, mode);
         for (int k = 0; k < steps; ++k) {
-            out.block(12 * k, 12 * k, 12, 12) = config.mpc.inputWeight;
+            out.block(12 * k, 12 * k, 12, 12) = weight;
         }
-        it = cache.emplace(robotType, std::move(out)).first;
+        it = robotCache.emplace(mode, std::move(out)).first;
     }
 
     return it->second;
+}
+
+const DMat<double>& getL() {
+    return getL(locomotionMode());
+}
+
+const DMat<double>& getK() {
+    return getK(locomotionMode());
 }
 
 LocomotionMode locomotionMode() {

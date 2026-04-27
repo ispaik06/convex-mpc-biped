@@ -4,13 +4,13 @@
 #include <memory>
 #include <string>
 
-#include "LeftSwingHoldController.h"
-#include "KeyboardTorsoSwingRunner.h"
+#include "GaitSwingHoldController.h"
+#include "KeyboardGaitSwingRunner.h"
 #include "RobotConfig.h"
 
 namespace {
 void printUsage() {
-    std::cout << "Usage: main_left_swing_hold_keyboard_test [robot-id] Viewer [y/n] [torso-z-offset-m]\n"
+    std::cout << "Usage: main_gait_swing_hold_keyboard_test [robot-id] Viewer [y/n] [torso-z-offset-m]\n"
               << "\t robot-id: m for MIT humanoid\n"
               << "\t Viewer: y for GUI, n for headless\n"
               << "\t torso-z-offset-m: optional base height offset in meters, default 0.0\n";
@@ -52,8 +52,8 @@ int main(int argc, char** argv) {
 
     setActiveRobotType(RobotType::MIT_HUMANOID);
 
-    auto controller = std::make_unique<LeftSwingHoldController>();
-    KeyboardTorsoSwingRunner runner(RobotType::MIT_HUMANOID, controller.get(), headless, torsoZOffset);
+    auto controller = std::make_unique<GaitSwingHoldController>();
+    KeyboardGaitSwingRunner runner(RobotType::MIT_HUMANOID, controller.get(), headless, torsoZOffset);
     runner.init();
     runner.run();
     return EXIT_SUCCESS;

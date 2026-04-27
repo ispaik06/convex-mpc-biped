@@ -44,6 +44,7 @@ private:
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 		SwingFootTrajectory swingTrajectory;
+		double touchdownYaw_W{0.0};
 		bool wasInStance{true};
 	};
 
@@ -58,6 +59,8 @@ private:
 	LocomotionFSMOutput syncLocomotionFSM();
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
+	void updateTouchdownDebugTarget(const DesiredFootPositions& desiredFootPositions);
+	double swingFootYawTargetWorld() const;
 	void maybeUpdateMpc(const Vec13<double>& x0,
 		                   const DesiredFootPositions& desiredFootPositions);
 	void writeLegCommands();
@@ -98,6 +101,9 @@ private:
 	LocomotionMode _locomotionMode{LocomotionMode::Walking};
 	LegDynamicsRequest _legDynamicsRequest;
 	BodyTargetState _bodyTarget;
+	Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();
+	double _leftTouchdownTargetYaw_W{0.0};
+	bool _leftTouchdownTargetInitialized{false};
 
 };
 

@@ -353,8 +353,14 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     mpc["normal_force_min"] = config.mpc.normalForceMin;
     mpc["iterations_between_solve"] = config.mpc.iterationsBetweenSolve;
     mpc["contact_wrench_model"] = contactWrenchModelName(config.mpc.contactWrenchModel);
-    mpc["state_weight_diag"] = matrixDiagonalToJson(config.mpc.stateWeight);
-    mpc["input_weight_diag"] = matrixDiagonalToJson(config.mpc.inputWeight);
+    json walking = json::object();
+    walking["state_weight_diag"] = matrixDiagonalToJson(config.mpc.walkingStateWeight);
+    walking["input_weight_diag"] = matrixDiagonalToJson(config.mpc.walkingInputWeight);
+    mpc["walking"] = std::move(walking);
+    json standing = json::object();
+    standing["state_weight_diag"] = matrixDiagonalToJson(config.mpc.standingStateWeight);
+    standing["input_weight_diag"] = matrixDiagonalToJson(config.mpc.standingInputWeight);
+    mpc["standing"] = std::move(standing);
     root["mpc"] = std::move(mpc);
 
     json swing = json::object();
@@ -365,6 +371,8 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
     swing["pitch_kp"] = config.swing.pitchKp;
     swing["pitch_kd"] = config.swing.pitchKd;
+    swing["yaw_kp"] = config.swing.yawKp;
+    swing["yaw_kd"] = config.swing.yawKd;
     swing["touchdown_target_mode"] = touchdownTargetModeName(config.swing.touchdownTargetMode);
     root["swing"] = std::move(swing);
 
@@ -397,13 +405,13 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     initialPose["arm_initialization_time"] = config.initialPose.armInitializationTime;
     root["initial_pose"] = std::move(initialPose);
 
-    json leftSwingHoldTest = json::object();
-    if (!config.leftSwingHoldTest.xmlPath.empty()) {
-        leftSwingHoldTest["xml_path"] = config.leftSwingHoldTest.xmlPath;
+    json gaitSwingHoldTest = json::object();
+    if (!config.gaitSwingHoldTest.xmlPath.empty()) {
+        gaitSwingHoldTest["xml_path"] = config.gaitSwingHoldTest.xmlPath;
     }
-    leftSwingHoldTest["touchdown_target_mode"] =
-        touchdownTargetModeName(config.leftSwingHoldTest.touchdownTargetMode);
-    root["left_swing_hold_test"] = std::move(leftSwingHoldTest);
+    gaitSwingHoldTest["touchdown_target_mode"] =
+        touchdownTargetModeName(config.gaitSwingHoldTest.touchdownTargetMode);
+    root["gait_swing_hold_test"] = std::move(gaitSwingHoldTest);
 
     return root;
 }

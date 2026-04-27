@@ -47,8 +47,10 @@ struct MPCParameters {
     double torsionalFrictionScale{0.0657};
     double normalForceMax{200.0};
     double normalForceMin{10.0};
-    StateWeightMat stateWeight = StateWeightMat::Identity();
-    InputWeightMat inputWeight = InputWeightMat::Identity();
+    StateWeightMat walkingStateWeight = StateWeightMat::Identity();
+    InputWeightMat walkingInputWeight = InputWeightMat::Identity();
+    StateWeightMat standingStateWeight = StateWeightMat::Identity();
+    InputWeightMat standingInputWeight = InputWeightMat::Identity();
     int iterationsBetweenSolve{10};
     ContactWrenchModel contactWrenchModel{ContactWrenchModel::FullWrench};
 };
@@ -61,6 +63,8 @@ struct SwingParameters {
     double bodyVelocityHalfStanceOffset{0.0};
     double pitchKp{0.0};
     double pitchKd{0.0};
+    double yawKp{0.0};
+    double yawKd{0.0};
     TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::BodyVelocityHalfStance};
 };
 
@@ -92,7 +96,7 @@ struct InitialPoseParameters {
     Vec3<double> baseEuler_W = Vec3<double>::Zero();
 };
 
-struct LeftSwingHoldTestParameters {
+struct GaitSwingHoldTestParameters {
     std::string xmlPath;
     TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::LegacyComYawCorrected};
 };
@@ -107,7 +111,7 @@ struct ControllerConfig {
     LoggingParameters logging;
     StartupParameters startup;
     InitialPoseParameters initialPose;
-    LeftSwingHoldTestParameters leftSwingHoldTest;
+    GaitSwingHoldTestParameters gaitSwingHoldTest;
 };
 
 const ControllerConfig& getControllerConfig();
@@ -123,6 +127,8 @@ double dtMpc();
 
 const DMat<double>& getL();
 const DMat<double>& getK();
+const DMat<double>& getL(LocomotionMode mode);
+const DMat<double>& getK(LocomotionMode mode);
 LocomotionMode locomotionMode();
 std::string contactWrenchModelName(ContactWrenchModel model);
 

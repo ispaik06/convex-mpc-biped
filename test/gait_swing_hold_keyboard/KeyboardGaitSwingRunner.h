@@ -1,5 +1,5 @@
-#ifndef LEFT_SWING_HOLD_TEST_RUNNER_H
-#define LEFT_SWING_HOLD_TEST_RUNNER_H
+#ifndef KEYBOARD_GAIT_SWING_RUNNER_H
+#define KEYBOARD_GAIT_SWING_RUNNER_H
 
 #include <atomic>
 #include <memory>
@@ -9,7 +9,7 @@
 #include "Controllers/ArmController.h"
 #include "Controllers/LegController.h"
 #include "DebugVisualization.h"
-#include "LeftSwingHoldController.h"
+#include "GaitSwingHoldController.h"
 #include "LegSwingDynamicsProvider.h"
 #include "MujocoRobotBindings.h"
 #include "Robot/RobotModel.h"
@@ -17,6 +17,7 @@
 #include "SimulationIO.h"
 #include "StateEstimator/StateEstimator.h"
 #include "Types.h"
+#include "Utilities/KeyboardCommand.h"
 #include "main_thread.h"
 
 struct mjModel_;
@@ -24,13 +25,13 @@ struct mjData_;
 using mjModel = mjModel_;
 using mjData = mjData_;
 
-class LeftSwingHoldTestRunner {
+class KeyboardGaitSwingRunner {
 public:
-    LeftSwingHoldTestRunner(RobotType robotType,
-                            LeftSwingHoldController* controller,
-                            bool headless,
-                            double torsoZOffset = 0.0);
-    ~LeftSwingHoldTestRunner();
+    KeyboardGaitSwingRunner(RobotType robotType,
+                             GaitSwingHoldController* controller,
+                             bool headless,
+                             double torsoZOffset = 0.0);
+    ~KeyboardGaitSwingRunner();
 
     void init();
     void run();
@@ -45,16 +46,23 @@ private:
     void locateFloatingBase();
     void cacheFrozenQpos();
     void clampFrozenQpos();
-    bool isLeftLegQposIndex(int qposIndex) const;
-    bool isLeftLegQvelIndex(int qvelIndex) const;
+    bool isLegQposIndex(int qposIndex) const;
+    bool isLegQvelIndex(int qvelIndex) const;
+    bool isFloatingBaseQposIndex(int qposIndex) const;
+    bool isFloatingBaseQvelIndex(int qvelIndex) const;
+    void cachePlanarBasePose();
+    void advancePlanarBasePose(double dt);
+    void applyPlanarBasePose(const Vec3<double>& worldLinearVelocity,
+                             const Vec3<double>& bodyAngularVelocity);
 
     RobotType _robotType;
-    LeftSwingHoldController* _controller{nullptr};
+    GaitSwingHoldController* _controller{nullptr};
     std::unique_ptr<RobotModel<double>> _robotModel;
     std::unique_ptr<LegController<double>> _legController;
     std::unique_ptr<ArmController<double>> _armController;
     bool _headless{true};
     bool _firstControllerRun{true};
+    bool _planarMotionEnabled{false};
     double _torsoZOffset{0.0};
     std::string _modelPath;
     RobotParams<double> _params;
@@ -72,9 +80,14 @@ private:
     std::atomic<bool> _stopRequested{false};
     int _freeJointQposIndex{-1};
     int _freeJointQvelIndex{-1};
-    std::vector<int> _leftLegQposIndices;
-    std::vector<int> _leftLegQvelIndices;
+    std::vector<int> _legQposIndices;
+    std::vector<int> _legQvelIndices;
     std::vector<double> _frozenQpos;
+    Vec3<double> _planarBasePosition_W = Vec3<double>::Zero();
+    Mat3<double> _planarRotationNoYaw = Mat3<double>::Identity();
+    double _planarBaseYaw{0.0};
+    double _planarBaseZ{0.0};
+    KeyboardCommand _keyboardCommand;
 
     struct DebugMocapBinding {
         std::string name;
@@ -84,4 +97,4 @@ private:
     std::vector<DebugMocapBinding> _debugMocapBindings;
 };
 
-#endif  // LEFT_SWING_HOLD_TEST_RUNNER_H
+#endif  // KEYBOARD_GAIT_SWING_RUNNER_H

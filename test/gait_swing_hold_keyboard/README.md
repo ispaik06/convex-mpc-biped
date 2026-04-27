@@ -1,34 +1,34 @@
-# Keyboard Left Swing Hold Test
+# Keyboard Gait Swing Hold Test
 
 ## What This Test Is
 
-`leftswinghold_keyboard` is the moving-base variant of `test/leftswinghold`.
+`gait_swing_hold_keyboard` is the moving-base variant of `test/gait_swing_hold`.
 
-It starts from the `copied_state` keyframe, freezes every non-left-leg joint coordinate, and then moves the floating base directly in planar `x/y/yaw` from keyboard velocity commands. The normal `RobotRunner` joint-position initializer is not used.
+It starts from the `copied_state` keyframe, freezes every non-leg joint coordinate, and then moves the floating base directly in planar `x/y/yaw` from keyboard velocity commands. The normal `RobotRunner` joint-position initializer is not used.
 
 ## What It Exercises
 
 - Robot: MIT humanoid only (`m`).
-- Model: loaded from `left_swing_hold_test.xml_path` in `config/mit_humanoid/my_controller.yaml`, falling back to `model.xml_path` if unset.
-- Runner: `KeyboardTorsoSwingRunner`.
-- Controller: `LeftSwingHoldController` from `test/leftswinghold`.
-- Frozen state: right leg, arms, and other non-left-leg non-base coordinates.
+- Model: loaded from `gait_swing_hold_test.xml_path` in `config/mit_humanoid/my_controller.yaml`, falling back to `model.xml_path` if unset.
+- Runner: `KeyboardGaitSwingRunner`.
+- Controller: `GaitSwingHoldController` from `test/gait_swing_hold`.
+- Frozen state: arms and other non-leg non-base coordinates.
 - Torso/base: directly injected planar motion.
-- Left leg: alternates between Cartesian swing tracking and joint-PD hold.
+- Legs: both legs alternate between Cartesian swing tracking and joint-PD hold according to `GaitScheduler`.
 
 This is useful when debugging:
 
 - Touchdown target behavior under commanded base motion.
-- Touchdown target visualization through the `debug_left_touchdown_target` marker in `scene_test.xml`.
+- Touchdown target visualization through the left-leg `debug_left_touchdown_target` marker in `scene_test.xml`.
 - Swing-foot tracking while the torso yaw/translates.
 - Whether the swing planner reacts correctly to `UserCommand` velocity inputs.
 
-## Difference From `leftswinghold`
+## Difference From `gait_swing_hold`
 
 | Folder | Torso/base behavior | Main use |
 | --- | --- | --- |
-| `leftswinghold` | Floating base is frozen at `copied_state` plus optional z offset | Isolate swing tracking with a fixed torso |
-| `leftswinghold_keyboard` | Floating base follows keyboard planar commands | Inspect touchdown and swing tracking under base motion |
+| `gait_swing_hold` | Floating base is frozen at `copied_state` plus optional z offset | Isolate swing tracking with a fixed torso |
+| `gait_swing_hold_keyboard` | Floating base follows keyboard planar commands | Inspect touchdown and swing tracking under base motion |
 
 ## Keyboard Controls
 
@@ -48,7 +48,7 @@ Only the planar `x_dot`, `y_dot`, and `psi_dot` commands are applied to the base
 From the repository root:
 
 ```sh
-cmake --build build --target main_left_swing_hold_keyboard_test
+cmake --build build --target main_gait_swing_hold_keyboard_test
 ```
 
 ## Run
@@ -56,19 +56,19 @@ cmake --build build --target main_left_swing_hold_keyboard_test
 GUI:
 
 ```sh
-./build/test/leftswinghold_keyboard/main_left_swing_hold_keyboard_test m y
+./build/test/gait_swing_hold_keyboard/main_gait_swing_hold_keyboard_test m y
 ```
 
 Headless:
 
 ```sh
-./build/test/leftswinghold_keyboard/main_left_swing_hold_keyboard_test m n
+./build/test/gait_swing_hold_keyboard/main_gait_swing_hold_keyboard_test m n
 ```
 
 With torso height offset:
 
 ```sh
-./build/test/leftswinghold_keyboard/main_left_swing_hold_keyboard_test m n 0.2
+./build/test/gait_swing_hold_keyboard/main_gait_swing_hold_keyboard_test m n 0.2
 ```
 
 Arguments:
@@ -82,10 +82,10 @@ For keyboard input, run from an interactive terminal. If stdin is not a TTY, key
 
 ## Outputs
 
-The reused `LeftSwingHoldController` writes:
+The reused `GaitSwingHoldController` writes:
 
 ```text
-build/left_swing_hold_trace.csv
+build/gait_swing_hold_trace.csv
 ```
 
 Columns:
@@ -106,12 +106,12 @@ config/mit_humanoid/my_controller.yaml
 
 Important sections:
 
-- `left_swing_hold_test.xml_path`: MuJoCo scene XML loaded by `KeyboardTorsoSwingRunner`.
+- `gait_swing_hold_test.xml_path`: MuJoCo scene XML loaded by `KeyboardGaitSwingRunner`.
 - `model.xml_path`: fallback MuJoCo scene XML if the test-specific path is empty.
 - `timing`: swing/stance durations.
 - `swing`: swing height and Cartesian gains.
 - `foot_placement`: touchdown feedback and clamps.
-- `left_swing_hold_test.touchdown_target_mode`: touchdown target mode used by `LeftSwingHoldController`.
+- `gait_swing_hold_test.touchdown_target_mode`: touchdown target mode used by `GaitSwingHoldController`.
 
 ## Notes
 

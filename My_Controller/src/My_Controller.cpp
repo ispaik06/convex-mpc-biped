@@ -16,6 +16,7 @@
 #include "Utilities/MatrixUtils.h"
 
 namespace {
+
 double clampUnit(const double value) {
     return std::clamp(value, -1.0, 1.0);
 }
@@ -61,6 +62,71 @@ Quat<double> rollPitchYawToQuaternion(const Vec3<double>& euler_W) {
     Quat<double> quat = q_yaw * q_pitch * q_roll;
     quat.normalize();
     return quat;
+}
+
+DVec<double> computeSwingAttitudeLevelTorque(const RobotLegState<double>& legState,
+                                             const LegControllerData<double>& legData,
+                                             const double desiredYaw_W,
+                                             const double pitchKp,
+                                             const double pitchKd,
+                                             const double yawKp,
+                                             const double yawKd) {
+    const Eigen::Index dof = legData.dof();
+    DVec<double> torque = DVec<double>::Zero(dof);
+    const bool pitchEnabled = pitchKp > 0.0 || pitchKd > 0.0;
+    const bool yawEnabled = yawKp > 0.0 || yawKd > 0.0;
+    if (!pitchEnabled && !yawEnabled) {
+        return torque;
+    }
+    if (!legState.hasFootFrame) {
+        throw std::runtime_error("Swing attitude control requires foot frame data");
+    }
+    if (!legData.hasFootData) {
+        throw std::runtime_error("Swing attitude control requires foot angular Jacobian data");
+    }
+    if (legData.Jw_W.rows() != 3 || legData.Jw_W.cols() != dof || legData.qd.size() != dof) {
+        throw std::runtime_error("Swing attitude control received inconsistent leg angular data");
+    }
+
+    Vec3<double> footX_W = legState.R_WF.col(0);
+    Vec3<double> footY_W = legState.R_WF.col(1);
+    Vec3<double> footZ_W = legState.R_WF.col(2);
+    if (!footX_W.allFinite() || !footY_W.allFinite() || !footZ_W.allFinite() ||
+        footX_W.norm() <= 1e-9 || footY_W.norm() <= 1e-9 || footZ_W.norm() <= 1e-9) {
+        throw std::runtime_error("Swing attitude control received invalid foot frame axes");
+    }
+    footX_W.normalize();
+    footY_W.normalize();
+    footZ_W.normalize();
+
+    const Vec3<double> worldUp = Vec3<double>::UnitZ();
+    const Vec3<double> omegaFoot_W = legData.Jw_W * legData.qd;
+    Vec3<double> moment_W = Vec3<double>::Zero();
+
+    if (pitchEnabled) {
+        const double sinPitchError = footY_W.dot(footZ_W.cross(worldUp));
+        const double cosPitchError = footZ_W.dot(worldUp);
+        const double pitchError = std::atan2(sinPitchError, cosPitchError);
+        const double pitchRate = footY_W.dot(omegaFoot_W);
+        moment_W += (pitchKp * pitchError - pitchKd * pitchRate) * footY_W;
+    }
+
+    if (yawEnabled) {
+        Vec3<double> footXProj_W = footX_W - footX_W.dot(worldUp) * worldUp;
+        if (footXProj_W.norm() <= 1e-9) {
+            throw std::runtime_error("Swing attitude control received degenerate yaw axis");
+        }
+        footXProj_W.normalize();
+        const Vec3<double> desiredX_W(std::cos(desiredYaw_W), std::sin(desiredYaw_W), 0.0);
+        const double sinYawError = worldUp.dot(footXProj_W.cross(desiredX_W));
+        const double cosYawError = footXProj_W.dot(desiredX_W);
+        const double yawError = std::atan2(sinYawError, cosYawError);
+        const double yawRate = worldUp.dot(omegaFoot_W);
+        moment_W += (yawKp * yawError - yawKd * yawRate) * worldUp;
+    }
+
+    torque = legData.Jw_W.transpose() * moment_W;
+    return torque;
 }
 
 const char* locomotionModeName(const LocomotionMode mode) {
@@ -144,44 +210,6 @@ Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
     throw std::runtime_error("Foot-local contact wrench model requires left/right foot axes");
 }
 
-DVec<double> computeSwingPitchLevelTorque(const RobotLegState<double>& legState,
-                                          const LegControllerData<double>& legData,
-                                          const double pitchKp,
-                                          const double pitchKd) {
-    const Eigen::Index dof = legData.dof();
-    DVec<double> torque = DVec<double>::Zero(dof);
-    if (pitchKp <= 0.0 && pitchKd <= 0.0) {
-        return torque;
-    }
-    if (!legState.hasFootFrame) {
-        throw std::runtime_error("Swing pitch leveling requires foot frame data");
-    }
-    if (!legData.hasFootData) {
-        throw std::runtime_error("Swing pitch leveling requires foot angular Jacobian data");
-    }
-    if (legData.Jw_W.rows() != 3 || legData.Jw_W.cols() != dof || legData.qd.size() != dof) {
-        throw std::runtime_error("Swing pitch leveling received inconsistent leg angular data");
-    }
-
-    Vec3<double> footY_W = legState.R_WF.col(1);
-    Vec3<double> footZ_W = legState.R_WF.col(2);
-    if (!footY_W.allFinite() || !footZ_W.allFinite() ||
-        footY_W.norm() <= 1e-9 || footZ_W.norm() <= 1e-9) {
-        throw std::runtime_error("Swing pitch leveling received invalid foot frame axes");
-    }
-    footY_W.normalize();
-    footZ_W.normalize();
-
-    const Vec3<double> worldUp = Vec3<double>::UnitZ();
-    const double sinPitchError = footY_W.dot(footZ_W.cross(worldUp));
-    const double cosPitchError = footZ_W.dot(worldUp);
-    const double pitchError = std::atan2(sinPitchError, cosPitchError);
-    const Vec3<double> omegaFoot_W = legData.Jw_W * legData.qd;
-    const double pitchRate = footY_W.dot(omegaFoot_W);
-    const Vec3<double> pitchMoment_W = (pitchKp * pitchError - pitchKd * pitchRate) * footY_W;
-    torque = legData.Jw_W.transpose() * pitchMoment_W;
-    return torque;
-}
 }  // namespace
 
 MyController::MyController() = default;
@@ -241,6 +269,7 @@ void MyController::initializeRuntimeObjects() {
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
         _legRuntime[leg].wasInStance =
             _gaitScheduler->c(_robotParams->legs[leg].side, _stateEstimate->time);
+        _legRuntime[leg].touchdownYaw_W = swingFootYawTargetWorld();
     }
 
     _stanceWrenchWorld.setZero();
@@ -464,6 +493,7 @@ void MyController::updateSwingTrajectories(
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
+            runtime.touchdownYaw_W = swingFootYawTargetWorld();
             runtime.swingTrajectory.reset(
                 currentFootPosition,
                 touchdownTarget,
@@ -478,6 +508,26 @@ void MyController::updateSwingTrajectories(
     }
 
     _lastControlTime = time;
+}
+
+void MyController::updateTouchdownDebugTarget(const DesiredFootPositions& desiredFootPositions) {
+    _leftTouchdownTarget_W = desiredFootPositions.left_des_W;
+    const std::size_t leftLegIndex = static_cast<std::size_t>(findLegIndex(Side::Left));
+    if (leftLegIndex < _legRuntime.size()) {
+        _leftTouchdownTargetYaw_W = _legRuntime[leftLegIndex].touchdownYaw_W;
+    } else {
+        _leftTouchdownTargetYaw_W = swingFootYawTargetWorld();
+    }
+    _leftTouchdownTargetInitialized = true;
+}
+
+double MyController::swingFootYawTargetWorld() const {
+    if (_stateEstimate == nullptr) {
+        throw std::runtime_error("MyController::swingFootYawTargetWorld requires state estimate");
+    }
+
+    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    return wrapAngle(_stateEstimate->psi + psi_dot * stanceTime() * 0.5);
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,
@@ -520,7 +570,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         _mpcFormulation->build(_referenceTrajectoryOutput, _mpcFormulationOutput);
 
         _convexMPC->updateInput(
-            *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0);
+            *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0, _locomotionMode);
         _convexMPC->solve();
         _stanceWrenchWorld = _convexMPC->optimalWrench();
         if (_locomotionMode == LocomotionMode::Standing && _standingMpcDebugLogPending) {
@@ -678,6 +728,16 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
         marker.active = true;
         debugViz.markers.push_back(marker);
     }
+
+    if (_leftTouchdownTargetInitialized) {
+        DebugVizMarker<double> marker;
+        marker.name = "debug_left_touchdown_target";
+        marker.position_W = _leftTouchdownTarget_W;
+        const Vec3<double> yawEuler_W(0.0, 0.0, _leftTouchdownTargetYaw_W);
+        marker.orientation_W = rollPitchYawToQuaternion(yawEuler_W);
+        marker.active = true;
+        debugViz.markers.push_back(marker);
+    }
 }
 
 void MyController::maybePrintGaitScheduler() const {
@@ -788,11 +848,14 @@ void MyController::writeLegCommands() {
         command.vDes_W = _legRuntime[leg].swingTrajectory.velocity();
         command.aDes_W = _legRuntime[leg].swingTrajectory.acceleration();
         command.kdCartesian = _swingKd;
-        command.tauFeedForward += computeSwingPitchLevelTorque(
+        command.tauFeedForward += computeSwingAttitudeLevelTorque(
             _stateEstimate->legs[leg],
             _legController->datas[leg],
+            _legRuntime[leg].touchdownYaw_W,
             getControllerConfig().swing.pitchKp,
-            getControllerConfig().swing.pitchKd);
+            getControllerConfig().swing.pitchKd,
+            getControllerConfig().swing.yawKp,
+            getControllerConfig().swing.yawKd);
     }
 }
 
@@ -825,6 +888,7 @@ void MyController::runController() {
             : _swingFootPlanner->desiredFootPositions();
 
     updateSwingTrajectories(desiredFootPositions);
+    updateTouchdownDebugTarget(desiredFootPositions);
     updateStandingMpcDebugRequest();
     maybeUpdateMpc(x0, desiredFootPositions);
     writeLegCommands();

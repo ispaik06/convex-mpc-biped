@@ -16,11 +16,13 @@ struct ConvexMPCInputView {
     const DMat<double>* C{nullptr};
     const DVec<double>* C_bound{nullptr};
     const DMat<double>* D{nullptr};
+    LocomotionMode locomotionMode{LocomotionMode::Walking};
 
     static ConvexMPCInputView from(const GaitScheduler& gaitScheduler,
                                    const MPCFormulationOutput& formulation,
                                    const ReferenceTrajectoryOutput& referenceTrajectory,
-                                   const Vec13<double>& x0);
+                                   const Vec13<double>& x0,
+                                   LocomotionMode locomotionMode);
 };
 
 class ConvexMPC {
@@ -30,7 +32,8 @@ public:
     void updateInput(const GaitScheduler& gaitScheduler,
                      const MPCFormulationOutput& formulation,
                      const ReferenceTrajectoryOutput& referenceTrajectory,
-                     const Vec13<double>& x0);
+                     const Vec13<double>& x0,
+                     LocomotionMode locomotionMode);
 
     void clear();
 
@@ -57,6 +60,8 @@ private:
     void buildConstraintMatrix(const DMat<double>& C, const DMat<double>& D);
     void updateWarmStart();
     void validateInputDimensions(const ConvexMPCInputView& input) const;
+    static const StateWeightMat& stateWeightForMode(LocomotionMode mode);
+    static const InputWeightMat& inputWeightForMode(LocomotionMode mode);
 
     ConvexMPCInputView _input;
     bool _hasInput{false};

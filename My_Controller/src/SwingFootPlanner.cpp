@@ -6,6 +6,10 @@
 
 #include "Utilities/MatrixUtils.h"
 
+namespace {
+constexpr double kSwingFootTargetZ = -0.005;
+}  // namespace
+
 void SwingFootPlanner::reset() {
     _bodyVelocityHalfStanceTouchdownTargets.clear();
     _bodyVelocityHalfStanceTouchdownTargetValid.clear();
@@ -47,8 +51,7 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const double stanceFraction = 0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset;
     Vec3<double> target =
         p_init_W + Rz(_stateEstimate->psi) * v_body_cmd * (stanceFraction * stanceTime());
-    target.z() = _stateEstimate->legs[legIndex].footPos_W.z();
-    target.z() -= 0.05;
+    target.z() = kSwingFootTargetZ;
     return target;
 }
 
@@ -76,6 +79,8 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldLegacy(const std::size_t legI
     const double T_rem = std::max(cycleTime() * (1.0 - phase), 0.0);
 
     Vec3<double> p_nom_B(-0.002851214, 0.072812741, -0.752981881);
+    p_nom_B[1] += (_robotParams->legs[legIndex].side == Side::Left ? 1.0 : -1.0) *
+                   footPlacement.nominalLateralOffset;
 
     const double yaw_correction = psi_dot * stanceTime() / 2.0;
     const Mat3<double> R_yaw_correction = Rz(yaw_correction);
@@ -93,9 +98,10 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldLegacy(const std::size_t legI
     delta_x = std::clamp(delta_x, -footPlacement.placementClamp, footPlacement.placementClamp);
     delta_y = std::clamp(delta_y, -footPlacement.placementClamp, footPlacement.placementClamp);
 
-    Vec3<double> feedback_B(delta_x, delta_y, footPlacement.touchdownHeight);
+    Vec3<double> feedback_B(delta_x, delta_y, 0.0);
     Vec3<double> target =
         p_com_W + R_WB * (R_yaw_correction * p_nom_B + u_des_B * T_rem + feedback_B);
+    target.z() = kSwingFootTargetZ;
     return target;
 }
 

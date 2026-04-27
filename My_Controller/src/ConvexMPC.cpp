@@ -156,7 +156,8 @@ int ConvexMPC::numCons() const {
 ConvexMPCInputView ConvexMPCInputView::from(const GaitScheduler& gaitScheduler,
                                             const MPCFormulationOutput& formulation,
                                             const ReferenceTrajectoryOutput& referenceTrajectory,
-                                            const Vec13<double>& x0) {
+                                            const Vec13<double>& x0,
+                                            const LocomotionMode locomotionMode) {
     ConvexMPCInputView input;
     input.A_qp = &formulation.A_qp;
     input.B_qp = &formulation.B_qp;
@@ -165,15 +166,17 @@ ConvexMPCInputView ConvexMPCInputView::from(const GaitScheduler& gaitScheduler,
     input.C = &gaitScheduler.C;
     input.C_bound = &gaitScheduler.C_bound;
     input.D = &gaitScheduler.D;
+    input.locomotionMode = locomotionMode;
     return input;
 }
 
 void ConvexMPC::updateInput(const GaitScheduler& gaitScheduler,
                             const MPCFormulationOutput& formulation,
                             const ReferenceTrajectoryOutput& referenceTrajectory,
-                            const Vec13<double>& x0) {
+                            const Vec13<double>& x0,
+                            const LocomotionMode locomotionMode) {
     const ConvexMPCInputView input =
-        ConvexMPCInputView::from(gaitScheduler, formulation, referenceTrajectory, x0);
+        ConvexMPCInputView::from(gaitScheduler, formulation, referenceTrajectory, x0, locomotionMode);
 
     validateInputDimensions(input);
     _input = input;
@@ -204,11 +207,11 @@ bool ConvexMPC::hasInput() const {
 }
 
 const DMat<double>& ConvexMPC::L() const {
-    return getL();
+    return getL(_input.locomotionMode);
 }
 
 const DMat<double>& ConvexMPC::K() const {
-    return getK();
+    return getK(_input.locomotionMode);
 }
 
 const Vec12<double>& ConvexMPC::optimalWrench() const {
@@ -223,6 +226,16 @@ bool ConvexMPC::hasSolution() const {
     return _hasPreviousSolution;
 }
 
+const StateWeightMat& ConvexMPC::stateWeightForMode(const LocomotionMode mode) {
+    const auto& mpc = getControllerConfig().mpc;
+    return mode == LocomotionMode::Standing ? mpc.standingStateWeight : mpc.walkingStateWeight;
+}
+
+const InputWeightMat& ConvexMPC::inputWeightForMode(const LocomotionMode mode) {
+    const auto& mpc = getControllerConfig().mpc;
+    return mode == LocomotionMode::Standing ? mpc.standingInputWeight : mpc.walkingInputWeight;
+}
+
 void ConvexMPC::buildQP() {
     if (!_hasInput) {
         throw std::runtime_error("ConvexMPC::buildQP requires initialized input");
@@ -235,8 +248,8 @@ void ConvexMPC::buildQP() {
     const DMat<double>& C = *_input.C;
     const DVec<double>& C_bound = *_input.C_bound;
     const DMat<double>& D = *_input.D;
-    const StateWeightMat& stateWeight = getControllerConfig().mpc.stateWeight;
-    const InputWeightMat& inputWeight = getControllerConfig().mpc.inputWeight;
+    const StateWeightMat& stateWeight = stateWeightForMode(_input.locomotionMode);
+    const InputWeightMat& inputWeight = inputWeightForMode(_input.locomotionMode);
     const int steps = horizonSteps();
 
     _statePrediction.noalias() = A_qp * x0;
