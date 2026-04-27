@@ -735,6 +735,11 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
         marker.position_W = _leftTouchdownTarget_W;
         const Vec3<double> yawEuler_W(0.0, 0.0, _leftTouchdownTargetYaw_W);
         marker.orientation_W = rollPitchYawToQuaternion(yawEuler_W);
+        const bool leftIsStance =
+            _gaitScheduler != nullptr && _stateEstimate != nullptr &&
+            _gaitScheduler->c(Side::Left, _stateEstimate->time);
+        marker.hasRgba = true;
+        marker.rgba = touchdownMarkerRgba<double>(leftIsStance);
         marker.active = true;
         debugViz.markers.push_back(marker);
     }

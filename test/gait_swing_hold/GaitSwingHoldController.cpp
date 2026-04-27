@@ -514,6 +514,11 @@ void GaitSwingHoldController::collectDebugVisualization(DebugVizState<double>& d
     } else {
         marker.orientation_W = Quat<double>::Identity();
     }
+    const bool leftIsStance =
+        _gaitScheduler != nullptr && _stateEstimate != nullptr &&
+        _gaitScheduler->c(Side::Left, _stateEstimate->time);
+    marker.hasRgba = true;
+    marker.rgba = touchdownMarkerRgba<double>(leftIsStance);
     marker.active = true;
     debugViz.markers.push_back(marker);
 }

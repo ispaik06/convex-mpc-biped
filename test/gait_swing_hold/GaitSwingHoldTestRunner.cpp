@@ -19,6 +19,33 @@
 
 namespace {
 constexpr const char* kInitialKeyframeName = "copied_state";
+
+void applyMarkerColor(mjModel* model, const int bodyId, const DebugVizMarker<double>& marker) {
+    if (model == nullptr || bodyId < 0 || !marker.hasRgba) {
+        return;
+    }
+    if (bodyId >= model->nbody) {
+        return;
+    }
+
+    const int geomStart = model->body_geomadr[bodyId];
+    const int geomCount = model->body_geomnum[bodyId];
+    if (geomStart < 0 || geomCount <= 0) {
+        return;
+    }
+
+    for (int geomOffset = 0; geomOffset < geomCount; ++geomOffset) {
+        const int geomId = geomStart + geomOffset;
+        if (geomId < 0 || geomId >= model->ngeom) {
+            continue;
+        }
+
+        float* geomRgba = model->geom_rgba + 4 * geomId;
+        for (int channel = 0; channel < 4; ++channel) {
+            geomRgba[channel] = static_cast<float>(marker.rgba[channel]);
+        }
+    }
+}
 }  // namespace
 
 GaitSwingHoldTestRunner::GaitSwingHoldTestRunner(const RobotType robotType,
@@ -299,6 +326,8 @@ void GaitSwingHoldTestRunner::updateDebugVisualization() {
             _debugMocapBindings.push_back(binding);
             it = std::prev(_debugMocapBindings.end());
         }
+
+        applyMarkerColor(_model, it->bodyId, marker);
 
         const Eigen::Index posOffset = static_cast<Eigen::Index>(3 * it->mocapId);
         _data->mocap_pos[posOffset + 0] = marker.position_W[0];
