@@ -44,8 +44,11 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
         _userCommand != nullptr ? _userCommand->x_dot : 0.0,
         _userCommand != nullptr ? _userCommand->y_dot : 0.0,
         0.0);
-    Vec3<double> target = p_init_W + Rz(_stateEstimate->psi) * v_body_cmd * (0.5 * stanceTime());
+    const double stanceFraction = 0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset;
+    Vec3<double> target =
+        p_init_W + Rz(_stateEstimate->psi) * v_body_cmd * (stanceFraction * stanceTime());
     target.z() = _stateEstimate->legs[legIndex].footPos_W.z();
+    target.z() -= 0.05;
     return target;
 }
 

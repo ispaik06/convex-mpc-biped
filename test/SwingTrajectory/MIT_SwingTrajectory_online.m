@@ -43,16 +43,16 @@ s = min(max(t / Tsw, 0), 1);
 %% ===================== RAW COMMANDS =====================
 x_cmd_raw = 0.60 * ones(1, N);
 y_cmd_raw = 0.00 * ones(1, N);
-psi_cmd_raw = 3.00 * ones(1, N);
+psi_cmd_raw = 0.00 * ones(1, N);
 
 % x_cmd_raw(t >= 0.040) = 0.20;
 % x_cmd_raw(t >= 0.085) = 0.75;
 % 
 % y_cmd_raw(t >= 0.055) = 0.10;
 % y_cmd_raw(t >= 0.095) = -0.08;
-
-psi_cmd_raw(t >= 0.060) = -0.35;
-psi_cmd_raw(t >= 0.100) = 1.00;
+% 
+% psi_cmd_raw(t >= 0.060) = -0.35;
+% psi_cmd_raw(t >= 0.100) = 1.00;
 
 %% ===================== INTERNAL DES (MIT STYLE) =====================
 alpha = 0.1;
@@ -79,7 +79,7 @@ for k = 2:N
 end
 
 yaw = zeros(1, N);
-yaw(1) = deg2rad(10);
+yaw(1) = 0;
 
 R_BW = zeros(3,3,N);
 R_WB = zeros(3,3,N);

@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <fstream>
@@ -12,43 +11,14 @@
 
 #include "ControllerConfig.h"
 #include "MujocoCheaterStateReader.h"
-#include "RobotController.h"
-#include "RobotRunner.h"
+#include "RobotConfig.h"
 #include "SimulationConfig.h"
 #include "StateEstimator/StateEstimator.h"
 #include "Utilities/MatrixUtils.h"
 #include "setupRobotParams.h"
 
 namespace {
-class NominalProbeController : public RobotController {
-public:
-    NominalProbeController() {
-        setFootEndEffectorSource(FootEndEffectorSource::Site);
-    }
-
-    void initializeController() override {}
-    void runController() override {}
-};
-
-void applyRobotCommand(const mjModel* model, mjData* data, const RobotCommand<double>& command) {
-    if (model == nullptr || data == nullptr) {
-        throw std::runtime_error("applyRobotCommand received null MuJoCo pointers");
-    }
-    if (command.tau.size() != model->nu) {
-        throw std::runtime_error("RobotCommand torque dimension does not match model->nu");
-    }
-
-    for (int i = 0; i < model->nu; ++i) {
-        const double tau = command.tau[i];
-        if (model->actuator_ctrllimited[i]) {
-            const double lo = static_cast<double>(model->actuator_ctrlrange[2 * i + 0]);
-            const double hi = static_cast<double>(model->actuator_ctrlrange[2 * i + 1]);
-            data->ctrl[i] = std::clamp(tau, lo, hi);
-        } else {
-            data->ctrl[i] = tau;
-        }
-    }
-}
+constexpr const char* kInitialKeyframeName = "copied_state";
 
 Vec3<double> readSitePosition(const mjData* data, const int siteId) {
     if (siteId < 0) {
@@ -62,16 +32,22 @@ Vec3<double> readSitePosition(const mjData* data, const int siteId) {
     return pos;
 }
 
-Vec3<double> readBodyComPosition(const mjData* data, const int bodyId) {
-    if (bodyId < 0) {
-        throw std::runtime_error("Invalid body id");
+Vec3<double> readCollisionGeomCenterPosition(const mjData* data,
+                                             const std::vector<int>& geomIds) {
+    if (geomIds.empty()) {
+        throw std::runtime_error("No collision geom ids are bound");
     }
 
     Vec3<double> pos = Vec3<double>::Zero();
-    for (int i = 0; i < 3; ++i) {
-        pos[i] = static_cast<double>(data->xipos[3 * bodyId + i]);
+    for (const int geomId : geomIds) {
+        if (geomId < 0) {
+            throw std::runtime_error("Invalid geom id");
+        }
+        for (int i = 0; i < 3; ++i) {
+            pos[i] += static_cast<double>(data->geom_xpos[3 * geomId + i]);
+        }
     }
-    return pos;
+    return pos / static_cast<double>(geomIds.size());
 }
 
 std::string sideName(const Side side) {
@@ -83,6 +59,21 @@ std::string sideName(const Side side) {
         default:
             return "unknown";
     }
+}
+
+void applyCopiedStateQpos(const mjModel* model, mjData* data) {
+    const int keyId = mj_name2id(model, mjOBJ_KEY, kInitialKeyframeName);
+    if (keyId < 0) {
+        throw std::runtime_error(std::string("Failed to find MuJoCo keyframe: ") +
+                                 kInitialKeyframeName);
+    }
+
+    mj_resetData(model, data);
+    const mjtNum* keyQpos = model->key_qpos + keyId * model->nq;
+    for (int i = 0; i < model->nq; ++i) {
+        data->qpos[i] = keyQpos[i];
+    }
+    mj_forward(model, data);
 }
 }  // namespace
 
@@ -103,7 +94,13 @@ int main(int argc, char** argv) {
                                     ? std::string(argv[2])
                                     : std::string(PROJECT_ROOT_DIR) + "/build/left_swing_hold_nominal_pose.csv";
 
-    const std::string modelPath = std::string(PROJECT_ROOT_DIR) + "/models/mit_humanoid/scene.xml";
+    setActiveRobotType(RobotType::MIT_HUMANOID);
+    const auto& controllerConfig = getControllerConfig(RobotType::MIT_HUMANOID);
+    const auto& runtimeConfig = getRobotRuntimeConfig(RobotType::MIT_HUMANOID);
+    const std::string modelPath = resolveProjectPath(
+        controllerConfig.leftSwingHoldTest.xmlPath.empty()
+            ? runtimeConfig.modelXmlPath
+            : controllerConfig.leftSwingHoldTest.xmlPath);
     if (mjVERSION_HEADER != mj_version()) {
         throw std::runtime_error("MuJoCo header/library version mismatch");
     }
@@ -132,38 +129,12 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Mujoco bindings do not match leg count");
         }
 
-        mj_forward(model, data);
-
-        NominalProbeController controller;
-        RobotRunner robotRunner(&controller);
-        UserCommand userCommand;
-        robotRunner.init(&params, model->opt.timestep, &userCommand);
-
         CheaterState<double> cheaterState;
         StateEstimate<double> stateEstimate;
-        RobotCommand<double> robotCommand;
         cheaterState.resize(params);
         stateEstimate.resize(params);
-        robotCommand.resize(model->nu);
 
-        std::size_t stepCount = 0;
-        constexpr std::size_t kMaxInitSteps = 10000;
-        while (!robotRunner.legInitializationComplete()) {
-            fillCheaterState(model, data, params, bindings, cheaterState);
-            stateEstimate.copyFrom(cheaterState);
-            const Mat3<double> R_WT_step = stateEstimate.torsoQuat_W.toRotationMatrix();
-            stateEstimate.psi = std::atan2(R_WT_step(1, 0), R_WT_step(0, 0));
-
-            robotRunner.run(stateEstimate, robotCommand);
-            applyRobotCommand(model, data, robotCommand);
-            mj_step(model, data);
-
-            ++stepCount;
-            if (stepCount > kMaxInitSteps) {
-                throw std::runtime_error("LegPosInitializer did not complete within the step limit");
-            }
-        }
-
+        applyCopiedStateQpos(model, data);
         updateReducedBodyMassPropertiesFromData(model, data, bindings, params);
         fillCheaterState(model, data, params, bindings, cheaterState);
         stateEstimate.copyFrom(cheaterState);
@@ -181,27 +152,29 @@ int main(int argc, char** argv) {
         }
         csv << "leg,"
                "site_Wx,site_Wy,site_Wz,"
-               "foot_link_com_Wx,foot_link_com_Wy,foot_link_com_Wz,"
+               "collision_geom_center_Wx,collision_geom_center_Wy,collision_geom_center_Wz,"
                "site_Bx,site_By,site_Bz,"
-               "foot_link_com_Bx,foot_link_com_By,foot_link_com_Bz,"
+               "collision_geom_center_Bx,collision_geom_center_By,collision_geom_center_Bz,"
                "legacy_nominal_Bx,legacy_nominal_By,legacy_nominal_Bz,"
                "delta_site_legacy_x,delta_site_legacy_y,delta_site_legacy_z,"
-               "delta_foot_link_com_legacy_x,delta_foot_link_com_legacy_y,delta_foot_link_com_legacy_z\n";
+               "delta_collision_geom_center_legacy_x,delta_collision_geom_center_legacy_y,delta_collision_geom_center_legacy_z\n";
 
         std::cout << std::fixed << std::setprecision(9);
-        std::cout << "[LeftSwingHoldNominal] state after LegPosInitializer completion\n";
+        std::cout << "[LeftSwingHoldNominal] state from copied_state qpos\n";
         std::cout << "  model: " << modelPath << "\n";
+        std::cout << "  key:   " << kInitialKeyframeName << "\n";
         std::cout << "  csv:   " << csvPath << "\n";
-        std::cout << "  init_steps: " << stepCount << ", sim_time: " << stateEstimate.time << "\n\n";
+        std::cout << "  sim_time: " << stateEstimate.time << "\n\n";
 
         for (std::size_t leg = 0; leg < params.legs.size(); ++leg) {
             const auto& legParams = params.legs[leg];
             const auto& footBinding = bindings.feet[leg];
 
             const Vec3<double> sitePos_W = readSitePosition(data, footBinding.siteId);
-            const Vec3<double> footLinkCom_W = readBodyComPosition(data, footBinding.bodyId);
+            const Vec3<double> collisionCenter_W =
+                readCollisionGeomCenterPosition(data, footBinding.collisionGeomIds);
             const Vec3<double> sitePos_B = R_BW * (sitePos_W - p_com_W);
-            const Vec3<double> footLinkCom_B = R_BW * (footLinkCom_W - p_com_W);
+            const Vec3<double> collisionCenter_B = R_BW * (collisionCenter_W - p_com_W);
 
             const Vec3<double> hipWorld =
                 stateEstimate.torsoPos_W +
@@ -211,7 +184,7 @@ int main(int argc, char** argv) {
                 (legParams.side == Side::Left ? 1.0 : -1.0) * config.footPlacement.nominalLateralOffset;
 
             const Vec3<double> deltaSite = sitePos_B - legacyNominal_B;
-            const Vec3<double> deltaFootLinkCom = footLinkCom_B - legacyNominal_B;
+            const Vec3<double> deltaCollisionCenter = collisionCenter_B - legacyNominal_B;
 
             const Vec3<double> reconstructedSite_W = p_com_W + R_WB * sitePos_B;
             if ((reconstructedSite_W - sitePos_W).norm() > 1e-9) {
@@ -220,35 +193,35 @@ int main(int argc, char** argv) {
 
             std::cout << "[" << sideName(legParams.side) << "]\n";
             std::cout << "  site_W                 = " << sitePos_W.transpose() << "\n";
-            std::cout << "  foot_link_com_W        = " << footLinkCom_W.transpose() << "\n";
+            std::cout << "  collision_center_W     = " << collisionCenter_W.transpose() << "\n";
             std::cout << "  site_B                 = " << sitePos_B.transpose() << "\n";
-            std::cout << "  foot_link_com_B        = " << footLinkCom_B.transpose() << "\n";
+            std::cout << "  collision_center_B     = " << collisionCenter_B.transpose() << "\n";
             std::cout << "  legacy_nominal_B       = " << legacyNominal_B.transpose() << "\n";
             std::cout << "  delta_site_legacy      = " << deltaSite.transpose() << "\n";
-            std::cout << "  delta_footcom_legacy   = " << deltaFootLinkCom.transpose() << "\n\n";
+            std::cout << "  delta_collision_legacy = " << deltaCollisionCenter.transpose() << "\n\n";
 
             csv << sideName(legParams.side) << ","
                 << sitePos_W.x() << ","
                 << sitePos_W.y() << ","
                 << sitePos_W.z() << ","
-                << footLinkCom_W.x() << ","
-                << footLinkCom_W.y() << ","
-                << footLinkCom_W.z() << ","
+                << collisionCenter_W.x() << ","
+                << collisionCenter_W.y() << ","
+                << collisionCenter_W.z() << ","
                 << sitePos_B.x() << ","
                 << sitePos_B.y() << ","
                 << sitePos_B.z() << ","
-                << footLinkCom_B.x() << ","
-                << footLinkCom_B.y() << ","
-                << footLinkCom_B.z() << ","
+                << collisionCenter_B.x() << ","
+                << collisionCenter_B.y() << ","
+                << collisionCenter_B.z() << ","
                 << legacyNominal_B.x() << ","
                 << legacyNominal_B.y() << ","
                 << legacyNominal_B.z() << ","
                 << deltaSite.x() << ","
                 << deltaSite.y() << ","
                 << deltaSite.z() << ","
-                << deltaFootLinkCom.x() << ","
-                << deltaFootLinkCom.y() << ","
-                << deltaFootLinkCom.z() << "\n";
+                << deltaCollisionCenter.x() << ","
+                << deltaCollisionCenter.y() << ","
+                << deltaCollisionCenter.z() << "\n";
         }
 
         csv.close();

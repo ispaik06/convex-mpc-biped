@@ -45,9 +45,9 @@ cmake --build build --target stand_contact_probe
 ./build/test/standing_debug/stand_contact_probe logs/debug/standing_mpc/standing_mpc_debug_YYYYMMDD_HHMMSS.json
 ```
 
-This probe restores `full_qpos`, `full_qvel`, applies `full_tau_command`, runs `mj_forward`, and reports contact wrenches about both the foot contact site and the foot link COM. It also writes a text report, a CSV, and a PNG under `logs/debug/standing_mpc/contact_probe/`.
+This probe restores `full_qpos`, `full_qvel`, applies `full_tau_command`, runs `mj_forward`, and reports contact wrenches about both the foot contact site and the foot collision-geom center. It also writes a text report, a CSV, and a PNG under `logs/debug/standing_mpc/contact_probe/`.
 
-The PNG compares the QP desired wrench with the MuJoCo-realized contact wrench after applying the logged `full_tau_command`. Moment comparison uses the reference point recorded in the standing MPC log: `foot_site` when the controller used site end-effectors, or `foot_link_com` when it used body COMs.
+The PNG compares the QP desired wrench with the MuJoCo-realized contact wrench after applying the logged `full_tau_command`. Moment comparison uses the reference point recorded in the standing MPC log: `foot_site` when the controller used site end-effectors, or `foot_collision_geom_center` when it used collision-geom centers.
 
 ## SRB Receding Horizon Probe
 

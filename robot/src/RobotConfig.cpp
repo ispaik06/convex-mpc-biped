@@ -27,19 +27,20 @@ const char* robotConfigRelativePath(const RobotType robotType) {
 
 FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
     if (!node || !node.IsScalar()) {
-        return FootEndEffectorSource::Site;
+        throw std::runtime_error(
+            "Missing or invalid model.foot_end_effector_source. Expected site or collision_geom_center");
     }
 
     const std::string mode = node.as<std::string>();
     if (mode == "site") {
         return FootEndEffectorSource::Site;
     }
-    if (mode == "body_com" || mode == "com") {
-        return FootEndEffectorSource::BodyCom;
+    if (mode == "collision_geom_center") {
+        return FootEndEffectorSource::CollisionGeomCenter;
     }
 
     throw std::runtime_error(
-        "Invalid swing.foot_end_effector_source. Expected site or body_com");
+        "Invalid model.foot_end_effector_source. Expected site or collision_geom_center");
 }
 
 RobotRuntimeConfig loadRobotRuntimeConfig(const RobotType robotType) {
@@ -66,8 +67,8 @@ RobotRuntimeConfig loadRobotRuntimeConfig(const RobotType robotType) {
     } else {
         config.auxiliaryModelXmlPath = config.modelXmlPath;
     }
-    config.footEndEffectorSource = parseFootEndEffectorSource(
-        root["swing"] ? root["swing"]["foot_end_effector_source"] : YAML::Node{});
+    config.footEndEffectorSource =
+        parseFootEndEffectorSource(model["foot_end_effector_source"]);
 
     return config;
 }

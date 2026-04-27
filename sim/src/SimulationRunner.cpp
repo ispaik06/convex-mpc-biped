@@ -15,6 +15,14 @@
 #include "ViewerSyncThrottle.h"
 #include "setupRobotParams.h"
 
+namespace {
+
+bool standingKeyboardControlsFromRequest(const LegDynamicsRequest& request) {
+	return request.standingFootJacobians;
+}
+
+}  // namespace
+
 void SimulationRunner::init() {
 	setActiveRobotType(_robot);
 	const auto& runtimeConfig = getRobotRuntimeConfig(_robot);
@@ -48,8 +56,6 @@ void SimulationRunner::init() {
 }
 
 void SimulationRunner::run() {
-	_keyboardCommand.start();
-
 	if (_headless) {
 		// Intentionally runs until the user interrupts it. Headless auto-stop
 		// criteria are deferred because this target is used for manual checking.
@@ -129,17 +135,25 @@ void SimulationRunner::runRobotControl() {
 			std::make_unique<LegSwingDynamicsProvider>(
 				_robot, model, _params, _bindings, LegSwingDynamicsProviderMode::Lazy);
 		_robotRunner->init(&_params, model->opt.timestep, &_userCommand);
+		const bool standingControls =
+			standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest());
+		_keyboardCommand.setStandingControls(standingControls);
+		_keyboardCommand.start();
+		_keyboardCommand.setStandingControls(standingControls, true);
 		_firstControllerRun = false;
 
-		std::cout << model->opt.timestep << std::endl;
+		std::cout << "[SimulationRunner] MuJoCo physics timestep (model->opt.timestep): "
+		          << model->opt.timestep << " sec" << std::endl;
 	}
 
 	updateReducedBodyMassPropertiesFromData(model, data, _bindings, _params);
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
-	_userCommand = _keyboardCommand.getUserCommand();
 	_robotRunner->prepareController(_stateEstimate);
+	_keyboardCommand.setStandingControls(
+		standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest()));
+	_userCommand = _keyboardCommand.getUserCommand();
 	_legSwingDynamicsProvider->update(_stateEstimate, _robotRunner->legDynamicsRequest());
 
 	// if ((_iterations % 50) == 0) {

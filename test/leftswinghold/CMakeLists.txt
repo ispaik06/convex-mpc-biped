@@ -1,7 +1,7 @@
 add_executable(main_left_swing_hold_test
     main_left_swing_hold_test.cpp
     LeftSwingHoldController.cpp
-    LockedTorsoSwingRunner.cpp
+    LeftSwingHoldTestRunner.cpp
 )
 
 # Manual inspection target. Intentionally not added to CTest.

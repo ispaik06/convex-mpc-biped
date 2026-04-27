@@ -10,6 +10,7 @@ timing:
 model:
   xml_path: models/unitree_robots/h1/scene.xml
   auxiliary_xml_path: models/unitree_robots/h1/h1.xml
+  foot_end_effector_source: site  # site or collision_geom_center
   gravity: -9.81
 
 mpc:
@@ -30,8 +31,10 @@ swing:
   kd_diag: [25.0, 25.0, 10.0]
   height: 0.06
   min_remaining_time: 0.001
+  body_velocity_half_stance_offset: 0.0
+  pitch_kp: 20.0
+  pitch_kd: 2.0
   touchdown_target_mode: body_velocity_half_stance
-  foot_end_effector_source: site  # Uses the foot bottom-center contact sites in h1.xml.
 
 foot_placement:
   velocity_feedback_gain: 0.03

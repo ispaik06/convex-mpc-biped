@@ -103,8 +103,8 @@ Quat<double> reducedBodyOrientationWorld(const StateEstimate<double>& stateEstim
     return stateEstimate.torsoQuat_W;
 }
 
-Vec2<double> averageFootSiteXY(const StateEstimate<double>& stateEstimate,
-                              const RobotParams<double>& robotParams) {
+Vec2<double> averageFootEndEffectorXY(const StateEstimate<double>& stateEstimate,
+                                      const RobotParams<double>& robotParams) {
     if (robotParams.legs.empty()) {
         throw std::runtime_error("Standing target seed requires at least one leg");
     }
@@ -142,6 +142,45 @@ Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
     }
 
     throw std::runtime_error("Foot-local contact wrench model requires left/right foot axes");
+}
+
+DVec<double> computeSwingPitchLevelTorque(const RobotLegState<double>& legState,
+                                          const LegControllerData<double>& legData,
+                                          const double pitchKp,
+                                          const double pitchKd) {
+    const Eigen::Index dof = legData.dof();
+    DVec<double> torque = DVec<double>::Zero(dof);
+    if (pitchKp <= 0.0 && pitchKd <= 0.0) {
+        return torque;
+    }
+    if (!legState.hasFootFrame) {
+        throw std::runtime_error("Swing pitch leveling requires foot frame data");
+    }
+    if (!legData.hasFootData) {
+        throw std::runtime_error("Swing pitch leveling requires foot angular Jacobian data");
+    }
+    if (legData.Jw_W.rows() != 3 || legData.Jw_W.cols() != dof || legData.qd.size() != dof) {
+        throw std::runtime_error("Swing pitch leveling received inconsistent leg angular data");
+    }
+
+    Vec3<double> footY_W = legState.R_WF.col(1);
+    Vec3<double> footZ_W = legState.R_WF.col(2);
+    if (!footY_W.allFinite() || !footZ_W.allFinite() ||
+        footY_W.norm() <= 1e-9 || footZ_W.norm() <= 1e-9) {
+        throw std::runtime_error("Swing pitch leveling received invalid foot frame axes");
+    }
+    footY_W.normalize();
+    footZ_W.normalize();
+
+    const Vec3<double> worldUp = Vec3<double>::UnitZ();
+    const double sinPitchError = footY_W.dot(footZ_W.cross(worldUp));
+    const double cosPitchError = footZ_W.dot(worldUp);
+    const double pitchError = std::atan2(sinPitchError, cosPitchError);
+    const Vec3<double> omegaFoot_W = legData.Jw_W * legData.qd;
+    const double pitchRate = footY_W.dot(omegaFoot_W);
+    const Vec3<double> pitchMoment_W = (pitchKp * pitchError - pitchKd * pitchRate) * footY_W;
+    torque = legData.Jw_W.transpose() * pitchMoment_W;
+    return torque;
 }
 }  // namespace
 
@@ -185,7 +224,7 @@ void MyController::initializeRuntimeObjects() {
     const auto& config = getControllerConfig();
     _locomotionFSM = std::make_unique<LocomotionFSM>(
         config.locomotionMode, config.startup.postInitStandingSettleTime, _stateEstimate->time);
-    setFootEndEffectorSource(config.swing.footEndEffectorSource);
+    setFootEndEffectorSource(config.model.footEndEffectorSource);
     _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
     _swingHeight = config.swing.height;
@@ -194,6 +233,9 @@ void MyController::initializeRuntimeObjects() {
     _locomotionMode = locomotionOutput.mode;
     _legDynamicsRequest = locomotionOutput.dynamicsRequest;
     _gaitScheduler->setLocomotionMode(_locomotionMode);
+    std::cout << "[MyController] locomotion mode initialized to "
+              << locomotionModeName(_locomotionMode) << " at t="
+              << formatTimeSeconds(_stateEstimate->time) << std::endl;
 
     _legRuntime.assign(_robotParams->legs.size(), LegRuntimeState{});
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
@@ -363,10 +405,11 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     }
 
     if (_locomotionMode == LocomotionMode::Standing) {
-        const Vec2<double> avgFootSiteXY = averageFootSiteXY(*_stateEstimate, *_robotParams);
+        const Vec2<double> avgFootXY =
+            averageFootEndEffectorXY(*_stateEstimate, *_robotParams);
         // Keep the stance footprint centered under the feet and move only in height.
-        _bodyTarget.position_W[0] = avgFootSiteXY[0];
-        _bodyTarget.position_W[1] = avgFootSiteXY[1];
+        _bodyTarget.position_W[0] = avgFootXY[0];
+        _bodyTarget.position_W[1] = avgFootXY[1];
         const double z_dot = (_userCommand != nullptr) ? _userCommand->z_dot : 0.0;
         const double standingRollOffset =
             (_userCommand != nullptr) ? _userCommand->standing_roll_offset_rad : 0.0;
@@ -745,6 +788,11 @@ void MyController::writeLegCommands() {
         command.vDes_W = _legRuntime[leg].swingTrajectory.velocity();
         command.aDes_W = _legRuntime[leg].swingTrajectory.acceleration();
         command.kdCartesian = _swingKd;
+        command.tauFeedForward += computeSwingPitchLevelTorque(
+            _stateEstimate->legs[leg],
+            _legController->datas[leg],
+            getControllerConfig().swing.pitchKp,
+            getControllerConfig().swing.pitchKd);
     }
 }
 

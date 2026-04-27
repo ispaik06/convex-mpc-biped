@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <mujoco/mujoco.h>
 
@@ -31,6 +32,22 @@ int optionalId(const mjModel* model, int objType, std::string_view name) {
     }
     const std::string key = asString(name);
     return mj_name2id(model, objType, key.c_str());
+}
+
+bool isCollisionGeomCandidate(const mjModel* model, const int geomId) {
+    return model->geom_contype[geomId] != 0 ||
+           model->geom_conaffinity[geomId] != 0 ||
+           model->geom_group[geomId] == 3;
+}
+
+std::vector<int> collisionGeomIdsForBody(const mjModel* model, const int bodyId) {
+    std::vector<int> geomIds;
+    for (int geomId = 0; geomId < model->ngeom; ++geomId) {
+        if (model->geom_bodyid[geomId] == bodyId && isCollisionGeomCandidate(model, geomId)) {
+            geomIds.push_back(geomId);
+        }
+    }
+    return geomIds;
 }
 
 template <typename T>
@@ -168,8 +185,14 @@ void fillLeg(const mjModel* model,
     foot_binding.siteId = spec.endSite.empty()
                               ? -1
                               : requireId<T>(model, mjOBJ_SITE, spec.endSite, "foot site");
+    foot_binding.collisionGeomIds = collisionGeomIdsForBody(model, foot_binding.bodyId);
     if (footEndEffectorSource == FootEndEffectorSource::Site && spec.endSite.empty()) {
         throw std::runtime_error("Foot end-effector source is site, but the leg spec has no endSite");
+    }
+    if (footEndEffectorSource == FootEndEffectorSource::CollisionGeomCenter &&
+        foot_binding.collisionGeomIds.empty()) {
+        throw std::runtime_error(
+            "Foot end-effector source is collision_geom_center, but the foot body has no collision geoms");
     }
     leg.hipLocationFromBody = firstJointLocationFromBase<T>(model, spec.joints);
 }

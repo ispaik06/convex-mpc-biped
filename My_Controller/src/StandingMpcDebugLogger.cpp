@@ -253,8 +253,8 @@ std::string footEndEffectorSourceName(const FootEndEffectorSource source) {
     switch (source) {
         case FootEndEffectorSource::Site:
             return "site";
-        case FootEndEffectorSource::BodyCom:
-            return "body_com";
+        case FootEndEffectorSource::CollisionGeomCenter:
+            return "collision_geom_center";
     }
     return "unknown";
 }
@@ -263,8 +263,8 @@ std::string desiredWrenchReferencePointName(const FootEndEffectorSource source) 
     switch (source) {
         case FootEndEffectorSource::Site:
             return "foot_site";
-        case FootEndEffectorSource::BodyCom:
-            return "foot_link_com";
+        case FootEndEffectorSource::CollisionGeomCenter:
+            return "foot_collision_geom_center";
     }
     return "unknown";
 }
@@ -339,6 +339,8 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     json model = json::object();
     model["xml_path"] = config.model.xmlPath;
     model["auxiliary_xml_path"] = config.model.auxiliaryXmlPath;
+    model["foot_end_effector_source"] =
+        footEndEffectorSourceName(config.model.footEndEffectorSource);
     model["gravity"] = config.model.gravity;
     root["model"] = std::move(model);
 
@@ -360,9 +362,10 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     swing["kd_diag"] = vectorToJson(config.swing.kdDiag);
     swing["height"] = config.swing.height;
     swing["min_remaining_time"] = config.swing.minRemainingTime;
+    swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
+    swing["pitch_kp"] = config.swing.pitchKp;
+    swing["pitch_kd"] = config.swing.pitchKd;
     swing["touchdown_target_mode"] = touchdownTargetModeName(config.swing.touchdownTargetMode);
-    swing["foot_end_effector_source"] =
-        footEndEffectorSourceName(config.swing.footEndEffectorSource);
     root["swing"] = std::move(swing);
 
     json footPlacement = json::object();
@@ -395,6 +398,9 @@ json controllerConfigJson(const ControllerConfig& config, const RobotType robotT
     root["initial_pose"] = std::move(initialPose);
 
     json leftSwingHoldTest = json::object();
+    if (!config.leftSwingHoldTest.xmlPath.empty()) {
+        leftSwingHoldTest["xml_path"] = config.leftSwingHoldTest.xmlPath;
+    }
     leftSwingHoldTest["touchdown_target_mode"] =
         touchdownTargetModeName(config.leftSwingHoldTest.touchdownTargetMode);
     root["left_swing_hold_test"] = std::move(leftSwingHoldTest);
@@ -632,9 +638,9 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     metadata["dt_mpc"] = dtMpc();
     metadata["robot_type"] = robotTypeName(snapshot.robotParams.roboType);
     metadata["foot_end_effector_source"] =
-        footEndEffectorSourceName(config.swing.footEndEffectorSource);
+        footEndEffectorSourceName(config.model.footEndEffectorSource);
     metadata["desired_wrench_reference_point"] =
-        desiredWrenchReferencePointName(config.swing.footEndEffectorSource);
+        desiredWrenchReferencePointName(config.model.footEndEffectorSource);
     metadata["contact_wrench_model"] =
         contactWrenchModelName(config.mpc.contactWrenchModel);
     root["metadata"] = std::move(metadata);

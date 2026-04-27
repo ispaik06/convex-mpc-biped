@@ -6,8 +6,8 @@
 #include "Utilities/UserCommand.h"
 
 enum class FootEndEffectorSource {
-	BodyCom,
 	Site,
+	CollisionGeomCenter,
 };
 
 struct LegDynamicsRequest {

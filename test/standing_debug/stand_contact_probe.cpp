@@ -34,11 +34,11 @@ struct FootContactResult {
     std::string side;
     int footBodyId = -1;
     int footSiteId = -1;
-    Vec3<double> footCom_W = Vec3<double>::Zero();
+    Vec3<double> footCollisionCenter_W = Vec3<double>::Zero();
     Vec3<double> footSite_W = Vec3<double>::Zero();
     Vec3<double> desiredForce_W = Vec3<double>::Zero();
     Vec3<double> desiredMoment_W = Vec3<double>::Zero();
-    WrenchAtPoint atFootCom;
+    WrenchAtPoint atFootCollisionCenter;
     WrenchAtPoint atFootSite;
 };
 
@@ -176,8 +176,16 @@ Vec3<double> readMujocoVec3(const mjtNum* raw) {
     return out;
 }
 
-Vec3<double> readBodyComWorld(const mjData* data, const int bodyId) {
-    return readMujocoVec3(data->xipos + 3 * bodyId);
+Vec3<double> readCollisionGeomCenterWorld(const mjData* data, const std::vector<int>& geomIds) {
+    if (geomIds.empty()) {
+        throw std::runtime_error("Foot binding has no collision geoms");
+    }
+
+    Vec3<double> center = Vec3<double>::Zero();
+    for (const int geomId : geomIds) {
+        center += readMujocoVec3(data->geom_xpos + 3 * geomId);
+    }
+    return center / static_cast<double>(geomIds.size());
 }
 
 Vec3<double> readSiteWorld(const mjData* data, const int siteId) {
@@ -279,11 +287,11 @@ void accumulateFootContacts(const mjModel* model,
         const Vec3<double> momentOnFootAtContact_W = signForFoot * momentNormalPositive_W;
         const Vec3<double> contactPoint_W = readMujocoVec3(contact.pos);
 
-        addContactWrench(result.atFootCom,
+        addContactWrench(result.atFootCollisionCenter,
                          forceOnFoot_W,
                          momentOnFootAtContact_W,
                          contactPoint_W,
-                         result.footCom_W);
+                         result.footCollisionCenter_W);
         addContactWrench(result.atFootSite,
                          forceOnFoot_W,
                          momentOnFootAtContact_W,
@@ -367,11 +375,11 @@ void writePlotCsv(std::ostream& out,
                             true);
         writeCsvRowsForVec3(out,
                             result.side,
-                            "foot_link_com",
+                            "foot_collision_geom_center",
                             "force",
                             result.desiredForce_W,
-                            result.atFootCom.force_W,
-                            result.atFootCom.contactCount,
+                            result.atFootCollisionCenter.force_W,
+                            result.atFootCollisionCenter.contactCount,
                             true);
         writeCsvRowsForVec3(out,
                             result.side,
@@ -383,12 +391,12 @@ void writePlotCsv(std::ostream& out,
                             desiredReferencePoint == "foot_site");
         writeCsvRowsForVec3(out,
                             result.side,
-                            "foot_link_com",
+                            "foot_collision_geom_center",
                             "moment",
                             result.desiredMoment_W,
-                            result.atFootCom.moment_W,
-                            result.atFootCom.contactCount,
-                            desiredReferencePoint == "foot_link_com");
+                            result.atFootCollisionCenter.moment_W,
+                            result.atFootCollisionCenter.contactCount,
+                            desiredReferencePoint == "foot_collision_geom_center");
     }
 }
 
@@ -457,11 +465,11 @@ void writeReport(std::ostream& out,
                               desiredReferencePoint == "foot_site",
                               desiredReferencePoint);
         printWrenchComparison(out,
-                              "measured_at_foot_link_com",
-                              result.atFootCom,
+                              "measured_at_foot_collision_geom_center",
+                              result.atFootCollisionCenter,
                               result.desiredForce_W,
                               result.desiredMoment_W,
-                              desiredReferencePoint == "foot_link_com",
+                              desiredReferencePoint == "foot_collision_geom_center",
                               desiredReferencePoint);
         out << "\n";
     }
@@ -552,7 +560,8 @@ int main(int argc, char** argv) {
         result.side = sideName(legParams.side);
         result.footBodyId = footBinding.bodyId;
         result.footSiteId = footBinding.siteId;
-        result.footCom_W = readBodyComWorld(data.get(), footBinding.bodyId);
+        result.footCollisionCenter_W =
+            readCollisionGeomCenterWorld(data.get(), footBinding.collisionGeomIds);
         result.footSite_W = readSiteWorld(data.get(), footBinding.siteId);
         result.desiredForce_W = vec3FromWrenchBlock(firstWrench, legParams.side, false);
         result.desiredMoment_W = vec3FromWrenchBlock(firstWrench, legParams.side, true);

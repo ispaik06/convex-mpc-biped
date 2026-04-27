@@ -16,8 +16,14 @@ public:
     LeftSwingHoldController();
     ~LeftSwingHoldController() override = default;
 
+    void bindRuntime(const StateEstimate<double>* stateEstimate,
+                     const RobotParams<double>* robotParams,
+                     LegController<double>* legController,
+                     ArmController<double>* armController,
+                     const UserCommand* userCommand);
     void initializeController() override;
     void runController() override;
+    void collectDebugVisualization(DebugVizState<double>& debugViz) const override;
 
 private:
     enum class Phase {
@@ -30,6 +36,7 @@ private:
 
     void initializeRuntime();
     int findLegIndex(Side side) const;
+    const char* phaseName() const;
     void startSwingPhase();
     void startHoldPhase();
     Vec3<double> touchdownTargetWorld() const;
@@ -45,8 +52,8 @@ private:
     int _rightLegIndex{-1};
     Phase _phase{Phase::Swing};
     DVec<double> _leftHoldQ;
-    DVec<double> _rightHoldQ;
     SwingFootTrajectory _leftSwingTrajectory;
+    Vec3<double> _touchdownTarget_W = Vec3<double>::Zero();
     JointPdGains<double> _jointHoldGains;
     Vec3<double> _swingNaturalFrequency = Vec3<double>::Zero();
     Mat3<double> _swingKd = Mat3<double>::Zero();

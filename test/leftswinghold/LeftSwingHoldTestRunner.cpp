@@ -1,9 +1,8 @@
-#include "KeyboardTorsoSwingRunner.h"
+#include "LeftSwingHoldTestRunner.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -15,36 +14,27 @@
 #include "MujocoCheaterStateReader.h"
 #include "RobotConfig.h"
 #include "SimulationConfig.h"
-#include "Utilities/MatrixUtils.h"
 #include "ViewerSyncThrottle.h"
 #include "setupRobotParams.h"
 
 namespace {
 constexpr const char* kInitialKeyframeName = "copied_state";
-
-double wrapAngle(const double angle) {
-    return std::atan2(std::sin(angle), std::cos(angle));
-}
-
-double yawFromRotation(const Mat3<double>& rotation) {
-    return std::atan2(rotation(1, 0), rotation(0, 0));
-}
 }  // namespace
 
-KeyboardTorsoSwingRunner::KeyboardTorsoSwingRunner(const RobotType robotType,
-                                                   LeftSwingHoldController* controller,
-                                                   const bool headless,
-                                                   const double torsoZOffset)
+LeftSwingHoldTestRunner::LeftSwingHoldTestRunner(const RobotType robotType,
+                                                 LeftSwingHoldController* controller,
+                                                 const bool headless,
+                                                 const double torsoZOffset)
     : _robotType(robotType),
       _controller(controller),
       _headless(headless),
       _torsoZOffset(torsoZOffset) {
     if (_controller == nullptr) {
-        throw std::invalid_argument("KeyboardTorsoSwingRunner requires a controller");
+        throw std::invalid_argument("LeftSwingHoldTestRunner requires a controller");
     }
 }
 
-KeyboardTorsoSwingRunner::~KeyboardTorsoSwingRunner() {
+LeftSwingHoldTestRunner::~LeftSwingHoldTestRunner() {
     if (_data != nullptr) {
         mj_deleteData(_data);
         _data = nullptr;
@@ -55,7 +45,7 @@ KeyboardTorsoSwingRunner::~KeyboardTorsoSwingRunner() {
     }
 }
 
-void KeyboardTorsoSwingRunner::init() {
+void LeftSwingHoldTestRunner::init() {
     setActiveRobotType(_robotType);
     const auto& controllerConfig = getControllerConfig(_robotType);
     const auto& runtimeConfig = getRobotRuntimeConfig(_robotType);
@@ -85,47 +75,34 @@ void KeyboardTorsoSwingRunner::init() {
 
     locateFloatingBase();
     applyCopiedStateKeyframe();
-    cachePlanarBasePose();
     cacheFrozenQpos();
-    _planarMotionEnabled = true;
+    clampFrozenQpos();
 
     std::cout << "Loaded MuJoCo model: " << _modelPath << '\n';
     std::cout << "nq=" << _model->nq
               << ", nv=" << _model->nv
               << ", nu=" << _model->nu << '\n';
-    std::cout << "[KeyboardLeftSwingHoldTest] initial keyframe: " << kInitialKeyframeName
+    std::cout << "[LeftSwingHoldTest] initial keyframe: " << kInitialKeyframeName
               << ", torso z offset=" << _torsoZOffset << " m" << std::endl;
 }
 
-void KeyboardTorsoSwingRunner::run() {
-    _stopRequested = false;
-    _keyboardCommand.start();
-
+void LeftSwingHoldTestRunner::run() {
     if (_headless) {
         runPhysicsLoop(false, false);
-    } else {
-        _stopRequested = false;
-        _mainThread.init();
-
-        std::thread physicsThread(&KeyboardTorsoSwingRunner::runPhysicsLoop,
-                                  this,
-                                  true,
-                                  true);
-        _mainThread.run();
-
-        _stopRequested = true;
-        physicsThread.join();
+        return;
     }
 
-    _keyboardCommand.stop();
+    _stopRequested = false;
+    _mainThread.init();
 
-    mj_deleteData(_data);
-    mj_deleteModel(_model);
-    _data = nullptr;
-    _model = nullptr;
+    std::thread physicsThread(&LeftSwingHoldTestRunner::runPhysicsLoop, this, true, true);
+    _mainThread.run();
+
+    _stopRequested = true;
+    physicsThread.join();
 }
 
-void KeyboardTorsoSwingRunner::runPhysicsLoop(const bool throttleRealtime, const bool syncViewer) {
+void LeftSwingHoldTestRunner::runPhysicsLoop(const bool throttleRealtime, const bool syncViewer) {
     const auto wallStart = std::chrono::steady_clock::now();
     const double simStart = _data->time;
     const auto& simulationConfig = getSimulationConfig();
@@ -141,17 +118,11 @@ void KeyboardTorsoSwingRunner::runPhysicsLoop(const bool throttleRealtime, const
     }
 
     while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
-        _userCommand = _keyboardCommand.getUserCommand();
-
         clampFrozenQpos();
         runRobotControl();
         clampFrozenQpos();
         mj_step(_model, _data);
         clampFrozenQpos();
-
-        if (_planarMotionEnabled) {
-            advancePlanarBasePose(_model->opt.timestep);
-        }
 
         ++_iterations;
 
@@ -175,13 +146,18 @@ void KeyboardTorsoSwingRunner::runPhysicsLoop(const bool throttleRealtime, const
               << " steps, sim time=" << _data->time << " sec" << "\n\n";
 }
 
-void KeyboardTorsoSwingRunner::initializeControllerRuntime() {
+void LeftSwingHoldTestRunner::initializeControllerRuntime() {
     const auto robotSetup = setupRobotParams<double>(
         _robotType,
         _model,
         _controller->footEndEffectorSource());
     _params = robotSetup.params;
     _bindings = robotSetup.bindings;
+
+    if (_bindings.feet.size() != _params.legs.size()) {
+        throw std::runtime_error("Mujoco bindings do not match leg count");
+    }
+
     updateReducedBodyMassPropertiesFromData(_model, _data, _bindings, _params);
     _cheaterState.resize(_params);
     _stateEstimate.resize(_params);
@@ -199,14 +175,15 @@ void KeyboardTorsoSwingRunner::initializeControllerRuntime() {
 
     _leftLegQposIndices.clear();
     for (const auto& leg : _params.legs) {
-        if (leg.side == Side::Left) {
-            _leftLegQposIndices = leg.joints.q_idx;
-            _leftLegQvelIndices = leg.joints.qd_idx;
-            break;
+        if (leg.side != Side::Left) {
+            continue;
         }
+        _leftLegQposIndices = leg.joints.q_idx;
+        _leftLegQvelIndices = leg.joints.qd_idx;
+        break;
     }
     if (_leftLegQposIndices.empty() || _leftLegQvelIndices.empty()) {
-        throw std::runtime_error("KeyboardTorsoSwingRunner could not find left leg qpos indices");
+        throw std::runtime_error("LeftSwingHoldTestRunner could not find left leg qpos indices");
     }
 
     _legSwingDynamicsProvider =
@@ -218,7 +195,7 @@ void KeyboardTorsoSwingRunner::initializeControllerRuntime() {
                              &_userCommand);
 }
 
-void KeyboardTorsoSwingRunner::runRobotControl() {
+void LeftSwingHoldTestRunner::runRobotControl() {
     if (_firstControllerRun) {
         initializeControllerRuntime();
         _firstControllerRun = false;
@@ -226,7 +203,7 @@ void KeyboardTorsoSwingRunner::runRobotControl() {
 
     fillCheaterState(_model, _data, _params, _bindings, _cheaterState);
     _stateEstimator.update(_cheaterState, _stateEstimate);
-    if (_legSwingDynamicsProvider != nullptr) {
+    if (_legSwingDynamicsProvider) {
         _legSwingDynamicsProvider->update(_stateEstimate);
     }
 
@@ -265,7 +242,7 @@ void KeyboardTorsoSwingRunner::runRobotControl() {
     applyRobotCommand();
 }
 
-void KeyboardTorsoSwingRunner::applyRobotCommand() {
+void LeftSwingHoldTestRunner::applyRobotCommand() {
     if (_robotCommand.tau.size() != _model->nu) {
         throw std::runtime_error("RobotCommand torque dimension does not match model->nu");
     }
@@ -282,7 +259,7 @@ void KeyboardTorsoSwingRunner::applyRobotCommand() {
     }
 }
 
-void KeyboardTorsoSwingRunner::updateDebugVisualization() {
+void LeftSwingHoldTestRunner::updateDebugVisualization() {
     if (_model == nullptr || _data == nullptr || _controller == nullptr) {
         return;
     }
@@ -334,7 +311,7 @@ void KeyboardTorsoSwingRunner::updateDebugVisualization() {
     }
 }
 
-void KeyboardTorsoSwingRunner::applyCopiedStateKeyframe() {
+void LeftSwingHoldTestRunner::applyCopiedStateKeyframe() {
     const int keyId = mj_name2id(_model, mjOBJ_KEY, kInitialKeyframeName);
     if (keyId < 0) {
         throw std::runtime_error(std::string("Failed to find MuJoCo keyframe: ") +
@@ -350,9 +327,8 @@ void KeyboardTorsoSwingRunner::applyCopiedStateKeyframe() {
     mj_forward(_model, _data);
 }
 
-void KeyboardTorsoSwingRunner::locateFloatingBase() {
+void LeftSwingHoldTestRunner::locateFloatingBase() {
     _freeJointQposIndex = -1;
-    _freeJointQvelIndex = -1;
 
     for (int jointId = 0; jointId < _model->njnt; ++jointId) {
         if (_model->jnt_type[jointId] == mjJNT_FREE) {
@@ -363,125 +339,44 @@ void KeyboardTorsoSwingRunner::locateFloatingBase() {
     }
 
     if (_freeJointQposIndex < 0 || _freeJointQvelIndex < 0) {
-        throw std::runtime_error("KeyboardTorsoSwingRunner could not find a floating base joint");
+        throw std::runtime_error("LeftSwingHoldTestRunner could not find a floating base joint");
     }
 }
 
-void KeyboardTorsoSwingRunner::cacheFrozenQpos() {
+void LeftSwingHoldTestRunner::cacheFrozenQpos() {
     _frozenQpos.assign(_model->nq, 0.0);
     for (int i = 0; i < _model->nq; ++i) {
         _frozenQpos[static_cast<std::size_t>(i)] = static_cast<double>(_data->qpos[i]);
     }
 }
 
-bool KeyboardTorsoSwingRunner::isLeftLegQposIndex(const int qposIndex) const {
+bool LeftSwingHoldTestRunner::isLeftLegQposIndex(const int qposIndex) const {
     return std::find(_leftLegQposIndices.begin(), _leftLegQposIndices.end(), qposIndex) !=
            _leftLegQposIndices.end();
 }
 
-bool KeyboardTorsoSwingRunner::isLeftLegQvelIndex(const int qvelIndex) const {
+bool LeftSwingHoldTestRunner::isLeftLegQvelIndex(const int qvelIndex) const {
     return std::find(_leftLegQvelIndices.begin(), _leftLegQvelIndices.end(), qvelIndex) !=
            _leftLegQvelIndices.end();
 }
 
-bool KeyboardTorsoSwingRunner::isFloatingBaseQposIndex(const int qposIndex) const {
-    return qposIndex >= _freeJointQposIndex && qposIndex < (_freeJointQposIndex + 7);
-}
-
-bool KeyboardTorsoSwingRunner::isFloatingBaseQvelIndex(const int qvelIndex) const {
-    return qvelIndex >= _freeJointQvelIndex && qvelIndex < (_freeJointQvelIndex + 6);
-}
-
-void KeyboardTorsoSwingRunner::clampFrozenQpos() {
+void LeftSwingHoldTestRunner::clampFrozenQpos() {
     if (_frozenQpos.empty()) {
         return;
     }
 
     for (int i = 0; i < _model->nq; ++i) {
-        if (isFloatingBaseQposIndex(i) || isLeftLegQposIndex(i)) {
+        if (isLeftLegQposIndex(i)) {
             continue;
         }
         _data->qpos[i] = static_cast<mjtNum>(_frozenQpos[static_cast<std::size_t>(i)]);
     }
     for (int i = 0; i < _model->nv; ++i) {
-        if (isFloatingBaseQvelIndex(i) || isLeftLegQvelIndex(i)) {
+        if (isLeftLegQvelIndex(i)) {
             continue;
         }
         _data->qvel[i] = mjtNum(0);
     }
-
-    mj_forward(_model, _data);
-}
-
-void KeyboardTorsoSwingRunner::cachePlanarBasePose() {
-    if (_data == nullptr) {
-        throw std::runtime_error("KeyboardTorsoSwingRunner requires MuJoCo data to cache base pose");
-    }
-
-    const mjtNum* qpos = _data->qpos + _freeJointQposIndex;
-    _planarBasePosition_W = Vec3<double>(
-        static_cast<double>(qpos[0]),
-        static_cast<double>(qpos[1]),
-        static_cast<double>(qpos[2]));
-    _planarBaseZ = _planarBasePosition_W.z();
-
-    const Quat<double> baseQuat_W(static_cast<double>(qpos[3]),
-                                 static_cast<double>(qpos[4]),
-                                 static_cast<double>(qpos[5]),
-                                 static_cast<double>(qpos[6]));
-    const Mat3<double> baseRotation_W = baseQuat_W.toRotationMatrix();
-    _planarBaseYaw = wrapAngle(yawFromRotation(baseRotation_W));
-    _planarRotationNoYaw = Rz(-_planarBaseYaw) * baseRotation_W;
-
-    applyPlanarBasePose(Vec3<double>::Zero(), Vec3<double>::Zero());
-}
-
-void KeyboardTorsoSwingRunner::advancePlanarBasePose(const double dt) {
-    if (!_planarMotionEnabled) {
-        return;
-    }
-
-    const double step = std::max(0.0, dt);
-    const Mat3<double> baseRotation_W = Rz(_planarBaseYaw) * _planarRotationNoYaw;
-    const Vec3<double> bodyLinearCommand(
-        _userCommand.x_dot,
-        _userCommand.y_dot,
-        0.0);
-    Vec3<double> worldLinearVelocity = baseRotation_W * bodyLinearCommand;
-    worldLinearVelocity.z() = 0.0;
-    const Vec3<double> worldAngularVelocity(0.0, 0.0, _userCommand.psi_dot);
-    const Vec3<double> bodyAngularVelocity = baseRotation_W.transpose() * worldAngularVelocity;
-
-    _planarBasePosition_W += worldLinearVelocity * step;
-    _planarBasePosition_W.z() = _planarBaseZ;
-    _planarBaseYaw = wrapAngle(_planarBaseYaw + _userCommand.psi_dot * step);
-
-    applyPlanarBasePose(worldLinearVelocity, bodyAngularVelocity);
-}
-
-void KeyboardTorsoSwingRunner::applyPlanarBasePose(const Vec3<double>& worldLinearVelocity,
-                                                   const Vec3<double>& bodyAngularVelocity) {
-    if (_data == nullptr) {
-        throw std::runtime_error("KeyboardTorsoSwingRunner requires MuJoCo data to move the base");
-    }
-
-    const Mat3<double> baseRotation_W = Rz(_planarBaseYaw) * _planarRotationNoYaw;
-    const Quat<double> baseQuat_W(baseRotation_W);
-
-    _data->qpos[_freeJointQposIndex + 0] = static_cast<mjtNum>(_planarBasePosition_W.x());
-    _data->qpos[_freeJointQposIndex + 1] = static_cast<mjtNum>(_planarBasePosition_W.y());
-    _data->qpos[_freeJointQposIndex + 2] = static_cast<mjtNum>(_planarBaseZ);
-    _data->qpos[_freeJointQposIndex + 3] = static_cast<mjtNum>(baseQuat_W.w());
-    _data->qpos[_freeJointQposIndex + 4] = static_cast<mjtNum>(baseQuat_W.x());
-    _data->qpos[_freeJointQposIndex + 5] = static_cast<mjtNum>(baseQuat_W.y());
-    _data->qpos[_freeJointQposIndex + 6] = static_cast<mjtNum>(baseQuat_W.z());
-
-    _data->qvel[_freeJointQvelIndex + 0] = static_cast<mjtNum>(worldLinearVelocity.x());
-    _data->qvel[_freeJointQvelIndex + 1] = static_cast<mjtNum>(worldLinearVelocity.y());
-    _data->qvel[_freeJointQvelIndex + 2] = static_cast<mjtNum>(worldLinearVelocity.z());
-    _data->qvel[_freeJointQvelIndex + 3] = static_cast<mjtNum>(bodyAngularVelocity.x());
-    _data->qvel[_freeJointQvelIndex + 4] = static_cast<mjtNum>(bodyAngularVelocity.y());
-    _data->qvel[_freeJointQvelIndex + 5] = static_cast<mjtNum>(bodyAngularVelocity.z());
 
     mj_forward(_model, _data);
 }

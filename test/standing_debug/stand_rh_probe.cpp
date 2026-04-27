@@ -308,10 +308,10 @@ FootEndEffectorSource footEndEffectorSourceFromString(const std::string& value) 
     if (value == "site") {
         return FootEndEffectorSource::Site;
     }
-    if (value == "body_com" || value == "com") {
-        return FootEndEffectorSource::BodyCom;
+    if (value == "collision_geom_center") {
+        return FootEndEffectorSource::CollisionGeomCenter;
     }
-    throw std::runtime_error("Invalid controller_config.swing.foot_end_effector_source: " + value);
+    throw std::runtime_error("Invalid controller_config.model.foot_end_effector_source: " + value);
 }
 
 ContactWrenchModel contactWrenchModelFromString(const std::string& value) {
@@ -369,6 +369,12 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         }
         if (model.contains("auxiliary_xml_path") && model.at("auxiliary_xml_path").is_string()) {
             out.model.auxiliaryXmlPath = model.at("auxiliary_xml_path").get<std::string>();
+        }
+        if (model.contains("foot_end_effector_source") &&
+            model.at("foot_end_effector_source").is_string()) {
+            out.model.footEndEffectorSource =
+                footEndEffectorSourceFromString(
+                    model.at("foot_end_effector_source").get<std::string>());
         }
         if (model.contains("gravity")) {
             out.model.gravity = model.at("gravity").get<double>();
@@ -466,12 +472,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             swing.at("touchdown_target_mode").is_string()) {
             out.swing.touchdownTargetMode =
                 touchdownTargetModeFromString(swing.at("touchdown_target_mode").get<std::string>());
-        }
-        if (swing.contains("foot_end_effector_source") &&
-            swing.at("foot_end_effector_source").is_string()) {
-            out.swing.footEndEffectorSource =
-                footEndEffectorSourceFromString(
-                    swing.at("foot_end_effector_source").get<std::string>());
         }
     }
 

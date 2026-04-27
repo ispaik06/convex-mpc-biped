@@ -128,18 +128,21 @@ def plot_contact_counts(ax, rows: list[dict]):
 
 def plot_moment_reference_delta(ax, rows: list[dict]):
     site_rows = select_rows(rows, "moment", "foot_site")
-    com_rows = select_rows(rows, "moment", "foot_link_com")
+    collision_rows = select_rows(rows, "moment", "foot_collision_geom_center")
     site_by_key = {(row["side"], row["axis"]): row for row in site_rows}
-    pairs = [(row, site_by_key[(row["side"], row["axis"])]) for row in com_rows]
-    labels = [short_label(com_row) for com_row, _ in pairs]
-    deltas = [com_row["measured"] - site_row["measured"] for com_row, site_row in pairs]
+    pairs = [(row, site_by_key[(row["side"], row["axis"])]) for row in collision_rows]
+    labels = [short_label(collision_row) for collision_row, _ in pairs]
+    deltas = [
+        collision_row["measured"] - site_row["measured"]
+        for collision_row, site_row in pairs
+    ]
 
     ax.bar(range(len(deltas)), deltas, color="#b279a2")
     ax.axhline(0.0, color="#222222", linewidth=0.8)
     ax.set_xticks(range(len(deltas)))
     ax.set_xticklabels(labels, rotation=35, ha="right")
     ax.set_ylabel("N m")
-    ax.set_title("Moment: foot_link_com - foot_site")
+    ax.set_title("Moment: foot_collision_geom_center - foot_site")
     ax.grid(True, axis="y", alpha=0.3)
 
 

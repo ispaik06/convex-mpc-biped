@@ -18,16 +18,22 @@ Vec3<double> readBodyPosition(const mjData* data, int body_id) {
     return pos;
 }
 
-Vec3<double> readBodyComPosition(const mjData* data, int body_id) {
-    if (body_id < 0) {
-        throw std::runtime_error("Invalid body id for body COM query");
+Vec3<double> readCollisionGeomCenterPosition(const mjData* data,
+                                             const std::vector<int>& geomIds) {
+    if (geomIds.empty()) {
+        throw std::runtime_error("Foot end-effector source is collision_geom_center, but no collision geoms are bound");
     }
 
     Vec3<double> pos = Vec3<double>::Zero();
-    for (int i = 0; i < 3; ++i) {
-        pos[i] = static_cast<double>(data->xipos[3 * body_id + i]);
+    for (const int geomId : geomIds) {
+        if (geomId < 0) {
+            throw std::runtime_error("Invalid geom id for collision geom center query");
+        }
+        for (int i = 0; i < 3; ++i) {
+            pos[i] += static_cast<double>(data->geom_xpos[3 * geomId + i]);
+        }
     }
-    return pos;
+    return pos / static_cast<double>(geomIds.size());
 }
 
 Quat<double> readBodyQuaternion(const mjData* data, int body_id) {
@@ -91,6 +97,32 @@ Vec3<double> readBodyLinearVelocity(const mjModel* model, const mjData* data, in
     return readObjectLinearVelocity(model, data, mjOBJ_BODY, body_id);
 }
 
+Vec3<double> readPointLinearVelocity(const mjModel* model,
+                                     const mjData* data,
+                                     const Vec3<double>& point_W,
+                                     const int bodyId) {
+    if (bodyId < 0) {
+        throw std::runtime_error("Invalid body id for point velocity query");
+    }
+
+    std::vector<mjtNum> jacp(static_cast<std::size_t>(3 * model->nv), mjtNum(0));
+    const mjtNum point[3] = {
+        static_cast<mjtNum>(point_W.x()),
+        static_cast<mjtNum>(point_W.y()),
+        static_cast<mjtNum>(point_W.z()),
+    };
+    mj_jac(model, data, jacp.data(), nullptr, point, bodyId);
+
+    Vec3<double> velocity = Vec3<double>::Zero();
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < model->nv; ++col) {
+            velocity[row] += static_cast<double>(jacp[static_cast<std::size_t>(row * model->nv + col)] *
+                                                data->qvel[col]);
+        }
+    }
+    return velocity;
+}
+
 Vec3<double> readBodyAngularAcceleration(const mjModel* model, const mjData* data, int body_id) {
     if (body_id < 0) {
         throw std::runtime_error("Invalid body id for angular acceleration query");
@@ -130,8 +162,8 @@ Vec3<double> readFootEndEffectorPosition(const mjData* data,
                 throw std::runtime_error("Foot end-effector source is site, but no siteId is bound");
             }
             return readSitePosition(data, foot.siteId);
-        case FootEndEffectorSource::BodyCom:
-            return readBodyComPosition(data, foot.bodyId);
+        case FootEndEffectorSource::CollisionGeomCenter:
+            return readCollisionGeomCenterPosition(data, foot.collisionGeomIds);
     }
 
     throw std::runtime_error("Unsupported foot end-effector source");
@@ -147,8 +179,11 @@ Vec3<double> readFootEndEffectorVelocity(const mjModel* model,
                 throw std::runtime_error("Foot end-effector source is site, but no siteId is bound");
             }
             return readObjectLinearVelocity(model, data, mjOBJ_SITE, foot.siteId);
-        case FootEndEffectorSource::BodyCom:
-            return readBodyLinearVelocity(model, data, foot.bodyId);
+        case FootEndEffectorSource::CollisionGeomCenter:
+            return readPointLinearVelocity(model,
+                                           data,
+                                           readCollisionGeomCenterPosition(data, foot.collisionGeomIds),
+                                           foot.bodyId);
     }
 
     throw std::runtime_error("Unsupported foot end-effector source");
@@ -198,10 +233,10 @@ Mat3<double> readFootEndEffectorRotation(const mjData* data,
                 }
                 return rotation;
             }
-        case FootEndEffectorSource::BodyCom:
+        case FootEndEffectorSource::CollisionGeomCenter:
             {
                 if (foot.bodyId < 0) {
-                    throw std::runtime_error("Foot end-effector source is body COM, but no bodyId is bound");
+                    throw std::runtime_error("Foot end-effector source is collision_geom_center, but no bodyId is bound");
                 }
                 Mat3<double> rotation = Mat3<double>::Identity();
                 const mjtNum* raw = data->xmat + 9 * foot.bodyId;

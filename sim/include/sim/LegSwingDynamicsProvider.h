@@ -43,6 +43,7 @@ private:
         int torsoBodyId{-1};
         int footBodyId{-1};
         int footSiteId{-1};
+        std::vector<int> footCollisionGeomIds;
         FootEndEffectorSource footSource{FootEndEffectorSource::Site};
         std::vector<int> qposIndex;
         std::vector<int> qvelIndex;
@@ -59,6 +60,7 @@ private:
         FootEndEffectorSource footSource{FootEndEffectorSource::Site};
         std::vector<int> footBodyIds;
         std::vector<int> footSiteIds;
+        std::vector<std::vector<int>> footCollisionGeomIdsByLeg;
         std::vector<std::size_t> footRowLegIndices;
         std::vector<std::vector<int>> qposIndexByLeg;
         std::vector<std::vector<int>> qvelIndexByLeg;

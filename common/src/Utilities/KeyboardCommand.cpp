@@ -5,7 +5,9 @@
 #include <cctype>
 #include <cstring>
 #include <cmath>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 #include <sys/select.h>
@@ -24,6 +26,16 @@ double zeroTinyValue(const double value) {
     return (std::abs(value) < kCommandZeroEpsilon) ? 0.0 : value;
 }
 
+std::string formatScalar(const double value, const int precision) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(precision) << zeroTinyValue(value);
+    return out.str();
+}
+
+std::string formatDegrees(const double radians, const int precision) {
+    return formatScalar(radians * kRadToDeg, precision);
+}
+
 void sanitizeCommand(UserCommand& command) {
     command.x_dot = zeroTinyValue(command.x_dot);
     command.y_dot = zeroTinyValue(command.y_dot);
@@ -33,17 +45,36 @@ void sanitizeCommand(UserCommand& command) {
     command.standing_pitch_offset_rad = zeroTinyValue(command.standing_pitch_offset_rad);
 }
 
-void printCommand(const UserCommand& command) {
-    std::cout << "UserCommand | x_dot: " << zeroTinyValue(command.x_dot)
-              << "  y_dot: " << zeroTinyValue(command.y_dot)
-              << "  psi_dot: " << zeroTinyValue(command.psi_dot)
-              << "  z_dot: " << zeroTinyValue(command.z_dot)
-              << "  standing_pitch_deg: "
-              << zeroTinyValue(command.standing_pitch_offset_rad) * kRadToDeg
-              << "  standing_roll_deg: "
-              << zeroTinyValue(command.standing_roll_offset_rad) * kRadToDeg
-              << "  standing_mpc_debug_log_request: "
-              << command.standing_mpc_debug_log_request << '\n';
+void printCommand(const UserCommand& command, const bool standingControls) {
+    if (standingControls) {
+        std::cout << "[KeyboardCommand] standing command | z_dot="
+                  << formatScalar(command.z_dot, 3) << " m/s"
+                  << "  pitch=" << formatDegrees(command.standing_pitch_offset_rad, 2)
+                  << " deg"
+                  << "  roll=" << formatDegrees(command.standing_roll_offset_rad, 2)
+                  << " deg"
+                  << "  debug_log_request=" << command.standing_mpc_debug_log_request
+                  << '\n';
+        return;
+    }
+
+    std::cout << "[KeyboardCommand] walking command | x_dot="
+              << formatScalar(command.x_dot, 3) << " m/s"
+              << "  y_dot=" << formatScalar(command.y_dot, 3) << " m/s"
+              << "  psi_dot=" << formatScalar(command.psi_dot, 3) << " rad/s"
+              << "  debug_log_request=" << command.standing_mpc_debug_log_request
+              << '\n';
+}
+
+void printActiveControls(const bool standingControls) {
+    if (standingControls) {
+        std::cout << "[KeyboardCommand] standing controls active: up/down z_dot, "
+                  << "standing i/k pitch, j/l roll, Shift+L log, space reset\n";
+        return;
+    }
+
+    std::cout << "[KeyboardCommand] walking controls active: w/s x_dot, a/d y_dot, "
+              << "q/e psi_dot, Shift+L log, space reset\n";
 }
 
 bool configureTerminalRawMode(bool& terminalConfigured) {
@@ -101,8 +132,7 @@ void KeyboardCommand::start() {
     }
 
     _running.store(true);
-    std::cout << "KeyboardCommand active: w/s x_dot, a/d y_dot, q/e psi_dot, "
-              << "up/down z_dot, standing i/k pitch, j/l roll, Shift+L log, space reset\n";
+    std::cout << "[KeyboardCommand] input thread started\n";
     _inputThread = std::thread(&KeyboardCommand::inputLoop, this);
 }
 
@@ -123,6 +153,16 @@ void KeyboardCommand::stop() {
 UserCommand KeyboardCommand::getUserCommand() const {
     std::lock_guard<std::mutex> lock(_commandMutex);
     return _userCommand;
+}
+
+void KeyboardCommand::setStandingControls(const bool standingControls, const bool announce) {
+    const bool previousStandingControls = _standingControls.exchange(standingControls);
+    const bool shouldPrint = announce || previousStandingControls != standingControls;
+    if (!shouldPrint || (!_running.load() && !_terminalConfigured)) {
+        return;
+    }
+
+    printActiveControls(standingControls);
 }
 
 void KeyboardCommand::inputLoop() {
@@ -181,16 +221,24 @@ void KeyboardCommand::inputLoop() {
 }
 
 void KeyboardCommand::applyVerticalKey(bool increase) {
+    if (!_standingControls.load()) {
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(_commandMutex);
 
     const double delta = increase ? _verticalStep : -_verticalStep;
     _userCommand.z_dot =
         std::clamp(_userCommand.z_dot + delta, -_verticalLimit, _verticalLimit);
     sanitizeCommand(_userCommand);
-    printCommand(_userCommand);
+    printCommand(_userCommand, true);
 }
 
 void KeyboardCommand::applyStandingOrientationKey(char key) {
+    if (!_standingControls.load()) {
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(_commandMutex);
 
     switch (key) {
@@ -211,24 +259,50 @@ void KeyboardCommand::applyStandingOrientationKey(char key) {
     }
 
     sanitizeCommand(_userCommand);
-    printCommand(_userCommand);
+    printCommand(_userCommand, true);
 }
 
 void KeyboardCommand::applyKey(char key) {
     if (key == 'L') {
         std::lock_guard<std::mutex> lock(_commandMutex);
         ++_userCommand.standing_mpc_debug_log_request;
-        std::cout << "StandingMPCDebug request #"
+        std::cout << "[KeyboardCommand] debug log request #"
                   << _userCommand.standing_mpc_debug_log_request
                   << " queued for the next MPC solve\n";
         return;
     }
 
     const char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+    const bool standingControls = _standingControls.load();
 
-    if (lowerKey == 'i' || lowerKey == 'k' || lowerKey == 'j' || lowerKey == 'l') {
-        applyStandingOrientationKey(lowerKey);
+    if (key == ' ') {
+        std::lock_guard<std::mutex> lock(_commandMutex);
+        const unsigned long long requestCount = _userCommand.standing_mpc_debug_log_request;
+        _userCommand = UserCommand{};
+        _userCommand.standing_mpc_debug_log_request = requestCount;
+        sanitizeCommand(_userCommand);
+        printCommand(_userCommand, standingControls);
         return;
+    }
+
+    if (standingControls) {
+        switch (lowerKey) {
+            case 'i':
+            case 'k':
+            case 'j':
+            case 'l':
+                applyStandingOrientationKey(lowerKey);
+                return;
+            case 'w':
+            case 's':
+            case 'a':
+            case 'd':
+            case 'q':
+            case 'e':
+                return;
+            default:
+                return;
+        }
     }
 
     std::lock_guard<std::mutex> lock(_commandMutex);
@@ -264,18 +338,10 @@ void KeyboardCommand::applyKey(char key) {
                                               -_yawLimit,
                                               _yawLimit);
             break;
-        case ' ':
-        {
-            const unsigned long long requestCount =
-                _userCommand.standing_mpc_debug_log_request;
-            _userCommand = UserCommand{};
-            _userCommand.standing_mpc_debug_log_request = requestCount;
-            break;
-        }
         default:
             return;
     }
 
     sanitizeCommand(_userCommand);
-    printCommand(_userCommand);
+    printCommand(_userCommand, false);
 }

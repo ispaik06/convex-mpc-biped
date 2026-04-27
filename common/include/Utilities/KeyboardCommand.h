@@ -14,6 +14,7 @@ public:
 
     void start();
     void stop();
+    void setStandingControls(bool standingControls, bool announce = false);
     UserCommand getUserCommand() const;
 
 private:
@@ -32,6 +33,7 @@ private:
     UserCommand _userCommand;
     std::thread _inputThread;
     std::atomic<bool> _running{false};
+    std::atomic<bool> _standingControls{false};
     bool _terminalConfigured{false};
     double _linearStep{0.05};
     double _yawStep{0.10};

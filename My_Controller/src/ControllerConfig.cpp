@@ -105,19 +105,20 @@ TouchdownTargetMode parseTouchdownTargetMode(const YAML::Node& node) {
 
 FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
     if (!node || !node.IsScalar()) {
-        return FootEndEffectorSource::Site;
+        throw std::runtime_error(
+            "Missing or invalid model.foot_end_effector_source. Expected site or collision_geom_center");
     }
 
     const std::string mode = node.as<std::string>();
     if (mode == "site") {
         return FootEndEffectorSource::Site;
     }
-    if (mode == "body_com" || mode == "com") {
-        return FootEndEffectorSource::BodyCom;
+    if (mode == "collision_geom_center") {
+        return FootEndEffectorSource::CollisionGeomCenter;
     }
 
     throw std::runtime_error(
-        "Invalid swing.foot_end_effector_source. Expected site or body_com");
+        "Invalid model.foot_end_effector_source. Expected site or collision_geom_center");
 }
 
 ContactWrenchModel parseContactWrenchModel(const YAML::Node& node) {
@@ -162,6 +163,8 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     const YAML::Node model = config["model"];
     readScalarIfPresent(model, "xml_path", params.model.xmlPath);
     readScalarIfPresent(model, "auxiliary_xml_path", params.model.auxiliaryXmlPath);
+    params.model.footEndEffectorSource =
+        parseFootEndEffectorSource(model["foot_end_effector_source"]);
     readScalarIfPresent(model, "gravity", params.model.gravity);
 
     const YAML::Node mpc = config["mpc"];
@@ -190,8 +193,12 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
     readScalarIfPresent(swing, "height", params.swing.height);
     readScalarIfPresent(swing, "min_remaining_time", params.swing.minRemainingTime);
+    readScalarIfPresent(swing,
+                        "body_velocity_half_stance_offset",
+                        params.swing.bodyVelocityHalfStanceOffset);
+    readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
+    readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     params.swing.touchdownTargetMode = parseTouchdownTargetMode(swing["touchdown_target_mode"]);
-    params.swing.footEndEffectorSource = parseFootEndEffectorSource(swing["foot_end_effector_source"]);
 
     const YAML::Node footPlacement = config["foot_placement"];
     readScalarIfPresent(footPlacement,
@@ -259,6 +266,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
 
     const YAML::Node leftSwingHoldTest = config["left_swing_hold_test"];
+    readScalarIfPresent(leftSwingHoldTest,
+                        "xml_path",
+                        params.leftSwingHoldTest.xmlPath);
     params.leftSwingHoldTest.touchdownTargetMode =
         parseTouchdownTargetMode(leftSwingHoldTest["touchdown_target_mode"]);
 
@@ -271,6 +281,12 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
     if (params.mpc.normalForceMax < params.mpc.normalForceMin) {
         throw std::runtime_error("MPC normal force max must be >= min");
+    }
+    if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
+        !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
+        params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0) {
+        throw std::runtime_error(
+            "swing.body_velocity_half_stance_offset, swing.pitch_kp, and swing.pitch_kd must be finite; pitch gains must be non-negative");
     }
 
     return params;

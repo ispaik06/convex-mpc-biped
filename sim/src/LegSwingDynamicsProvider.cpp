@@ -101,15 +101,60 @@ void copySelectedJacobianColumns(const mjModel* model,
     }
 }
 
-void readBodyComJacobiansSelected(const mjModel* model,
-                                  const mjData* data,
-                                  const int bodyId,
-                                  const std::vector<int>& columnIndices,
-                                  std::vector<mjtNum>& jacpScratch,
-                                  std::vector<mjtNum>& jacrScratch,
-                                  DMat<double>& Jv_W,
-                                  DMat<double>& Jw_W) {
-    mj_jacBodyCom(model, data, jacpScratch.data(), jacrScratch.data(), bodyId);
+bool isCollisionGeomCandidate(const mjModel* model, const int geomId) {
+    return model->geom_contype[geomId] != 0 ||
+           model->geom_conaffinity[geomId] != 0 ||
+           model->geom_group[geomId] == 3;
+}
+
+std::vector<int> collisionGeomIdsForBody(const mjModel* model, const int bodyId) {
+    std::vector<int> geomIds;
+    for (int geomId = 0; geomId < model->ngeom; ++geomId) {
+        if (model->geom_bodyid[geomId] == bodyId && isCollisionGeomCandidate(model, geomId)) {
+            geomIds.push_back(geomId);
+        }
+    }
+    return geomIds;
+}
+
+Vec3<double> collisionGeomCenterWorld(const mjModel* model,
+                                      const mjData* data,
+                                      const std::vector<int>& geomIds) {
+    if (geomIds.empty()) {
+        throw std::runtime_error("Foot source is collision_geom_center, but no collision geoms were bound");
+    }
+
+    Vec3<double> center = Vec3<double>::Zero();
+    for (const int geomId : geomIds) {
+        if (geomId < 0 || geomId >= model->ngeom) {
+            throw std::runtime_error("Collision geom id is out of range");
+        }
+        for (int i = 0; i < 3; ++i) {
+            center[i] += static_cast<double>(data->geom_xpos[3 * geomId + i]);
+        }
+    }
+    return center / static_cast<double>(geomIds.size());
+}
+
+void readPointJacobiansSelected(const mjModel* model,
+                                const mjData* data,
+                                const int bodyId,
+                                const Vec3<double>& point_W,
+                                const std::vector<int>& columnIndices,
+                                std::vector<mjtNum>& jacpScratch,
+                                std::vector<mjtNum>& jacrScratch,
+                                DMat<double>& Jv_W,
+                                DMat<double>& Jw_W) {
+    if (bodyId < 0) {
+        throw std::runtime_error("Invalid body id for point Jacobian query");
+    }
+
+    const mjtNum point[3] = {
+        static_cast<mjtNum>(point_W.x()),
+        static_cast<mjtNum>(point_W.y()),
+        static_cast<mjtNum>(point_W.z()),
+    };
+    mj_jac(model, data, jacpScratch.data(), jacrScratch.data(), point, bodyId);
     Jv_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
     Jw_W.setZero(3, static_cast<Eigen::Index>(columnIndices.size()));
     copySelectedJacobianColumns(model, jacpScratch, columnIndices, Jv_W, 0);
@@ -131,16 +176,21 @@ void readSiteJacobiansSelected(const mjModel* model,
     copySelectedJacobianColumns(model, jacrScratch, columnIndices, Jw_W, 0);
 }
 
-void readBodyComJacobianDotSelected(const mjModel* model,
-                                    const mjData* data,
-                                    const int bodyId,
-                                    const std::vector<int>& columnIndices,
-                                    std::vector<mjtNum>& jacDotpScratch,
-                                    DMat<double>& JvDot_W) {
+void readPointJacobianDotSelected(const mjModel* model,
+                                  const mjData* data,
+                                  const int bodyId,
+                                  const Vec3<double>& point_W,
+                                  const std::vector<int>& columnIndices,
+                                  std::vector<mjtNum>& jacDotpScratch,
+                                  DMat<double>& JvDot_W) {
+    if (bodyId < 0) {
+        throw std::runtime_error("Invalid body id for point Jacobian time-derivative query");
+    }
+
     const mjtNum point[3] = {
-        data->xipos[3 * bodyId + 0],
-        data->xipos[3 * bodyId + 1],
-        data->xipos[3 * bodyId + 2],
+        static_cast<mjtNum>(point_W.x()),
+        static_cast<mjtNum>(point_W.y()),
+        static_cast<mjtNum>(point_W.z()),
     };
 
     mj_jacDot(model, data, jacDotpScratch.data(), nullptr, point, bodyId);
@@ -208,6 +258,7 @@ void readStandingFootJacobians(const mjModel* model,
                                const FootEndEffectorSource footSource,
                                const int footBodyId,
                                const int footSiteId,
+                               const std::vector<int>& footCollisionGeomIds,
                                const std::vector<int>& combinedQvelIndex,
                                std::vector<mjtNum>& jacpScratch,
                                std::vector<mjtNum>& jacrScratch,
@@ -221,11 +272,21 @@ void readStandingFootJacobians(const mjModel* model,
             }
             mj_jacSite(model, data, jacpScratch.data(), jacrScratch.data(), footSiteId);
             break;
-        case FootEndEffectorSource::BodyCom:
+        case FootEndEffectorSource::CollisionGeomCenter:
             if (footBodyId < 0) {
-                throw std::runtime_error("Standing foot source is body COM, but no foot body was bound");
+                throw std::runtime_error(
+                    "Standing foot source is collision_geom_center, but no foot body was bound");
             }
-            mj_jacBodyCom(model, data, jacpScratch.data(), jacrScratch.data(), footBodyId);
+            {
+                const Vec3<double> point_W =
+                    collisionGeomCenterWorld(model, data, footCollisionGeomIds);
+                const mjtNum point[3] = {
+                    static_cast<mjtNum>(point_W.x()),
+                    static_cast<mjtNum>(point_W.y()),
+                    static_cast<mjtNum>(point_W.z()),
+                };
+                mj_jac(model, data, jacpScratch.data(), jacrScratch.data(), point, footBodyId);
+            }
             break;
     }
 
@@ -334,12 +395,20 @@ void LegSwingDynamicsProvider::ensureAuxiliaryLegModels() {
                            mjOBJ_SITE,
                            std::string(robotSpec.legs[leg].endSite).c_str());
         }
+        auxModel.footCollisionGeomIds =
+            collisionGeomIdsForBody(auxModel.model, auxModel.footBodyId);
 
         if (auxModel.torsoBodyId < 0 || auxModel.footBodyId < 0 ||
             (!robotSpec.legs[leg].endSite.empty() && auxModel.footSiteId < 0)) {
             destroy(auxModel);
             throw std::runtime_error(
                 "Auxiliary leg model is missing required base body, foot body, or foot site");
+        }
+        if (auxModel.footSource == FootEndEffectorSource::CollisionGeomCenter &&
+            auxModel.footCollisionGeomIds.empty()) {
+            destroy(auxModel);
+            throw std::runtime_error(
+                "Auxiliary leg model is missing required foot collision geoms");
         }
 
         auxModel.qposIndex.reserve(robotSpec.legs[leg].joints.size());
@@ -424,6 +493,7 @@ void LegSwingDynamicsProvider::ensureStandingAuxiliaryModel() {
     _standingAuxiliaryModel.footSource = _bindings->footSource;
     _standingAuxiliaryModel.footBodyIds.resize(_params->legs.size(), -1);
     _standingAuxiliaryModel.footSiteIds.resize(_params->legs.size(), -1);
+    _standingAuxiliaryModel.footCollisionGeomIdsByLeg.resize(_params->legs.size());
     _standingAuxiliaryModel.qposIndexByLeg.resize(_params->legs.size());
     _standingAuxiliaryModel.qvelIndexByLeg.resize(_params->legs.size());
     _standingAuxiliaryModel.footRowLegIndices = {
@@ -447,12 +517,21 @@ void LegSwingDynamicsProvider::ensureStandingAuxiliaryModel() {
                            mjOBJ_SITE,
                            std::string(robotSpec.legs[leg].endSite).c_str());
         }
+        _standingAuxiliaryModel.footCollisionGeomIdsByLeg[leg] =
+            collisionGeomIdsForBody(_standingAuxiliaryModel.model,
+                                    _standingAuxiliaryModel.footBodyIds[leg]);
 
         if (_standingAuxiliaryModel.footBodyIds[leg] < 0 ||
             (!robotSpec.legs[leg].endSite.empty() && _standingAuxiliaryModel.footSiteIds[leg] < 0)) {
             destroy(_standingAuxiliaryModel);
             throw std::runtime_error(
                 "Auxiliary standing model is missing required foot body or foot site");
+        }
+        if (_standingAuxiliaryModel.footSource == FootEndEffectorSource::CollisionGeomCenter &&
+            _standingAuxiliaryModel.footCollisionGeomIdsByLeg[leg].empty()) {
+            destroy(_standingAuxiliaryModel);
+            throw std::runtime_error(
+                "Auxiliary standing model is missing required foot collision geoms");
         }
 
         auto& qposIndex = _standingAuxiliaryModel.qposIndexByLeg[leg];
@@ -571,21 +650,29 @@ void LegSwingDynamicsProvider::updateSwingLegDynamics(StateEstimate<double>& sta
                                             auxModel.jacDotpScratch,
                                             legState.JvDot_W);
                 break;
-            case FootEndEffectorSource::BodyCom:
-                readBodyComJacobiansSelected(auxModel.model,
-                                             auxModel.data,
-                                             auxModel.footBodyId,
-                                             auxModel.qvelIndex,
-                                             auxModel.jacpScratch,
-                                             auxModel.jacrScratch,
-                                             legState.Jv_W,
-                                             legState.Jw_W);
-                readBodyComJacobianDotSelected(auxModel.model,
+            case FootEndEffectorSource::CollisionGeomCenter:
+                {
+                    const Vec3<double> point_W =
+                        collisionGeomCenterWorld(auxModel.model,
+                                                 auxModel.data,
+                                                 auxModel.footCollisionGeomIds);
+                    readPointJacobiansSelected(auxModel.model,
                                                auxModel.data,
                                                auxModel.footBodyId,
+                                               point_W,
                                                auxModel.qvelIndex,
-                                               auxModel.jacDotpScratch,
-                                               legState.JvDot_W);
+                                               auxModel.jacpScratch,
+                                               auxModel.jacrScratch,
+                                               legState.Jv_W,
+                                               legState.Jw_W);
+                    readPointJacobianDotSelected(auxModel.model,
+                                                 auxModel.data,
+                                                 auxModel.footBodyId,
+                                                 point_W,
+                                                 auxModel.qvelIndex,
+                                                 auxModel.jacDotpScratch,
+                                                 legState.JvDot_W);
+                }
                 break;
         }
 
@@ -644,6 +731,7 @@ void LegSwingDynamicsProvider::updateStandingFootJacobians(StateEstimate<double>
                                   standingModel.footSource,
                                   standingModel.footBodyIds[leg],
                                   standingModel.footSiteIds[leg],
+                                  standingModel.footCollisionGeomIdsByLeg[leg],
                                   standingModel.combinedQvelIndex,
                                   standingModel.jacpScratch,
                                   standingModel.jacrScratch,
@@ -671,6 +759,7 @@ void LegSwingDynamicsProvider::destroy(AuxiliaryLegModel& auxModel) {
     auxModel.torsoBodyId = -1;
     auxModel.footBodyId = -1;
     auxModel.footSiteId = -1;
+    auxModel.footCollisionGeomIds.clear();
     auxModel.qposIndex.clear();
     auxModel.qvelIndex.clear();
     auxModel.jacpScratch.clear();
@@ -692,6 +781,7 @@ void LegSwingDynamicsProvider::destroy(StandingAuxiliaryModel& auxModel) {
     auxModel.footSource = FootEndEffectorSource::Site;
     auxModel.footBodyIds.clear();
     auxModel.footSiteIds.clear();
+    auxModel.footCollisionGeomIdsByLeg.clear();
     auxModel.footRowLegIndices.clear();
     auxModel.qposIndexByLeg.clear();
     auxModel.qvelIndexByLeg.clear();

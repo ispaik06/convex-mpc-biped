@@ -1,17 +1,78 @@
 #include "LeftSwingHoldController.h"
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <iomanip>
 #include <stdexcept>
+#include <sstream>
 
 #include "Controllers/LegController.h"
 #include "Dynamics/OperationalSpaceDynamics.h"
 #include "Utilities/MatrixUtils.h"
 
+namespace {
+std::string formatTimeSeconds(const double time) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2) << time;
+    return out.str();
+}
+
+DVec<double> computeSwingPitchLevelTorque(const RobotLegState<double>& legState,
+                                          const LegControllerData<double>& legData,
+                                          const double pitchKp,
+                                          const double pitchKd) {
+    const Eigen::Index dof = legData.dof();
+    DVec<double> torque = DVec<double>::Zero(dof);
+    if (pitchKp <= 0.0 && pitchKd <= 0.0) {
+        return torque;
+    }
+    if (!legState.hasFootFrame) {
+        throw std::runtime_error("Swing pitch leveling requires foot frame data");
+    }
+    if (!legData.hasFootData) {
+        throw std::runtime_error("Swing pitch leveling requires foot angular Jacobian data");
+    }
+    if (legData.Jw_W.rows() != 3 || legData.Jw_W.cols() != dof || legData.qd.size() != dof) {
+        throw std::runtime_error("Swing pitch leveling received inconsistent leg angular data");
+    }
+
+    Vec3<double> footY_W = legState.R_WF.col(1);
+    Vec3<double> footZ_W = legState.R_WF.col(2);
+    if (!footY_W.allFinite() || !footZ_W.allFinite() ||
+        footY_W.norm() <= 1e-9 || footZ_W.norm() <= 1e-9) {
+        throw std::runtime_error("Swing pitch leveling received invalid foot frame axes");
+    }
+    footY_W.normalize();
+    footZ_W.normalize();
+
+    const Vec3<double> worldUp = Vec3<double>::UnitZ();
+    const double sinPitchError = footY_W.dot(footZ_W.cross(worldUp));
+    const double cosPitchError = footZ_W.dot(worldUp);
+    const double pitchError = std::atan2(sinPitchError, cosPitchError);
+    const Vec3<double> omegaFoot_W = legData.Jw_W * legData.qd;
+    const double pitchRate = footY_W.dot(omegaFoot_W);
+    const Vec3<double> pitchMoment_W = (pitchKp * pitchError - pitchKd * pitchRate) * footY_W;
+    torque = legData.Jw_W.transpose() * pitchMoment_W;
+    return torque;
+}
+}  // namespace
+
 LeftSwingHoldController::LeftSwingHoldController() {
-    setFootEndEffectorSource(getControllerConfig().swing.footEndEffectorSource);
+    setFootEndEffectorSource(getControllerConfig().model.footEndEffectorSource);
+}
+
+void LeftSwingHoldController::bindRuntime(const StateEstimate<double>* stateEstimate,
+                                          const RobotParams<double>* robotParams,
+                                          LegController<double>* legController,
+                                          ArmController<double>* armController,
+                                          const UserCommand* userCommand) {
+    _stateEstimate = stateEstimate;
+    _robotParams = robotParams;
+    _legController = legController;
+    _armController = armController;
+    _userCommand = userCommand;
 }
 
 Mat3<double> LeftSwingHoldController::makeDiagonal(const double x,
@@ -54,7 +115,6 @@ void LeftSwingHoldController::initializeRuntime() {
     _rightLegIndex = findLegIndex(Side::Right);
 
     _leftHoldQ = _stateEstimate->legs[static_cast<std::size_t>(_leftLegIndex)].q;
-    _rightHoldQ = _stateEstimate->legs[static_cast<std::size_t>(_rightLegIndex)].q;
 
     _jointHoldGains = makeInitialJointGains(_robotParams->roboType, _leftHoldQ.size());
 
@@ -69,13 +129,13 @@ void LeftSwingHoldController::initializeRuntime() {
     _traceSegmentId = 0;
     openSwingTrace();
 
-    _phase = Phase::Swing;
     _phaseElapsed = 0.0;
     _lastTime = _stateEstimate->time;
-    startSwingPhase();
     _initialized = true;
+    startSwingPhase();
 
-    std::cout << "[LeftSwingHoldTest] torso locked after init pose, left leg alternates swing/hold" << std::endl;
+    std::cout << "[LeftSwingHoldTest] left swing started from copied_state at t="
+              << formatTimeSeconds(_stateEstimate->time) << std::endl;
 }
 
 void LeftSwingHoldController::openSwingTrace() {
@@ -112,6 +172,17 @@ int LeftSwingHoldController::findLegIndex(const Side side) const {
     throw std::runtime_error("Requested leg side is missing from RobotParams");
 }
 
+const char* LeftSwingHoldController::phaseName() const {
+    switch (_phase) {
+        case Phase::Swing:
+            return "swing";
+        case Phase::Hold:
+            return "hold";
+    }
+
+    return "unknown";
+}
+
 Vec3<double> LeftSwingHoldController::touchdownTargetWorld() const {
     if (_stateEstimate == nullptr || _leftLegIndex < 0 || _robotParams == nullptr) {
         throw std::runtime_error("LeftSwingHoldController requires state to compute touchdown target");
@@ -141,7 +212,8 @@ Vec3<double> LeftSwingHoldController::touchdownTargetWorld() const {
     switch (_touchdownTargetMode) {
         case TouchdownTargetMode::BodyVelocityHalfStance: {
             const auto& footNow = _stateEstimate->legs[legIndex].footPos_W;
-            Vec3<double> target = footNow + R_WB * u_des_B * (0.5 * stanceTime());
+            const double stanceFraction = 0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset;
+            Vec3<double> target = footNow + R_WB * u_des_B * (stanceFraction * stanceTime());
             target.z() = _stateEstimate->legs[legIndex].footPos_W.z();
             return target;
         }
@@ -188,9 +260,10 @@ void LeftSwingHoldController::startSwingPhase() {
     _phase = Phase::Swing;
     _phaseElapsed = 0.0;
     ++_traceSegmentId;
+    _touchdownTarget_W = touchdownTargetWorld();
     _leftSwingTrajectory.reset(
         _stateEstimate->legs[static_cast<std::size_t>(_leftLegIndex)].footPos_W,
-        touchdownTargetWorld(),
+        _touchdownTarget_W,
         _swingHeight,
         _swingDuration);
 }
@@ -237,6 +310,11 @@ void LeftSwingHoldController::configureSwingLeg(const int legIndex) {
     command.vDes_W = _leftSwingTrajectory.velocity();
     command.aDes_W = _leftSwingTrajectory.acceleration();
     command.kdCartesian = _swingKd;
+    command.tauFeedForward += computeSwingPitchLevelTorque(
+        _stateEstimate->legs[static_cast<std::size_t>(legIndex)],
+        legData,
+        getControllerConfig().swing.pitchKp,
+        getControllerConfig().swing.pitchKd);
 }
 
 void LeftSwingHoldController::maybePrintStatus() const {
@@ -246,8 +324,10 @@ void LeftSwingHoldController::maybePrintStatus() const {
 
     const auto& leftFoot = _stateEstimate->legs[static_cast<std::size_t>(_leftLegIndex)].footPos_W;
     std::cout << "[LeftSwingHoldTest] phase="
-              << (_phase == Phase::Swing ? "swing" : "hold")
-              << " left_foot_des=" << _leftSwingTrajectory.position().transpose()
+              << phaseName()
+              << ' ';
+    std::cout << "left_foot_des=" << _leftSwingTrajectory.position().transpose();
+    std::cout
               << " left_foot_act=" << leftFoot.transpose()
               << " left_ee_act="
               << _stateEstimate->legs[static_cast<std::size_t>(_leftLegIndex)].footEndPos_W.transpose()
@@ -302,21 +382,21 @@ void LeftSwingHoldController::runController() {
     if (_phase == Phase::Swing) {
         if (_touchdownTargetMode == TouchdownTargetMode::LegacyComYawCorrected) {
             // Legacy mode replans online; body_velocity_half_stance stays fixed from swing start.
-            _leftSwingTrajectory.setFinalPosition(touchdownTargetWorld());
+            _touchdownTarget_W = touchdownTargetWorld();
+            _leftSwingTrajectory.setFinalPosition(_touchdownTarget_W);
         }
         _leftSwingTrajectory.advance(dt);
         _phaseElapsed += dt;
         if (_phaseElapsed >= _swingDuration || !_leftSwingTrajectory.active()) {
             startHoldPhase();
         }
-    } else {
+    } else if (_phase == Phase::Hold) {
         _phaseElapsed += dt;
         if (_phaseElapsed >= _holdDuration) {
             startSwingPhase();
         }
     }
 
-    configureJointHold(_rightLegIndex, _rightHoldQ);
     if (_phase == Phase::Swing) {
         configureSwingLeg(_leftLegIndex);
         logSwingTraceSample();
@@ -328,4 +408,17 @@ void LeftSwingHoldController::runController() {
 
     _lastTime = time;
     ++_iteration;
+}
+
+void LeftSwingHoldController::collectDebugVisualization(DebugVizState<double>& debugViz) const {
+    if (!_initialized || _leftLegIndex < 0) {
+        return;
+    }
+
+    DebugVizMarker<double> marker;
+    marker.name = "debug_left_touchdown_target";
+    marker.position_W = _touchdownTarget_W;
+    marker.orientation_W = Quat<double>::Identity();
+    marker.active = true;
+    debugViz.markers.push_back(marker);
 }

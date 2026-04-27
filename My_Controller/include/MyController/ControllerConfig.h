@@ -36,6 +36,7 @@ struct TimingParameters {
 struct ModelParameters {
     std::string xmlPath;
     std::string auxiliaryXmlPath;
+    FootEndEffectorSource footEndEffectorSource{FootEndEffectorSource::Site};
     double gravity{-9.81};
 };
 
@@ -57,8 +58,10 @@ struct SwingParameters {
     Vec3<double> kdDiag = Vec3<double>(15.0, 15.0, 18.0);
     double height{0.06};
     double minRemainingTime{1e-3};
+    double bodyVelocityHalfStanceOffset{0.0};
+    double pitchKp{0.0};
+    double pitchKd{0.0};
     TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::BodyVelocityHalfStance};
-    FootEndEffectorSource footEndEffectorSource{FootEndEffectorSource::Site};
 };
 
 struct FootPlacementParameters {
@@ -90,6 +93,7 @@ struct InitialPoseParameters {
 };
 
 struct LeftSwingHoldTestParameters {
+    std::string xmlPath;
     TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::LegacyComYawCorrected};
 };
 
