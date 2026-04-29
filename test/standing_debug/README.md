@@ -17,7 +17,8 @@ The JSON stores a `controller_config` snapshot together with the data needed to 
 - `reference_trajectory`: `tk`, `psi`, foot paths, and `X_ref_by_step`
 - `formulation`: `A_c`, `B_c`, `inertia_W`, `A_qp`, `B_qp`
 - `solution`: wrench horizon and predicted state horizon
-- `standing_wrench_to_torque`: stance Jacobians and the logged wrench-to-torque mapping
+- `wrench_to_torque`: Jacobian-transpose mapping from MPC wrench to packed leg torque, using standing combined Jacobians when available and per-leg Jacobians otherwise
+- `standing_wrench_to_torque`: legacy alias for the same mapping section
 
 The probes use the logged `controller_config` snapshot when it is present. Older logs without that field fall back to the current `config/my_controller.yaml`.
 
@@ -48,9 +49,33 @@ cmake --build build --target stand_contact_probe
 ./build/test/standing_debug/stand_contact_probe logs/debug/walking_mpc/walking_mpc_debug_YYYYMMDD_HHMMSS.json
 ```
 
-This probe restores `full_qpos`, `full_qvel`, applies `full_tau_command`, runs `mj_forward`, and reports contact wrenches about both the foot contact site and the foot collision-geom center. It also writes a text report, a CSV, and a PNG under `logs/debug/{standing_mpc,walking_mpc}/contact_probe/` based on the log mode.
+This probe restores `full_qpos`, `full_qvel`, applies `full_tau_command`, runs `mj_forward`, and reports contact wrenches about both the foot contact site and the foot collision-geom center. It also writes a Markdown report, a CSV, and a PNG under `logs/debug/{standing_mpc,walking_mpc}/contact_probe/` based on the log mode.
 
 The PNG compares the QP desired wrench with the MuJoCo-realized contact wrench after applying the logged `full_tau_command`. Moment comparison uses the reference point recorded in the standing MPC log: `foot_site` when the controller used site end-effectors, or `foot_collision_geom_center` when it used collision-geom centers.
+
+## Wrench Reconstruction
+
+```sh
+cmake --build build --target wrench_mapping_probe
+python test/standing_debug/wrench_reconstruction.py
+python test/standing_debug/wrench_reconstruction.py logs/debug/walking_mpc/walking_mpc_debug_YYYYMMDD_HHMMSS.json
+```
+
+This analysis checks how much of the QP wrench survives the torque projection through the current foot Jacobians:
+
+$$
+tau_{qp} = A w_{qp}, \qquad \hat{w} = A^+ tau_{qp} = A^+ A w_{qp}
+$$
+
+where `A` is the logged `wrench_to_tau_jacobian`. For two 5-DoF legs, `A` is usually `10 x 12`, so the reconstructed wrench is the row-space projection of the QP wrench. The useful plot is `w_qp` versus `hat{w}`, with the per-component error below it.
+
+If an older log does not contain `wrench_to_tau_jacobian`, the script calls `build/test/standing_debug/wrench_mapping_probe` to restore `full_qpos/full_qvel` in MuJoCo and rebuild `A` from the foot Jacobians.
+
+Outputs are saved under `logs/debug/{standing_mpc,walking_mpc}/wrench_reconstruction/` based on the log mode:
+
+- `reports/stand_wrench_reconstruction_YYYYMMDD_HHMMSS.md` or `reports/walk_wrench_reconstruction_YYYYMMDD_HHMMSS.md`: Markdown summary with equations, rank, singular values, and component errors.
+- `csv/stand_wrench_reconstruction_YYYYMMDD_HHMMSS.csv` or `csv/walk_wrench_reconstruction_YYYYMMDD_HHMMSS.csv`: component-wise QP wrench, reconstructed wrench, and error.
+- `plots/stand_wrench_reconstruction_YYYYMMDD_HHMMSS.png` or `plots/walk_wrench_reconstruction_YYYYMMDD_HHMMSS.png`: QP-vs-reconstructed wrench comparison.
 
 ## SRB Receding Horizon Probe
 
@@ -62,11 +87,11 @@ cmake --build build --target stand_rh_probe
 
 This is the actual receding-horizon replay path. It reads the logged `x0`, logged command, initial reference, desired foot positions, foot local x axes, and logged reduced-body mass and inertia. Then every rollout step rebuilds the reference trajectory, gait constraints, SRB formulation, and QP before solving again. The first predicted state from that solve becomes the next rollout state.
 
-The first-solve mismatch in the text report compares the rebuilt solve against the source log while using the current `config/my_controller.yaml`. If weights or constraints changed after the log was captured, this comparison will not be zero.
+The first-solve mismatch in the Markdown report compares the rebuilt solve against the source log while using the current `config/my_controller.yaml`. If weights or constraints changed after the log was captured, this comparison will not be zero.
 
 Outputs are saved under `logs/debug/{standing_mpc,walking_mpc}/receding_horizon/` based on the log mode:
 
-- `txt/stand_rh_YYYYMMDD_HHMMSS.txt` or `txt/walk_rh_YYYYMMDD_HHMMSS.txt`: concise summary and first-solve mismatch against the source log.
+- `reports/stand_rh_YYYYMMDD_HHMMSS.md` or `reports/walk_rh_YYYYMMDD_HHMMSS.md`: Markdown summary and first-solve mismatch against the source log.
 - `csv/stand_rh_YYYYMMDD_HHMMSS.csv` or `csv/walk_rh_YYYYMMDD_HHMMSS.csv`: row-wise rollout data with all RPY, position XYZ, angular velocity XYZ, linear velocity XYZ, and all wrench components.
 - `plots/stand_rh_YYYYMMDD_HHMMSS/` or `plots/walk_rh_YYYYMMDD_HHMMSS/`: run-specific plot folder.
 - `states.png`: state vs reference.
@@ -75,7 +100,7 @@ Outputs are saved under `logs/debug/{standing_mpc,walking_mpc}/receding_horizon/
 
 ## Wrapper Scripts
 
-The general wrapper runs the MPC horizon plot, contact probe, and receding-horizon probe for one selected log. You must choose exactly one source selector:
+The general wrapper runs the MPC horizon plot, contact probe, wrench reconstruction, and receding-horizon probe for one selected log. You must choose exactly one source selector:
 
 ```sh
 ./scripts/run_mpc_debug.sh --standing -n 80
@@ -83,3 +108,5 @@ The general wrapper runs the MPC horizon plot, contact probe, and receding-horiz
 ./scripts/run_mpc_debug.sh --all-latest -n 80
 ./scripts/run_mpc_debug.sh -l logs/debug/walking_mpc/walking_mpc_debug_YYYYMMDD_HHMMSS.json -n 80
 ```
+
+The wrapper captures each analysis' detailed stdout/stderr and prints only a per-analysis status summary. `[OK]` means the expected artifacts were generated, `[SKIP]` means the analysis wrote a report explaining why a plot/CSV was not possible for that log, and `[FAIL]` means the command failed or an expected artifact was missing.

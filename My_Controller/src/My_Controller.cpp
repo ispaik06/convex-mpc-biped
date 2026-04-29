@@ -16,6 +16,7 @@
 #include "Utilities/MatrixUtils.h"
 
 namespace {
+constexpr double kCommandZeroEpsilon = 1e-12;
 
 double clampUnit(const double value) {
     return std::clamp(value, -1.0, 1.0);
@@ -23,6 +24,15 @@ double clampUnit(const double value) {
 
 double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
+}
+
+bool hasPlanarMotionCommand(const UserCommand* command) {
+    if (command == nullptr) {
+        return false;
+    }
+    return std::abs(command->x_dot) > kCommandZeroEpsilon ||
+           std::abs(command->y_dot) > kCommandZeroEpsilon ||
+           std::abs(command->psi_dot) > kCommandZeroEpsilon;
 }
 
 Vec3<double> desiredFootPositionForSide(const DesiredFootPositions& desiredFootPositions,
@@ -493,7 +503,9 @@ void MyController::updateSwingTrajectories(
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
-            runtime.touchdownYaw_W = swingFootYawTargetWorld();
+            if (hasPlanarMotionCommand(_userCommand)) {
+                runtime.touchdownYaw_W = swingFootYawTargetWorld();
+            }
             runtime.swingTrajectory.reset(
                 currentFootPosition,
                 touchdownTarget,

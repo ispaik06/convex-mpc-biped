@@ -6,6 +6,10 @@ add_executable(stand_rh_probe
     stand_rh_probe.cpp
 )
 
+add_executable(wrench_mapping_probe
+    wrench_mapping_probe.cpp
+)
+
 # Manual debug targets. Intentionally not added to CTest because they depend on
 # standing_mpc_debug_*.json or walking_mpc_debug_*.json snapshots and produce
 # diagnostic reports/plots.
@@ -47,5 +51,20 @@ target_link_libraries(stand_rh_probe PRIVATE
 )
 
 target_compile_definitions(stand_rh_probe PRIVATE
+    PROJECT_ROOT_DIR="${PROJECT_SOURCE_DIR}"
+)
+
+target_include_directories(wrench_mapping_probe PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${NLOHMANN_JSON_INCLUDE_DIR}
+    $<TARGET_PROPERTY:sim,INTERFACE_INCLUDE_DIRECTORIES>
+    $<TARGET_PROPERTY:robot,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+target_link_libraries(wrench_mapping_probe PRIVATE
+    sim
+)
+
+target_compile_definitions(wrench_mapping_probe PRIVATE
     PROJECT_ROOT_DIR="${PROJECT_SOURCE_DIR}"
 )

@@ -100,16 +100,16 @@ ContactProbeOutputPaths defaultOutputPaths(const std::string& locomotionMode) {
     const std::filesystem::path dir =
         std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" /
         debugDirectoryNameForMode(locomotionMode) / "contact_probe";
-    const std::filesystem::path txtDir = dir / "txt";
+    const std::filesystem::path reportDir = dir / "reports";
     const std::filesystem::path csvDir = dir / "csv";
     const std::filesystem::path plotDir = dir / "plots";
     std::filesystem::create_directories(dir);
-    std::filesystem::create_directories(txtDir);
+    std::filesystem::create_directories(reportDir);
     std::filesystem::create_directories(csvDir);
     std::filesystem::create_directories(plotDir);
 
     ContactProbeOutputPaths paths;
-    paths.report = txtDir / (prefix + timestamp + ".txt");
+    paths.report = reportDir / (prefix + timestamp + ".md");
     paths.csv = csvDir / (prefix + timestamp + ".csv");
     paths.plot = plotDir / (prefix + timestamp + ".png");
     return paths;
@@ -342,28 +342,39 @@ void accumulateFootContacts(const mjModel* model,
     }
 }
 
-void printVec3(std::ostream& out, const std::string& label, const Vec3<double>& value) {
-    out << "    " << label << ": ["
-        << value[0] << ", " << value[1] << ", " << value[2] << "]\n";
+void writeVec3Row(std::ostream& out, const std::string& label, const Vec3<double>& value) {
+    out << "| `" << label << "` | "
+        << value[0] << " | " << value[1] << " | " << value[2] << " |\n";
 }
 
-void printWrenchComparison(std::ostream& out,
+void writeVec3TableHeader(std::ostream& out) {
+    out << "| Quantity | x | y | z |\n"
+        << "| --- | ---: | ---: | ---: |\n";
+}
+
+void writeWrenchComparison(std::ostream& out,
                            const std::string& label,
                            const WrenchAtPoint& measured,
                            const Vec3<double>& desiredForce,
                            const Vec3<double>& desiredMoment,
                            const bool sameMomentReference,
                            const std::string& desiredReferencePoint) {
-    out << "  " << label << " contacts=" << measured.contactCount << "\n";
-    printVec3(out, "force_W", measured.force_W);
-    printVec3(out, "force_error_W", measured.force_W - desiredForce);
-    printVec3(out, "moment_W", measured.moment_W);
+    out << "### " << label << "\n\n"
+        << "| Field | Value |\n"
+        << "| --- | ---: |\n"
+        << "| contacts | " << measured.contactCount << " |\n\n";
+    writeVec3TableHeader(out);
+    writeVec3Row(out, "force_W", measured.force_W);
+    writeVec3Row(out, "force_error_W", measured.force_W - desiredForce);
+    writeVec3Row(out, "moment_W", measured.moment_W);
     if (sameMomentReference) {
-        printVec3(out, "moment_error_W", measured.moment_W - desiredMoment);
+        writeVec3Row(out, "moment_error_W", measured.moment_W - desiredMoment);
     } else {
-        out << "    moment_error_W: not computed; desired moment is about "
-            << desiredReferencePoint << "\n";
+        out << "| `moment_error_W` | n/a | n/a | n/a |\n\n"
+            << "Moment error is not computed here because the desired moment is about `"
+            << desiredReferencePoint << "`.\n";
     }
+    out << "\n";
 }
 
 void writeCsvRowsForVec3(std::ostream& out,
@@ -485,39 +496,59 @@ void writeReport(std::ostream& out,
                  const std::string& contactWrenchModel,
                  const std::vector<FootContactResult>& results) {
     out << std::fixed << std::setprecision(9);
-    out << "[stand_contact_probe]\n"
-        << "  log: " << std::filesystem::absolute(logPath).string() << "\n"
-        << "  robot_type: " << robotType << "\n"
-        << "  locomotion_mode: " << locomotionMode << "\n"
-        << "  model: " << modelPath << "\n"
-        << "  total_contacts: " << totalContacts << "\n"
-        << "  max_ctrl_clamp_delta: " << maxCtrlClampDelta << "\n"
-        << "  foot_end_effector_source: " << footSource << "\n"
-        << "  desired_wrench_reference_point: " << desiredReferencePoint << "\n"
-        << "  contact_wrench_model: " << contactWrenchModel << "\n"
-        << "  sign convention: positive contact-frame wrench is treated as acting on geom2\n\n";
+    out << "# Contact Probe Report\n\n"
+        << "## Source\n\n"
+        << "| Field | Value |\n"
+        << "| --- | --- |\n"
+        << "| Source log | `" << std::filesystem::absolute(logPath).string() << "` |\n"
+        << "| Robot type | `" << robotType << "` |\n"
+        << "| Locomotion mode | `" << locomotionMode << "` |\n"
+        << "| MuJoCo model | `" << modelPath << "` |\n"
+        << "| Foot end-effector source | `" << footSource << "` |\n"
+        << "| Desired wrench reference point | `" << desiredReferencePoint << "` |\n"
+        << "| Contact wrench model | `" << contactWrenchModel << "` |\n\n"
+        << "## Method\n\n"
+        << "The probe restores the logged generalized state, applies `full_tau_command`, "
+        << "runs `mj_forward`, and compares the MuJoCo contact wrench against the first MPC wrench.\n\n"
+        << "$$\n"
+        << "e_F = F_{measured} - F_{desired}, \\qquad "
+        << "e_M = M_{measured} - M_{desired}\n"
+        << "$$\n\n"
+        << "Positive contact-frame wrench is treated as acting on `geom2`; the report flips the sign "
+        << "when the foot is `geom1`.\n\n"
+        << "## Summary\n\n"
+        << "| Metric | Value |\n"
+        << "| --- | ---: |\n"
+        << "| total contacts | " << totalContacts << " |\n"
+        << "| max ctrl clamp delta | " << maxCtrlClampDelta << " |\n\n";
 
     for (const FootContactResult& result : results) {
-        out << result.side << " foot"
-            << " body_id=" << result.footBodyId
-            << " site_id=" << result.footSiteId << "\n";
-        printVec3(out, "desired_force_W", result.desiredForce_W);
-        printVec3(out, "desired_moment_W_about_" + desiredReferencePoint, result.desiredMoment_W);
-        printWrenchComparison(out,
-                              "measured_at_foot_site",
+        out << "## " << result.side << " foot\n\n"
+            << "| Field | Value |\n"
+            << "| --- | ---: |\n"
+            << "| body id | " << result.footBodyId << " |\n"
+            << "| site id | " << result.footSiteId << " |\n\n"
+            << "### Desired Wrench\n\n";
+        writeVec3TableHeader(out);
+        writeVec3Row(out, "desired_force_W", result.desiredForce_W);
+        writeVec3Row(out, "desired_moment_W_about_" + desiredReferencePoint,
+                     result.desiredMoment_W);
+        out << "\n";
+
+        writeWrenchComparison(out,
+                              "Measured at foot site",
                               result.atFootSite,
                               result.desiredForce_W,
                               result.desiredMoment_W,
                               desiredReferencePoint == "foot_site",
                               desiredReferencePoint);
-        printWrenchComparison(out,
-                              "measured_at_foot_collision_geom_center",
+        writeWrenchComparison(out,
+                              "Measured at foot collision-geom center",
                               result.atFootCollisionCenter,
                               result.desiredForce_W,
                               result.desiredMoment_W,
                               desiredReferencePoint == "foot_collision_geom_center",
                               desiredReferencePoint);
-        out << "\n";
     }
 }
 }  // namespace

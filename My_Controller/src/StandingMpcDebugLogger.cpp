@@ -646,6 +646,91 @@ DMat<double> buildWrenchToTorqueJacobian(const StandingFootKinematics<double>& s
     return wrenchToTau;
 }
 
+DMat<double> buildWrenchToTorqueJacobianFromLegs(const StateEstimate<double>& stateEstimate,
+                                                 const RobotParams<double>& robotParams) {
+    if (stateEstimate.legs.size() != robotParams.legs.size()) {
+        throw std::runtime_error("state estimate leg count does not match robot params");
+    }
+
+    Eigen::Index totalDof = 0;
+    for (const RobotLegState<double>& legState : stateEstimate.legs) {
+        totalDof += legState.qd.size();
+    }
+
+    DMat<double> wrenchToTau = DMat<double>::Zero(totalDof, 12);
+    Eigen::Index rowOffset = 0;
+    for (std::size_t leg = 0; leg < stateEstimate.legs.size(); ++leg) {
+        const RobotLegState<double>& legState = stateEstimate.legs[leg];
+        const Eigen::Index dof = legState.qd.size();
+        if (!legState.hasFootJacobians || legState.Jv_W.rows() != 3 ||
+            legState.Jw_W.rows() != 3 || legState.Jv_W.cols() != dof ||
+            legState.Jw_W.cols() != dof) {
+            throw std::runtime_error("per-leg foot Jacobians are not available");
+        }
+
+        int forceColumn = -1;
+        int momentColumn = -1;
+        switch (robotParams.legs[leg].side) {
+            case Side::Left:
+                forceColumn = 0;
+                momentColumn = 6;
+                break;
+            case Side::Right:
+                forceColumn = 3;
+                momentColumn = 9;
+                break;
+            default:
+                throw std::runtime_error("wrench reconstruction only supports left/right legs");
+        }
+
+        wrenchToTau.block(rowOffset, forceColumn, dof, 3) = -legState.Jv_W.transpose();
+        wrenchToTau.block(rowOffset, momentColumn, dof, 3) = -legState.Jw_W.transpose();
+        rowOffset += dof;
+    }
+
+    return wrenchToTau;
+}
+
+json buildWrenchToTorqueSection(const StandingMpcDebugSnapshot& snapshot,
+                                const DVec<double>& actualLegTau,
+                                const bool hasStandingFootJacobians) {
+    json section = json::object();
+    section["input_order"] = "[F_left(3), F_right(3), M_left(3), M_right(3)]";
+    section["output_order"] = "packed leg actuator order";
+    section["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
+
+    try {
+        if (hasStandingFootJacobians) {
+            const DMat<double> wrenchToTau =
+                buildWrenchToTorqueJacobian(snapshot.stateEstimate.standingFeet);
+            section["source"] = "standing_combined_foot_jacobians";
+            section["mapping"] =
+                "tau = -[Jv_W^T, Jw_W^T] * [F_left, F_right, M_left, M_right]";
+            section["standing_Jv_W"] =
+                matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jv_W);
+            section["standing_Jw_W"] =
+                matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jw_W);
+            section["wrench_to_tau_jacobian"] = matrixToFlatJson(wrenchToTau);
+            return section;
+        }
+
+        const DMat<double> wrenchToTau =
+            buildWrenchToTorqueJacobianFromLegs(snapshot.stateEstimate, snapshot.robotParams);
+        section["source"] = "per_leg_foot_jacobians";
+        section["mapping"] =
+            "tau = -blockdiag(Jv_left^T, Jv_right^T) * [F_left, F_right] "
+            "- blockdiag(Jw_left^T, Jw_right^T) * [M_left, M_right]";
+        section["wrench_to_tau_jacobian"] = matrixToFlatJson(wrenchToTau);
+    } catch (const std::exception& exception) {
+        section["source"] = "unavailable";
+        section["mapping"] =
+            "not available; no compatible standing or per-leg foot Jacobians were active";
+        section["unavailable_reason"] = exception.what();
+    }
+
+    return section;
+}
+
 Mat3<double> inertiaWorldFromX0(const RobotParams<double>& robotParams,
                                 const Vec13<double>& x0) {
     const Mat3<double> R_WB = Rz(x0[2]);
@@ -749,6 +834,10 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         legJson["foot_vel_W"] = vectorToJson(legState.footVel_W);
         legJson["R_WF"] = matrixToFlatJson(legState.R_WF);
         legJson["foot_x_axis_W"] = vectorToJson(legState.R_WF.col(0));
+        if (legState.hasFootJacobians) {
+            legJson["Jv_W"] = matrixToFlatJson(legState.Jv_W);
+            legJson["Jw_W"] = matrixToFlatJson(legState.Jw_W);
+        }
         legJson["q"] = vectorToJson(legState.q);
         legJson["qd"] = vectorToJson(legState.qd);
         legJson["command_mode"] = legControlModeName(legCommand.mode);
@@ -790,26 +879,10 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     solution["predicted_state_horizon_vector"] = vectorToJson(predictedState);
     root["solution"] = std::move(solution);
 
-    if (hasStandingFootJacobians) {
-        const DMat<double> wrenchToTau =
-            buildWrenchToTorqueJacobian(snapshot.stateEstimate.standingFeet);
-        json wrenchToTauSection = json::object();
-        wrenchToTauSection["mapping"] =
-            "tau = -[Jv_W^T, Jw_W^T] * [F_left, F_right, M_left, M_right]";
-        wrenchToTauSection["standing_Jv_W"] =
-            matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jv_W);
-        wrenchToTauSection["standing_Jw_W"] =
-            matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jw_W);
-        wrenchToTauSection["wrench_to_tau_jacobian"] = matrixToFlatJson(wrenchToTau);
-        wrenchToTauSection["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
-        root["standing_wrench_to_torque"] = std::move(wrenchToTauSection);
-    } else {
-        json wrenchToTauSection = json::object();
-        wrenchToTauSection["mapping"] =
-            "not available; combined standing foot Jacobians were not active for this log";
-        wrenchToTauSection["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
-        root["standing_wrench_to_torque"] = std::move(wrenchToTauSection);
-    }
+    const json wrenchToTauSection =
+        buildWrenchToTorqueSection(snapshot, actualLegTau, hasStandingFootJacobians);
+    root["wrench_to_torque"] = wrenchToTauSection;
+    root["standing_wrench_to_torque"] = wrenchToTauSection;
 
     return root;
 }

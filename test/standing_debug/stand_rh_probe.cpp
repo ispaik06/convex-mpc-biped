@@ -154,17 +154,17 @@ OutputPaths defaultOutputPaths(const LocomotionMode locomotionMode) {
     const std::filesystem::path dir =
         std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" /
         debugDirectoryNameForMode(locomotionMode) / "receding_horizon";
-    const std::filesystem::path txtDir = dir / "txt";
+    const std::filesystem::path reportDir = dir / "reports";
     const std::filesystem::path csvDir = dir / "csv";
     const std::filesystem::path plotDir = dir / "plots";
     const std::filesystem::path plotRunDir = plotDir / (prefix + timestamp);
-    std::filesystem::create_directories(txtDir);
+    std::filesystem::create_directories(reportDir);
     std::filesystem::create_directories(csvDir);
     std::filesystem::create_directories(plotRunDir);
     std::filesystem::create_directories(plotDir);
 
     OutputPaths paths;
-    paths.report = txtDir / (prefix + timestamp + ".txt");
+    paths.report = reportDir / (prefix + timestamp + ".md");
     paths.csv = csvDir / (prefix + timestamp + ".csv");
     paths.plotsDir = plotRunDir;
     paths.statesPlot = plotRunDir / "states.png";
@@ -1074,33 +1074,36 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     return result;
 }
 
-void writeVector(std::ostream& out, const std::string& label, const Vec3<double>& value) {
-    out << "  " << label << ": ["
-        << value[0] << ", "
-        << value[1] << ", "
-        << value[2] << "]\n";
+void writeVec3Row(std::ostream& out, const std::string& label, const Vec3<double>& value) {
+    out << "| `" << label << "` | "
+        << value[0] << " | "
+        << value[1] << " | "
+        << value[2] << " |\n";
 }
 
-void writeStateVector(std::ostream& out, const std::string& label, const Vec13<double>& value) {
-    out << "  " << label << ": [";
+void writeStateVectorTable(std::ostream& out,
+                           const std::string& title,
+                           const Vec13<double>& value) {
+    out << "### " << title << "\n\n"
+        << "| State | Value |\n"
+        << "| --- | ---: |\n";
     for (int i = 0; i < kStateDim; ++i) {
-        if (i > 0) {
-            out << ", ";
-        }
-        out << kStateNames[static_cast<std::size_t>(i)] << '=' << value[i];
+        out << "| `" << kStateNames[static_cast<std::size_t>(i)] << "` | "
+            << value[i] << " |\n";
     }
-    out << "]\n";
+    out << "\n";
 }
 
-void writeOptionalDouble(std::ostream& out, const std::string& label,
-                         const std::optional<double>& value) {
-    out << "  " << label << ": ";
+void writeOptionalMetricRow(std::ostream& out,
+                            const std::string& label,
+                            const std::optional<double>& value) {
+    out << "| `" << label << "` | ";
     if (value.has_value() && std::isfinite(*value)) {
         out << *value;
     } else {
         out << "n/a";
     }
-    out << "\n";
+    out << " |\n";
 }
 
 Vec13<double> finalStateFromResult(const RolloutResult& result) {
@@ -1130,57 +1133,81 @@ void writeReport(std::ostream& out,
                  const RolloutResult& result,
                  const OutputPaths& outputPaths) {
     out << std::fixed << std::setprecision(9);
-    out << "[stand_rh_probe]\n"
-        << "  source_log: " << std::filesystem::absolute(logPath).string() << "\n"
-        << "  robot_type: " << robotType << "\n"
-        << "  locomotion_mode: " << locomotionModeName(result.locomotionMode) << "\n"
-        << "  requested_rollout_steps: " << options.steps << "\n"
-        << "  completed_rows: " << result.rows.size() << "\n"
-        << "  config_horizon_steps: " << horizonSteps() << "\n"
-        << "  source_horizon_steps: " << result.sourceHorizonSteps << "\n"
-        << "  config_dt_mpc: " << dtMpc() << "\n"
-        << "  source_dt_mpc: " << result.sourceDtMpc << "\n"
-        << "  source_controller_time: " << result.sourceControllerTime << "\n"
-        << "  source_clock_t0: " << result.sourceClockT0 << "\n"
-        << "  contact_wrench_model: "
-        << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << "\n"
-        << "  rollout_model: SRB-only true receding horizon, logged command, fixed logged foot points\n\n";
+    out << "# Receding Horizon Report\n\n"
+        << "## Source\n\n"
+        << "| Field | Value |\n"
+        << "| --- | --- |\n"
+        << "| Source log | `" << std::filesystem::absolute(logPath).string() << "` |\n"
+        << "| Robot type | `" << robotType << "` |\n"
+        << "| Locomotion mode | `" << locomotionModeName(result.locomotionMode) << "` |\n"
+        << "| Contact wrench model | `"
+        << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << "` |\n\n"
+        << "## Method\n\n"
+        << "This is an SRB-only true receding-horizon replay. At each step it solves MPC again using "
+        << "the logged command and fixed logged foot points, then advances the reduced state with the "
+        << "first solved wrench.\n\n"
+        << "$$\n"
+        << "x_{k+1} = A_{qp} x_k + B_{qp} w_k\n"
+        << "$$\n\n"
+        << "The first-solve comparison uses the logged `controller_config` snapshot when available; "
+        << "otherwise it falls back to the current `config/my_controller.yaml`.\n\n"
+        << "## Summary\n\n"
+        << "| Metric | Value |\n"
+        << "| --- | ---: |\n"
+        << "| requested rollout steps | " << options.steps << " |\n"
+        << "| completed rows | " << result.rows.size() << " |\n"
+        << "| config horizon steps | " << horizonSteps() << " |\n"
+        << "| source horizon steps | " << result.sourceHorizonSteps << " |\n"
+        << "| config dt_mpc | " << dtMpc() << " |\n"
+        << "| source dt_mpc | " << result.sourceDtMpc << " |\n"
+        << "| source controller time | " << result.sourceControllerTime << " |\n"
+        << "| source clock t0 | " << result.sourceClockT0 << " |\n\n";
 
-    writeVector(out, "desired_left_foot_W", result.desiredFootPositions.left_des_W);
-    writeVector(out, "desired_right_foot_W", result.desiredFootPositions.right_des_W);
-    writeVector(out, "left_foot_x_axis_W", result.leftFootXAxis_W);
-    writeVector(out, "right_foot_x_axis_W", result.rightFootXAxis_W);
-    writeStateVector(out, "initial_reference", result.fixedReference);
-    writeStateVector(out, "final_state", finalStateFromResult(result));
-    writeStateVector(out, "final_error", finalStateFromResult(result) - result.fixedReference);
+    out << "## Logged Foot Points\n\n"
+        << "| Quantity | x | y | z |\n"
+        << "| --- | ---: | ---: | ---: |\n";
+    writeVec3Row(out, "desired_left_foot_W", result.desiredFootPositions.left_des_W);
+    writeVec3Row(out, "desired_right_foot_W", result.desiredFootPositions.right_des_W);
+    writeVec3Row(out, "left_foot_x_axis_W", result.leftFootXAxis_W);
+    writeVec3Row(out, "right_foot_x_axis_W", result.rightFootXAxis_W);
     out << "\n";
 
-    out << "first_solve_delta_to_source_log\n";
-    out << "  note: comparison uses the logged controller_config snapshot when available; "
-        << "otherwise it falls back to the current config/my_controller.yaml\n";
-    writeOptionalDouble(out, "first_wrench_max_abs_delta", result.firstWrenchDeltaToLog);
-    writeOptionalDouble(out, "wrench_horizon_max_abs_delta", result.firstHorizonWrenchDeltaToLog);
-    writeOptionalDouble(out, "predicted_horizon_state_max_abs_delta",
-                        result.firstHorizonStateDeltaToLog);
+    writeStateVectorTable(out, "Initial Reference", result.fixedReference);
+    writeStateVectorTable(out, "Final State", finalStateFromResult(result));
+    writeStateVectorTable(out, "Final Error", finalStateFromResult(result) - result.fixedReference);
+
+    out << "## First Solve Delta To Source Log\n\n"
+        << "| Metric | Value |\n"
+        << "| --- | ---: |\n";
+    writeOptionalMetricRow(out, "first_wrench_max_abs_delta", result.firstWrenchDeltaToLog);
+    writeOptionalMetricRow(out, "wrench_horizon_max_abs_delta", result.firstHorizonWrenchDeltaToLog);
+    writeOptionalMetricRow(out,
+                           "predicted_horizon_state_max_abs_delta",
+                           result.firstHorizonStateDeltaToLog);
     out << "\n";
 
-    out << "max_abs_state_error_over_rollout\n";
+    out << "## Max Abs State Error Over Rollout\n\n"
+        << "| State | Max abs error |\n"
+        << "| --- | ---: |\n";
     for (int i = 0; i < 12; ++i) {
-        out << "  " << kStateNames[static_cast<std::size_t>(i)] << ": "
-            << maxAbsTrajectoryError(result, i) << "\n";
+        out << "| `" << kStateNames[static_cast<std::size_t>(i)] << "` | "
+            << maxAbsTrajectoryError(result, i) << " |\n";
     }
     out << "\n";
 
     if (!result.failureMessage.empty()) {
-        out << "failure: " << result.failureMessage << "\n\n";
+        out << "## Failure\n\n"
+            << "`" << result.failureMessage << "`\n\n";
     }
 
-    out << "outputs\n"
-        << "  csv: " << std::filesystem::absolute(outputPaths.csv).string() << "\n"
-        << "  plots_dir: " << std::filesystem::absolute(outputPaths.plotsDir).string() << "\n"
-        << "  states_plot: " << std::filesystem::absolute(outputPaths.statesPlot).string() << "\n"
-        << "  wrench_plot: " << std::filesystem::absolute(outputPaths.wrenchPlot).string() << "\n"
-        << "  metrics_plot: " << std::filesystem::absolute(outputPaths.metricsPlot).string() << "\n";
+    out << "## Outputs\n\n"
+        << "| Artifact | Path |\n"
+        << "| --- | --- |\n"
+        << "| CSV | `" << std::filesystem::absolute(outputPaths.csv).string() << "` |\n"
+        << "| Plots directory | `" << std::filesystem::absolute(outputPaths.plotsDir).string() << "` |\n"
+        << "| States plot | `" << std::filesystem::absolute(outputPaths.statesPlot).string() << "` |\n"
+        << "| Wrench plot | `" << std::filesystem::absolute(outputPaths.wrenchPlot).string() << "` |\n"
+        << "| Metrics plot | `" << std::filesystem::absolute(outputPaths.metricsPlot).string() << "` |\n";
 }
 
 void writeCsvHeader(std::ostream& out) {

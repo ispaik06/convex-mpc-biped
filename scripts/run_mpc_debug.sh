@@ -23,7 +23,9 @@ repo_root="$(cd "${script_dir}/.." && pwd)"
 
 python_bin="${PYTHON:-python}"
 readonly srb_script="${repo_root}/test/standing_debug/srb_reconstruct.py"
+readonly wrench_reconstruction_script="${repo_root}/test/standing_debug/wrench_reconstruction.py"
 readonly probe_bin="${repo_root}/build/test/standing_debug/stand_contact_probe"
+readonly wrench_mapping_bin="${repo_root}/build/test/standing_debug/wrench_mapping_probe"
 readonly rh_bin="${repo_root}/build/test/standing_debug/stand_rh_probe"
 
 rh_steps=""
@@ -116,9 +118,20 @@ if [[ ! -f "${srb_script}" ]]; then
     exit 1
 fi
 
+if [[ ! -f "${wrench_reconstruction_script}" ]]; then
+    echo "Error: missing wrench_reconstruction.py at ${wrench_reconstruction_script}" >&2
+    exit 1
+fi
+
 if [[ ! -x "${probe_bin}" ]]; then
     echo "Error: stand_contact_probe binary not found or not executable at ${probe_bin}" >&2
     echo "Build it first with: cmake --build build --target stand_contact_probe" >&2
+    exit 1
+fi
+
+if [[ ! -x "${wrench_mapping_bin}" ]]; then
+    echo "Error: wrench_mapping_probe binary not found or not executable at ${wrench_mapping_bin}" >&2
+    echo "Build it first with: cmake --build build --target wrench_mapping_probe" >&2
     exit 1
 fi
 
@@ -187,14 +200,193 @@ if [[ ! -s "${log_path}" ]]; then
     exit 1
 fi
 
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/mpc_debug.XXXXXX")"
+trap 'rm -rf "${tmp_dir}"' EXIT
+
+extract_prefix_value() {
+    local output_file="$1"
+    local prefix="$2"
+    awk -v prefix="${prefix}" '
+        index($0, prefix) == 1 {
+            value = substr($0, length(prefix) + 1)
+        }
+        END {
+            if (value != "") {
+                print value
+            }
+        }
+    ' "${output_file}"
+}
+
+file_was_generated() {
+    local path="$1"
+    [[ -n "${path}" && -s "${path}" ]]
+}
+
+print_failure_tail() {
+    local output_file="$1"
+    local lines
+    lines="$(grep -Ei "error|failed|exception|traceback|not found|skipped" "${output_file}" | tail -n 5 || true)"
+    if [[ -z "${lines}" ]]; then
+        lines="$(tail -n 5 "${output_file}" || true)"
+    fi
+    if [[ -n "${lines}" ]]; then
+        echo "${lines}" | sed 's/^/    /'
+    fi
+}
+
+summarize_srb_reconstruction() {
+    local output_file="$1"
+    local plot
+    plot="$(extract_prefix_value "${output_file}" "saved plot: ")"
+    if file_was_generated "${plot}"; then
+        echo "[OK] SRB reconstruction: plot generated"
+        echo "     plot: ${plot}"
+        return 0
+    fi
+
+    echo "[FAIL] SRB reconstruction: expected plot was not generated"
+    print_failure_tail "${output_file}"
+    return 1
+}
+
+summarize_contact_probe() {
+    local output_file="$1"
+    local report csv plot
+    report="$(extract_prefix_value "${output_file}" "report: ")"
+    csv="$(extract_prefix_value "${output_file}" "csv: ")"
+    plot="$(extract_prefix_value "${output_file}" "plot: ")"
+    if file_was_generated "${report}" && file_was_generated "${csv}" && file_was_generated "${plot}"; then
+        echo "[OK] Contact probe: report, CSV, and plot generated"
+        echo "     report: ${report}"
+        echo "     csv: ${csv}"
+        echo "     plot: ${plot}"
+        return 0
+    fi
+
+    echo "[FAIL] Contact probe: expected artifacts were not generated"
+    [[ -n "${report}" ]] && echo "     report: ${report}"
+    [[ -n "${csv}" ]] && echo "     csv: ${csv}"
+    [[ -n "${plot}" ]] && echo "     plot: ${plot}"
+    print_failure_tail "${output_file}"
+    return 1
+}
+
+summarize_wrench_reconstruction() {
+    local output_file="$1"
+    local report csv plot skip
+    report="$(extract_prefix_value "${output_file}" "wrench reconstruction report: ")"
+    csv="$(extract_prefix_value "${output_file}" "wrench reconstruction csv: ")"
+    plot="$(extract_prefix_value "${output_file}" "wrench reconstruction plot: ")"
+    skip="$(extract_prefix_value "${output_file}" "wrench reconstruction: skipped plot ")"
+
+    if [[ -n "${skip}" ]]; then
+        if file_was_generated "${report}"; then
+            echo "[SKIP] Wrench reconstruction: report generated, plot/CSV skipped"
+            echo "       reason: ${skip}"
+            echo "       report: ${report}"
+            return 0
+        fi
+        echo "[FAIL] Wrench reconstruction: skipped but report was not generated"
+        print_failure_tail "${output_file}"
+        return 1
+    fi
+
+    if file_was_generated "${report}" && file_was_generated "${csv}" && file_was_generated "${plot}"; then
+        echo "[OK] Wrench reconstruction: report, CSV, and plot generated"
+        echo "     report: ${report}"
+        echo "     csv: ${csv}"
+        echo "     plot: ${plot}"
+        return 0
+    fi
+
+    echo "[FAIL] Wrench reconstruction: expected artifacts were not generated"
+    [[ -n "${report}" ]] && echo "     report: ${report}"
+    [[ -n "${csv}" ]] && echo "     csv: ${csv}"
+    [[ -n "${plot}" ]] && echo "     plot: ${plot}"
+    print_failure_tail "${output_file}"
+    return 1
+}
+
+summarize_receding_horizon() {
+    local output_file="$1"
+    local report csv states_plot wrench_plot metrics_plot
+    report="$(extract_prefix_value "${output_file}" "report: ")"
+    csv="$(extract_prefix_value "${output_file}" "csv: ")"
+    states_plot="$(extract_prefix_value "${output_file}" "states plot: ")"
+    wrench_plot="$(extract_prefix_value "${output_file}" "wrench plot: ")"
+    metrics_plot="$(extract_prefix_value "${output_file}" "metrics plot: ")"
+    if file_was_generated "${report}" && file_was_generated "${csv}" &&
+       file_was_generated "${states_plot}" && file_was_generated "${wrench_plot}" &&
+       file_was_generated "${metrics_plot}"; then
+        echo "[OK] Receding horizon: report, CSV, and plots generated"
+        echo "     report: ${report}"
+        echo "     csv: ${csv}"
+        echo "     states plot: ${states_plot}"
+        echo "     wrench plot: ${wrench_plot}"
+        echo "     metrics plot: ${metrics_plot}"
+        return 0
+    fi
+
+    echo "[FAIL] Receding horizon: expected artifacts were not generated"
+    [[ -n "${report}" ]] && echo "     report: ${report}"
+    [[ -n "${csv}" ]] && echo "     csv: ${csv}"
+    [[ -n "${states_plot}" ]] && echo "     states plot: ${states_plot}"
+    [[ -n "${wrench_plot}" ]] && echo "     wrench plot: ${wrench_plot}"
+    [[ -n "${metrics_plot}" ]] && echo "     metrics plot: ${metrics_plot}"
+    print_failure_tail "${output_file}"
+    return 1
+}
+
+run_analysis() {
+    local key="$1"
+    local label="$2"
+    local summarizer="$3"
+    shift 3
+
+    local output_file="${tmp_dir}/${key}.log"
+    if "$@" > "${output_file}" 2>&1; then
+        "${summarizer}" "${output_file}"
+        return $?
+    fi
+
+    local status=$?
+    echo "[FAIL] ${label}: command exited with status ${status}"
+    print_failure_tail "${output_file}"
+    return "${status}"
+}
+
 if [[ "${selection_mode}" == "all-latest" ]]; then
-    echo "Using latest MPC log across standing_mpc and walking_mpc: ${log_path}"
+    echo "MPC debug log: ${log_path} (latest across standing_mpc and walking_mpc)"
 elif [[ "${selection_mode}" == "standing" || "${selection_mode}" == "walking" ]]; then
-    echo "Using latest ${selection_mode} MPC log: ${log_path}"
+    echo "MPC debug log: ${log_path} (latest ${selection_mode})"
 else
-    echo "Using explicit MPC log: ${log_path}"
+    echo "MPC debug log: ${log_path}"
+fi
+echo "Running MPC debug analyses..."
+
+overall_status=0
+run_analysis "srb_reconstruction" \
+             "SRB reconstruction" \
+             "summarize_srb_reconstruction" \
+             "${python_bin}" "${srb_script}" "${log_path}" || overall_status=1
+run_analysis "contact_probe" \
+             "Contact probe" \
+             "summarize_contact_probe" \
+             "${probe_bin}" "${log_path}" || overall_status=1
+run_analysis "wrench_reconstruction" \
+             "Wrench reconstruction" \
+             "summarize_wrench_reconstruction" \
+             "${python_bin}" "${wrench_reconstruction_script}" "${log_path}" || overall_status=1
+run_analysis "receding_horizon" \
+             "Receding horizon" \
+             "summarize_receding_horizon" \
+             "${rh_bin}" -n "${rh_steps}" "${log_path}" || overall_status=1
+
+if [[ "${overall_status}" -eq 0 ]]; then
+    echo "MPC debug analyses completed."
+else
+    echo "MPC debug analyses completed with failures."
 fi
 
-"${python_bin}" "${srb_script}" "${log_path}"
-"${probe_bin}" "${log_path}"
-"${rh_bin}" -n "${rh_steps}" "${log_path}"
+exit "${overall_status}"
