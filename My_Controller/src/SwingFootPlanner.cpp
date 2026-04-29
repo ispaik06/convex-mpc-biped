@@ -8,11 +8,21 @@
 
 namespace {
 constexpr double kSwingFootTargetZ = -0.005;
+constexpr double kCommandZeroEpsilon = 1e-12;
+
+bool hasPlanarMotionCommand(const UserCommand* command) {
+    if (command == nullptr) {
+        return false;
+    }
+    return std::abs(command->x_dot) > kCommandZeroEpsilon ||
+           std::abs(command->y_dot) > kCommandZeroEpsilon ||
+           std::abs(command->psi_dot) > kCommandZeroEpsilon;
+}
 }  // namespace
 
 void SwingFootPlanner::reset() {
-    _bodyVelocityHalfStanceTouchdownTargets.clear();
-    _bodyVelocityHalfStanceTouchdownTargetValid.clear();
+    _touchdownTargets.clear();
+    _touchdownTargetValid.clear();
     _wasInStance.clear();
 }
 
@@ -30,20 +40,26 @@ void SwingFootPlanner::ensureSwingTouchdownCache() {
     }
 
     const std::size_t legCount = _robotParams->legs.size();
-    if (_bodyVelocityHalfStanceTouchdownTargets.size() == legCount &&
-        _bodyVelocityHalfStanceTouchdownTargetValid.size() == legCount &&
+    if (_touchdownTargets.size() == legCount &&
+        _touchdownTargetValid.size() == legCount &&
         _wasInStance.size() == legCount) {
         return;
     }
 
-    _bodyVelocityHalfStanceTouchdownTargets.assign(legCount, Vec3<double>::Zero());
-    _bodyVelocityHalfStanceTouchdownTargetValid.assign(legCount, false);
+    _touchdownTargets.assign(legCount, Vec3<double>::Zero());
+    _touchdownTargetValid.assign(legCount, false);
     _wasInStance.assign(legCount, true);
+}
+
+Vec3<double> SwingFootPlanner::currentFootTouchdownTarget(const std::size_t legIndex) const {
+    return _stateEstimate->legs[legIndex].footPos_W;
 }
 
 Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex) const {
-    const Vec3<double> p_init_W = _stateEstimate->legs[legIndex].footPos_W;
+    const Vec3<double> p_init_W =
+        _touchdownTargetValid[legIndex] ? _touchdownTargets[legIndex]
+                                        : currentFootTouchdownTarget(legIndex);
     const Vec3<double> v_body_cmd(
         _userCommand != nullptr ? _userCommand->x_dot : 0.0,
         _userCommand != nullptr ? _userCommand->y_dot : 0.0,
@@ -130,29 +146,42 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
         }
 
         const bool isStance = _gaitScheduler->c(side, time);
+        const std::size_t leg = static_cast<std::size_t>(legIndex);
         if (isStance) {
-            _wasInStance[static_cast<std::size_t>(legIndex)] = true;
-            _bodyVelocityHalfStanceTouchdownTargetValid[static_cast<std::size_t>(legIndex)] = false;
-            return _stateEstimate->legs[legIndex].footPos_W;
+            if (!_touchdownTargetValid[leg]) {
+                _touchdownTargets[leg] = currentFootTouchdownTarget(leg);
+                _touchdownTargetValid[leg] = true;
+            }
+            _wasInStance[leg] = true;
+            return _touchdownTargets[leg];
         }
 
-        const std::size_t leg = static_cast<std::size_t>(legIndex);
         const bool wasInStance = _wasInStance[leg];
         _wasInStance[leg] = false;
+        const bool shouldUpdateTouchdownTarget = wasInStance || !_touchdownTargetValid[leg];
 
-        switch (touchdownTargetMode) {
-            case TouchdownTargetMode::BodyVelocityHalfStance:
-                if (!_bodyVelocityHalfStanceTouchdownTargetValid[leg] || wasInStance) {
-                    _bodyVelocityHalfStanceTouchdownTargets[leg] =
-                        touchdownTargetWorldBodyVelocityHalfStance(leg);
-                    _bodyVelocityHalfStanceTouchdownTargetValid[leg] = true;
+        if (shouldUpdateTouchdownTarget) {
+            if (!hasPlanarMotionCommand(_userCommand)) {
+                if (!_touchdownTargetValid[leg]) {
+                    _touchdownTargets[leg] = currentFootTouchdownTarget(leg);
                 }
-                return _bodyVelocityHalfStanceTouchdownTargets[leg];
-            case TouchdownTargetMode::LegacyComYawCorrected:
-                return touchdownTargetWorldLegacy(leg);
+            } else {
+                switch (touchdownTargetMode) {
+                    case TouchdownTargetMode::BodyVelocityHalfStance:
+                        _touchdownTargets[leg] =
+                            touchdownTargetWorldBodyVelocityHalfStance(leg);
+                        break;
+                    case TouchdownTargetMode::LegacyComYawCorrected:
+                        _touchdownTargets[leg] = touchdownTargetWorldLegacy(leg);
+                        break;
+                    default:
+                        throw std::runtime_error("Unsupported swing.touchdown_target_mode");
+                }
+            }
+            _touchdownTargetValid[leg] = true;
         }
 
-        throw std::runtime_error("Unsupported swing.touchdown_target_mode");
+        return _touchdownTargets[leg];
     };
 
     DesiredFootPositions desiredFootPositions;

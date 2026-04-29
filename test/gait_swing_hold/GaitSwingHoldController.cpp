@@ -502,23 +502,29 @@ void GaitSwingHoldController::runController() {
 }
 
 void GaitSwingHoldController::collectDebugVisualization(DebugVizState<double>& debugViz) const {
-    if (!_initialized || _leftLegIndex < 0) {
+    if (!_initialized || _leftLegIndex < 0 || _rightLegIndex < 0) {
         return;
     }
 
-    DebugVizMarker<double> marker;
-    marker.name = "debug_left_touchdown_target";
-    marker.position_W = _touchdownTarget_W;
-    if (static_cast<std::size_t>(_leftLegIndex) < _legRuntime.size()) {
-        marker.orientation_W = yawQuaternion(_legRuntime[static_cast<std::size_t>(_leftLegIndex)].touchdownYaw_W);
-    } else {
-        marker.orientation_W = Quat<double>::Identity();
-    }
-    const bool leftIsStance =
-        _gaitScheduler != nullptr && _stateEstimate != nullptr &&
-        _gaitScheduler->c(Side::Left, _stateEstimate->time);
-    marker.hasRgba = true;
-    marker.rgba = touchdownMarkerRgba<double>(leftIsStance);
-    marker.active = true;
-    debugViz.markers.push_back(marker);
+    const auto addTouchdownMarker = [&](const char* name, const Side side, const int legIndex) {
+        const std::size_t leg = static_cast<std::size_t>(legIndex);
+        if (leg >= _legRuntime.size()) {
+            return;
+        }
+
+        DebugVizMarker<double> marker;
+        marker.name = name;
+        marker.position_W = _legRuntime[leg].touchdownTarget_W;
+        marker.orientation_W = yawQuaternion(_legRuntime[leg].touchdownYaw_W);
+        const bool isStance =
+            _gaitScheduler != nullptr && _stateEstimate != nullptr &&
+            _gaitScheduler->c(side, _stateEstimate->time);
+        marker.hasRgba = true;
+        marker.rgba = touchdownMarkerRgba<double>(isStance);
+        marker.active = true;
+        debugViz.markers.push_back(marker);
+    };
+
+    addTouchdownMarker("debug_left_touchdown_target", Side::Left, _leftLegIndex);
+    addTouchdownMarker("debug_right_touchdown_target", Side::Right, _rightLegIndex);
 }

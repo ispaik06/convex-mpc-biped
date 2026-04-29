@@ -100,11 +100,14 @@ private:
 	u64 _iterationsBetweenMpc{10};
 	LocomotionMode _locomotionMode{LocomotionMode::Walking};
 	LegDynamicsRequest _legDynamicsRequest;
-	BodyTargetState _bodyTarget;
-	Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();
-	double _leftTouchdownTargetYaw_W{0.0};
-	bool _leftTouchdownTargetInitialized{false};
+		BodyTargetState _bodyTarget;
+		Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();
+		Vec3<double> _rightTouchdownTarget_W = Vec3<double>::Zero();
+		double _leftTouchdownTargetYaw_W{0.0};
+		double _rightTouchdownTargetYaw_W{0.0};
+		bool _leftTouchdownTargetInitialized{false};
+		bool _rightTouchdownTargetInitialized{false};
 
-};
+	};
 
 #endif  // MY_CONTROLLER_H

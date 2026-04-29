@@ -86,17 +86,38 @@ TimestampStrings makeTimestampStrings() {
     return TimestampStrings{filename.str(), readable.str()};
 }
 
-std::string makeLogPath(const TimestampStrings& timestamp) {
+std::string debugLogPrefixForMode(const LocomotionMode mode) {
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking_mpc_debug_";
+        case LocomotionMode::Standing:
+            return "standing_mpc_debug_";
+    }
+    return "mpc_debug_";
+}
+
+std::string debugLogDirectoryNameForMode(const LocomotionMode mode) {
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking_mpc";
+        case LocomotionMode::Standing:
+            return "standing_mpc";
+    }
+    return "mpc";
+}
+
+std::string makeLogPath(const TimestampStrings& timestamp, const LocomotionMode locomotionMode) {
     const std::string root(PROJECT_ROOT_DIR);
     const std::string logsDir = root + "/logs";
     const std::string debugDir = logsDir + "/debug";
-    const std::string standingDir = debugDir + "/standing_mpc";
+    const std::string mpcDebugDir = debugDir + "/" + debugLogDirectoryNameForMode(locomotionMode);
 
     ensureDirectory(logsDir);
     ensureDirectory(debugDir);
-    ensureDirectory(standingDir);
+    ensureDirectory(mpcDebugDir);
 
-    return standingDir + "/standing_mpc_debug_" + timestamp.filenameToken + ".json";
+    return mpcDebugDir + "/" + debugLogPrefixForMode(locomotionMode) +
+           timestamp.filenameToken + ".json";
 }
 
 template <typename Scalar>
@@ -279,6 +300,20 @@ std::string locomotionModeName(const LocomotionMode mode) {
     return "unknown";
 }
 
+std::string legControlModeName(const LegControlMode mode) {
+    switch (mode) {
+        case LegControlMode::JointPd:
+            return "joint_pd";
+        case LegControlMode::JointTorque:
+            return "joint_torque";
+        case LegControlMode::SwingFoot:
+            return "swing_foot";
+        case LegControlMode::StanceWrench:
+            return "stance_wrench";
+    }
+    return "unknown";
+}
+
 std::string touchdownTargetModeName(const TouchdownTargetMode mode) {
     switch (mode) {
         case TouchdownTargetMode::BodyVelocityHalfStance:
@@ -323,10 +358,24 @@ json matrixDiagonalToJson(const Eigen::MatrixBase<Derived>& matrix) {
     return out;
 }
 
-json controllerConfigJson(const ControllerConfig& config, const RobotType robotType) {
+json userCommandJson(const UserCommand& command) {
+    json out = json::object();
+    out["x_dot"] = scalarToJson(command.x_dot);
+    out["y_dot"] = scalarToJson(command.y_dot);
+    out["psi_dot"] = scalarToJson(command.psi_dot);
+    out["z_dot"] = scalarToJson(command.z_dot);
+    out["standing_roll_offset_rad"] = scalarToJson(command.standing_roll_offset_rad);
+    out["standing_pitch_offset_rad"] = scalarToJson(command.standing_pitch_offset_rad);
+    out["standing_mpc_debug_log_request"] = command.standing_mpc_debug_log_request;
+    return out;
+}
+
+json controllerConfigJson(const ControllerConfig& config,
+                          const RobotType robotType,
+                          const LocomotionMode locomotionMode) {
     json root = json::object();
     root["robot_type"] = robotTypeName(robotType);
-    root["locomotion_mode"] = locomotionModeName(config.locomotionMode);
+    root["locomotion_mode"] = locomotionModeName(locomotionMode);
 
     json timing = json::object();
     timing["cycle"] = config.timing.cycle;
@@ -609,23 +658,19 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     const ControllerConfig& config = getControllerConfig();
     const int steps = horizonSteps();
     if (snapshot.wrenchHorizon.size() != kInputDim * steps) {
-        throw std::runtime_error("Standing MPC debug log received an unexpected wrench horizon size");
+        throw std::runtime_error("MPC debug log received an unexpected wrench horizon size");
     }
     if (snapshot.formulation.A_qp.rows() != kStateDim * steps ||
         snapshot.formulation.A_qp.cols() != kStateDim ||
         snapshot.formulation.B_qp.rows() != kStateDim * steps ||
         snapshot.formulation.B_qp.cols() != kInputDim * steps) {
-        throw std::runtime_error("Standing MPC debug log received unexpected QP matrix dimensions");
-    }
-    if (!snapshot.stateEstimate.standingFeet.hasFootJacobians) {
-        throw std::runtime_error("Standing MPC debug log requires standing foot Jacobians");
+        throw std::runtime_error("MPC debug log received unexpected QP matrix dimensions");
     }
 
     const DVec<double> predictedState =
         snapshot.formulation.A_qp * snapshot.x0 +
         snapshot.formulation.B_qp * snapshot.wrenchHorizon;
-    const DMat<double> wrenchToTau =
-        buildWrenchToTorqueJacobian(snapshot.stateEstimate.standingFeet);
+    const bool hasStandingFootJacobians = snapshot.stateEstimate.standingFeet.hasFootJacobians;
     const DVec<double> actualLegTau = packActualLegTauVector(snapshot);
     const DVec<double> fullQpos = packFullQpos(snapshot);
     const DVec<double> fullQvel = packFullQvel(snapshot);
@@ -634,11 +679,13 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     json root = json::object();
 
     json metadata = json::object();
-    metadata["type"] = "standing_mpc_first_solve_debug";
+    metadata["type"] = locomotionModeName(snapshot.locomotionMode) + std::string("_mpc_solve_debug");
     metadata["generated_at_local"] = timestamp.localTime;
     metadata["log_path"] = logPath;
     metadata["controller_time"] = snapshot.stateEstimate.time;
     metadata["controller_iteration"] = snapshot.iteration;
+    metadata["locomotion_mode"] = locomotionModeName(snapshot.locomotionMode);
+    metadata["horizon_clock_t0"] = scalarToJson(snapshot.horizonClockT0);
     metadata["debug_request_source"] = snapshot.debugRequestSource;
     metadata["debug_request_time"] = scalarToJson(snapshot.debugRequestTime);
     metadata["debug_trigger_time"] = scalarToJson(snapshot.debugTriggerTime);
@@ -653,7 +700,9 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         contactWrenchModelName(config.mpc.contactWrenchModel);
     root["metadata"] = std::move(metadata);
 
-    root["controller_config"] = controllerConfigJson(config, snapshot.robotParams.roboType);
+    root["controller_config"] =
+        controllerConfigJson(config, snapshot.robotParams.roboType, snapshot.locomotionMode);
+    root["user_command"] = userCommandJson(snapshot.userCommand);
 
     json model = json::object();
     model["mass"] = snapshot.robotParams.bodyMass;
@@ -702,6 +751,12 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         legJson["foot_x_axis_W"] = vectorToJson(legState.R_WF.col(0));
         legJson["q"] = vectorToJson(legState.q);
         legJson["qd"] = vectorToJson(legState.qd);
+        legJson["command_mode"] = legControlModeName(legCommand.mode);
+        legJson["force_feedforward_W"] = vectorToJson(legCommand.forceFeedForward_W);
+        legJson["moment_feedforward_W"] = vectorToJson(legCommand.momentFeedForward_W);
+        legJson["p_des_W"] = vectorToJson(legCommand.pDes_W);
+        legJson["v_des_W"] = vectorToJson(legCommand.vDes_W);
+        legJson["a_des_W"] = vectorToJson(legCommand.aDes_W);
         legJson["tau_feedforward_command"] = vectorToJson(legCommand.tauFeedForward);
         legs.push_back(std::move(legJson));
     }
@@ -735,16 +790,26 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     solution["predicted_state_horizon_vector"] = vectorToJson(predictedState);
     root["solution"] = std::move(solution);
 
-    json wrenchToTauSection = json::object();
-    wrenchToTauSection["mapping"] =
-        "tau = -[Jv_W^T, Jw_W^T] * [F_left, F_right, M_left, M_right]";
-    wrenchToTauSection["standing_Jv_W"] =
-        matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jv_W);
-    wrenchToTauSection["standing_Jw_W"] =
-        matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jw_W);
-    wrenchToTauSection["wrench_to_tau_jacobian"] = matrixToFlatJson(wrenchToTau);
-    wrenchToTauSection["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
-    root["standing_wrench_to_torque"] = std::move(wrenchToTauSection);
+    if (hasStandingFootJacobians) {
+        const DMat<double> wrenchToTau =
+            buildWrenchToTorqueJacobian(snapshot.stateEstimate.standingFeet);
+        json wrenchToTauSection = json::object();
+        wrenchToTauSection["mapping"] =
+            "tau = -[Jv_W^T, Jw_W^T] * [F_left, F_right, M_left, M_right]";
+        wrenchToTauSection["standing_Jv_W"] =
+            matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jv_W);
+        wrenchToTauSection["standing_Jw_W"] =
+            matrixToFlatJson(snapshot.stateEstimate.standingFeet.Jw_W);
+        wrenchToTauSection["wrench_to_tau_jacobian"] = matrixToFlatJson(wrenchToTau);
+        wrenchToTauSection["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
+        root["standing_wrench_to_torque"] = std::move(wrenchToTauSection);
+    } else {
+        json wrenchToTauSection = json::object();
+        wrenchToTauSection["mapping"] =
+            "not available; combined standing foot Jacobians were not active for this log";
+        wrenchToTauSection["actual_leg_tau_vector"] = vectorToJson(actualLegTau);
+        root["standing_wrench_to_torque"] = std::move(wrenchToTauSection);
+    }
 
     return root;
 }
@@ -752,19 +817,19 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
 
 std::string writeStandingMpcDebugLog(const StandingMpcDebugSnapshot& snapshot) {
     const TimestampStrings timestamp = makeTimestampStrings();
-    const std::string logPath = makeLogPath(timestamp);
+    const std::string logPath = makeLogPath(timestamp, snapshot.locomotionMode);
 
     const json root = buildSnapshotJson(snapshot, logPath, timestamp);
 
     std::ofstream out(logPath, std::ios::out | std::ios::trunc);
     if (!out.is_open()) {
-        throw std::runtime_error("Failed to open standing MPC debug log: " + logPath);
+        throw std::runtime_error("Failed to open MPC debug log: " + logPath);
     }
 
     writePrettyJson(out, root);
     out << '\n';
     if (!out.good()) {
-        throw std::runtime_error("Failed while writing standing MPC debug log: " + logPath);
+        throw std::runtime_error("Failed while writing MPC debug log: " + logPath);
     }
 
     return logPath;

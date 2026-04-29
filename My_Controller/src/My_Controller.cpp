@@ -512,6 +512,8 @@ void MyController::updateSwingTrajectories(
 
 void MyController::updateTouchdownDebugTarget(const DesiredFootPositions& desiredFootPositions) {
     _leftTouchdownTarget_W = desiredFootPositions.left_des_W;
+    _rightTouchdownTarget_W = desiredFootPositions.right_des_W;
+
     const std::size_t leftLegIndex = static_cast<std::size_t>(findLegIndex(Side::Left));
     if (leftLegIndex < _legRuntime.size()) {
         _leftTouchdownTargetYaw_W = _legRuntime[leftLegIndex].touchdownYaw_W;
@@ -519,6 +521,14 @@ void MyController::updateTouchdownDebugTarget(const DesiredFootPositions& desire
         _leftTouchdownTargetYaw_W = swingFootYawTargetWorld();
     }
     _leftTouchdownTargetInitialized = true;
+
+    const std::size_t rightLegIndex = static_cast<std::size_t>(findLegIndex(Side::Right));
+    if (rightLegIndex < _legRuntime.size()) {
+        _rightTouchdownTargetYaw_W = _legRuntime[rightLegIndex].touchdownYaw_W;
+    } else {
+        _rightTouchdownTargetYaw_W = swingFootYawTargetWorld();
+    }
+    _rightTouchdownTargetInitialized = true;
 }
 
 double MyController::swingFootYawTargetWorld() const {
@@ -573,7 +583,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0, _locomotionMode);
         _convexMPC->solve();
         _stanceWrenchWorld = _convexMPC->optimalWrench();
-        if (_locomotionMode == LocomotionMode::Standing && _standingMpcDebugLogPending) {
+        if (_standingMpcDebugLogPending) {
             _standingMpcDebugLogReady = true;
         }
 
@@ -621,7 +631,7 @@ void MyController::queueStandingMpcDebugLog(const std::string& source,
 }
 
 void MyController::updateStandingMpcDebugRequest() {
-    if (_locomotionMode != LocomotionMode::Standing || _stateEstimate == nullptr) {
+    if (_stateEstimate == nullptr) {
         return;
     }
 
@@ -634,7 +644,8 @@ void MyController::updateStandingMpcDebugRequest() {
                 "keyboard",
                 time,
                 std::numeric_limits<double>::quiet_NaN());
-            std::cout << "[StandingMPCDebug] keyboard request #" << request
+            std::cout << "[MPCDebug] keyboard request #" << request
+                      << " (" << locomotionModeName(_locomotionMode) << ")"
                       << " at t=" << time
                       << " queued for the next scheduled MPC solve" << std::endl;
         }
@@ -656,7 +667,8 @@ void MyController::updateStandingMpcDebugRequest() {
 
     ++_nextStandingMpcDebugTriggerIndex;
     queueStandingMpcDebugLog("time", time, triggerTime);
-    std::cout << "[StandingMPCDebug] time trigger t=" << triggerTime
+    std::cout << "[MPCDebug] time trigger t=" << triggerTime
+              << " (" << locomotionModeName(_locomotionMode) << ")"
               << " reached at t=" << time
               << "; queued for the next scheduled MPC solve" << std::endl;
 }
@@ -664,8 +676,7 @@ void MyController::updateStandingMpcDebugRequest() {
 void MyController::maybeWriteStandingMpcDebugLog(
     const Vec13<double>& x0,
     const DesiredFootPositions& desiredFootPositions) {
-    if (_locomotionMode != LocomotionMode::Standing ||
-        !_standingMpcDebugLogPending ||
+    if (!_standingMpcDebugLogPending ||
         !_standingMpcDebugLogReady ||
         _convexMPC == nullptr ||
         !_convexMPC->hasSolution() ||
@@ -687,20 +698,23 @@ void MyController::maybeWriteStandingMpcDebugLog(
             _mpcFormulationOutput,
             _convexMPC->optimalWrenchHorizon(),
             _iteration,
+            _locomotionMode,
+            _horizonClock != nullptr ? _horizonClock->t0() : 0.0,
+            _userCommand != nullptr ? *_userCommand : UserCommand{},
             _standingMpcDebugRequestSource,
             _standingMpcDebugRequestTime,
             _standingMpcDebugTriggerTime,
         };
 
         const std::string logPath = writeStandingMpcDebugLog(snapshot);
-        std::cout << "[StandingMPCDebug] wrote " << logPath << std::endl;
+        std::cout << "[MPCDebug] wrote " << logPath << std::endl;
         _standingMpcDebugLogPending = false;
         _standingMpcDebugLogReady = false;
         _standingMpcDebugRequestSource.clear();
         _standingMpcDebugRequestTime = std::numeric_limits<double>::quiet_NaN();
         _standingMpcDebugTriggerTime = std::numeric_limits<double>::quiet_NaN();
     } catch (const std::exception& exception) {
-        std::cerr << "[StandingMPCDebug] failed to write log: "
+        std::cerr << "[MPCDebug] failed to write log: "
                   << exception.what() << std::endl;
         _standingMpcDebugLogPending = false;
         _standingMpcDebugLogReady = false;
@@ -729,19 +743,37 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
         debugViz.markers.push_back(marker);
     }
 
-    if (_leftTouchdownTargetInitialized) {
+    const auto addTouchdownMarker =
+        [&](const char* name,
+            const Side side,
+            const Vec3<double>& target_W,
+            const double targetYaw_W) {
         DebugVizMarker<double> marker;
-        marker.name = "debug_left_touchdown_target";
-        marker.position_W = _leftTouchdownTarget_W;
-        const Vec3<double> yawEuler_W(0.0, 0.0, _leftTouchdownTargetYaw_W);
+        marker.name = name;
+        marker.position_W = target_W;
+        const Vec3<double> yawEuler_W(0.0, 0.0, targetYaw_W);
         marker.orientation_W = rollPitchYawToQuaternion(yawEuler_W);
-        const bool leftIsStance =
+        const bool isStance =
             _gaitScheduler != nullptr && _stateEstimate != nullptr &&
-            _gaitScheduler->c(Side::Left, _stateEstimate->time);
+            _gaitScheduler->c(side, _stateEstimate->time);
         marker.hasRgba = true;
-        marker.rgba = touchdownMarkerRgba<double>(leftIsStance);
+        marker.rgba = touchdownMarkerRgba<double>(isStance);
         marker.active = true;
         debugViz.markers.push_back(marker);
+    };
+
+    if (_leftTouchdownTargetInitialized) {
+        addTouchdownMarker("debug_left_touchdown_target",
+                           Side::Left,
+                           _leftTouchdownTarget_W,
+                           _leftTouchdownTargetYaw_W);
+    }
+
+    if (_rightTouchdownTargetInitialized) {
+        addTouchdownMarker("debug_right_touchdown_target",
+                           Side::Right,
+                           _rightTouchdownTarget_W,
+                           _rightTouchdownTargetYaw_W);
     }
 }
 

@@ -1,4 +1,4 @@
-"""Plot SRB-only standing receding-horizon probe CSV output."""
+"""Plot SRB-only receding-horizon probe CSV output."""
 
 from __future__ import annotations
 
@@ -9,8 +9,12 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CSV_DIR = PROJECT_ROOT / "logs" / "debug" / "standing_mpc" / "receding_horizon" / "csv"
-DEFAULT_PLOT_DIR = PROJECT_ROOT / "logs" / "debug" / "standing_mpc" / "receding_horizon" / "plots"
+DEBUG_ROOT = PROJECT_ROOT / "logs" / "debug"
+CSV_DIRS = (
+    DEBUG_ROOT / "standing_mpc" / "receding_horizon" / "csv",
+    DEBUG_ROOT / "walking_mpc" / "receding_horizon" / "csv",
+)
+CSV_PATTERNS = ("stand_rh_*.csv", "walk_rh_*.csv")
 
 STATE_GRID = [
     ("roll", "pitch", "yaw"),
@@ -33,17 +37,27 @@ def timestamp_token() -> str:
 
 
 def latest_csv_path() -> Path:
-    paths = sorted(DEFAULT_CSV_DIR.glob("stand_rh_*.csv"))
+    paths = [
+        path
+        for csv_dir in CSV_DIRS
+        for pattern in CSV_PATTERNS
+        for path in csv_dir.glob(pattern)
+    ]
     if not paths:
-        raise FileNotFoundError(f"no receding-horizon CSV files found in {DEFAULT_CSV_DIR}")
-    return paths[-1]
+        raise FileNotFoundError(f"no receding-horizon CSV files found under {DEBUG_ROOT}")
+    return max(paths, key=lambda path: path.stat().st_mtime)
 
 
 def default_plot_paths(csv_path: Path) -> tuple[Path, Path, Path]:
     token = csv_path.stem.removeprefix("stand_rh_")
+    prefix = "stand_rh_"
+    if token == csv_path.stem:
+        token = csv_path.stem.removeprefix("walk_rh_")
+        prefix = "walk_rh_"
     if token == csv_path.stem:
         token = timestamp_token()
-    run_dir = DEFAULT_PLOT_DIR / f"stand_rh_{token}"
+        prefix = "rh_"
+    run_dir = csv_path.parent.parent / "plots" / f"{prefix}{token}"
     return (
         run_dir / "states.png",
         run_dir / "wrench.png",
@@ -82,7 +96,8 @@ def read_csv(csv_path: Path) -> tuple[list[dict[str, float | int]], dict[str, st
 def title_prefix(csv_path: Path, metadata: dict[str, str]) -> str:
     source_json = metadata.get("source_json_file", "unknown json")
     robot_type = metadata.get("robot_type", "unknown robot")
-    return f"{csv_path.name}\n{robot_type}\nsource json: {source_json}"
+    locomotion_mode = metadata.get("locomotion_mode", "unknown mode")
+    return f"{csv_path.name}\n{robot_type} | {locomotion_mode}\nsource json: {source_json}"
 
 
 def state_trajectory(rows: list[dict[str, float | int]], name: str, dt: float):

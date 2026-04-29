@@ -32,6 +32,7 @@ public:
 private:
     void syncHorizonClock();
     void ensureSwingTouchdownCache();
+    Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex) const;
     Vec3<double> touchdownTargetWorldLegacy(std::size_t legIndex) const;
 
@@ -40,8 +41,8 @@ private:
     const StateEstimate<double>* _stateEstimate = nullptr;
     const RobotParams<double>* _robotParams = nullptr;
     const UserCommand* _userCommand = nullptr;
-    std::vector<Vec3<double>> _bodyVelocityHalfStanceTouchdownTargets;
-    std::vector<bool> _bodyVelocityHalfStanceTouchdownTargetValid;
+    std::vector<Vec3<double>> _touchdownTargets;
+    std::vector<bool> _touchdownTargetValid;
     std::vector<bool> _wasInStance;
 };
 

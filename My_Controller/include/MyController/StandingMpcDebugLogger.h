@@ -8,6 +8,7 @@
 #include "MPCFormulation.h"
 #include "ReferenceTrajectory.h"
 #include "StateEstimator/StateEstimator.h"
+#include "Utilities/UserCommand.h"
 
 struct StandingMpcDebugSnapshot {
     const StateEstimate<double>& stateEstimate;
@@ -20,6 +21,9 @@ struct StandingMpcDebugSnapshot {
     const MPCFormulationOutput& formulation;
     const DVec<double>& wrenchHorizon;
     u64 iteration{0};
+    LocomotionMode locomotionMode{LocomotionMode::Standing};
+    double horizonClockT0{0.0};
+    UserCommand userCommand{};
     std::string debugRequestSource;
     double debugRequestTime{0.0};
     double debugTriggerTime{0.0};

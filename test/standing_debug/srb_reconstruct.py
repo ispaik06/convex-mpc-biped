@@ -1,4 +1,4 @@
-"""Reconstruct and plot the SRB horizon from a standing MPC debug JSON log."""
+"""Reconstruct and plot the SRB horizon from an MPC debug JSON log."""
 
 from __future__ import annotations
 
@@ -9,17 +9,23 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_LOG_DIR = PROJECT_ROOT / "logs" / "debug" / "standing_mpc"
-DEFAULT_PLOT_DIR = DEFAULT_LOG_DIR / "plots"
+DEBUG_ROOT = PROJECT_ROOT / "logs" / "debug"
+LOG_DIRS = (DEBUG_ROOT / "standing_mpc", DEBUG_ROOT / "walking_mpc")
 STATE_DIM = 13
 INPUT_DIM = 12
+LOG_PATTERNS = ("standing_mpc_debug_*.json", "walking_mpc_debug_*.json")
 
 
 def latest_log_path() -> Path:
-    paths = sorted(DEFAULT_LOG_DIR.glob("standing_mpc_debug_*.json"))
+    paths = [
+        path
+        for log_dir in LOG_DIRS
+        for pattern in LOG_PATTERNS
+        for path in log_dir.glob(pattern)
+    ]
     if not paths:
-        raise FileNotFoundError(f"no standing MPC debug logs found in {DEFAULT_LOG_DIR}")
-    return paths[-1]
+        raise FileNotFoundError(f"no MPC debug logs found under {DEBUG_ROOT}")
+    return max(paths, key=lambda path: path.stat().st_mtime)
 
 
 def load_json(path: Path) -> dict:
@@ -31,8 +37,8 @@ def timestamp_token() -> str:
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def default_plot_path() -> Path:
-    return DEFAULT_PLOT_DIR / f"srb_reconstruct_{timestamp_token()}.png"
+def default_plot_path(log_path: Path) -> Path:
+    return log_path.parent / "plots" / f"srb_reconstruct_{timestamp_token()}.png"
 
 
 def matrix_like(value, name: str):
@@ -163,12 +169,17 @@ def plot_trajectory(log_path: Path, log: dict, x0, x_horizon, max_abs_error: flo
         or log.get("controller_config", {}).get("robot_type")
         or "unknown robot"
     )
+    locomotion_mode = (
+        log.get("metadata", {}).get("locomotion_mode")
+        or log.get("controller_config", {}).get("locomotion_mode")
+        or "unknown mode"
+    )
     states = [x0] + x_horizon
     time = [step * dt for step in range(len(states))]
 
     fig = plt.figure(figsize=(11, 8))
     fig.suptitle(
-        f"{robot_type} | {log_path.name} | max reconstruction error {max_abs_error:.3e}"
+        f"{robot_type} | {locomotion_mode} | {log_path.name} | max reconstruction error {max_abs_error:.3e}"
     )
 
     ax_xy = fig.add_subplot(2, 2, 1)
@@ -216,7 +227,7 @@ def plot_trajectory(log_path: Path, log: dict, x0, x_horizon, max_abs_error: flo
 
 def main() -> int:
     if len(sys.argv) > 2:
-        print("Usage: python test/standing_debug/srb_reconstruct.py [standing_mpc_debug.json]", file=sys.stderr)
+        print("Usage: python test/standing_debug/srb_reconstruct.py [mpc_debug.json]", file=sys.stderr)
         return 1
 
     log_path = Path(sys.argv[1]) if len(sys.argv) == 2 else latest_log_path()
@@ -224,7 +235,7 @@ def main() -> int:
     log = load_json(log_path)
     x0, x_horizon, stored, wrench = reconstruct(log)
     max_abs_error = max_abs_matrix_delta(x_horizon, stored)
-    plot_path = default_plot_path()
+    plot_path = default_plot_path(log_path)
 
     print(f"log: {log_path}")
     print(f"horizon steps: {len(x_horizon)}")

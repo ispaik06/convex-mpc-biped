@@ -60,10 +60,46 @@ std::string timestampToken() {
     return out.str();
 }
 
-ContactProbeOutputPaths defaultOutputPaths() {
+bool isMpcDebugLogFilename(const std::string& name) {
+    const bool standingLog = name.rfind("standing_mpc_debug_", 0) == 0;
+    const bool walkingLog = name.rfind("walking_mpc_debug_", 0) == 0;
+    return (standingLog || walkingLog) &&
+           std::filesystem::path(name).extension() == ".json";
+}
+
+std::string normalizedLocomotionMode(const std::string& mode) {
+    if (mode == "walking" || mode == "walk") {
+        return "walking";
+    }
+    if (mode == "standing" || mode == "stand") {
+        return "standing";
+    }
+    return "unknown";
+}
+
+std::string shortLocomotionPrefix(const std::string& mode) {
+    return normalizedLocomotionMode(mode) == "walking" ? "walk" : "stand";
+}
+
+std::string debugDirectoryNameForMode(const std::string& mode) {
+    return normalizedLocomotionMode(mode) == "walking" ? "walking_mpc" : "standing_mpc";
+}
+
+std::vector<std::filesystem::path> mpcDebugLogDirectories() {
+    const std::filesystem::path debugRoot =
+        std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug";
+    return {
+        debugRoot / "standing_mpc",
+        debugRoot / "walking_mpc",
+    };
+}
+
+ContactProbeOutputPaths defaultOutputPaths(const std::string& locomotionMode) {
     const std::string timestamp = timestampToken();
+    const std::string prefix = shortLocomotionPrefix(locomotionMode) + "_contact_probe_";
     const std::filesystem::path dir =
-        std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" / "standing_mpc" / "contact_probe";
+        std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" /
+        debugDirectoryNameForMode(locomotionMode) / "contact_probe";
     const std::filesystem::path txtDir = dir / "txt";
     const std::filesystem::path csvDir = dir / "csv";
     const std::filesystem::path plotDir = dir / "plots";
@@ -73,37 +109,43 @@ ContactProbeOutputPaths defaultOutputPaths() {
     std::filesystem::create_directories(plotDir);
 
     ContactProbeOutputPaths paths;
-    paths.report = txtDir / ("stand_contact_probe_" + timestamp + ".txt");
-    paths.csv = csvDir / ("stand_contact_probe_" + timestamp + ".csv");
-    paths.plot = plotDir / ("stand_contact_probe_" + timestamp + ".png");
+    paths.report = txtDir / (prefix + timestamp + ".txt");
+    paths.csv = csvDir / (prefix + timestamp + ".csv");
+    paths.plot = plotDir / (prefix + timestamp + ".png");
     return paths;
 }
 
 std::filesystem::path latestDebugLogPath() {
-    const std::filesystem::path dir =
-        std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" / "standing_mpc";
-    if (!std::filesystem::exists(dir)) {
-        throw std::runtime_error("Debug log directory does not exist: " + dir.string());
-    }
-
     std::filesystem::path best;
-    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) {
+    std::filesystem::file_time_type bestWriteTime{};
+    bool hasBest = false;
+    for (const std::filesystem::path& dir : mpcDebugLogDirectories()) {
+        if (!std::filesystem::exists(dir)) {
             continue;
         }
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
 
-        const std::string name = entry.path().filename().string();
-        if (name.rfind("standing_mpc_debug_", 0) != 0 || entry.path().extension() != ".json") {
-            continue;
-        }
+            const std::string name = entry.path().filename().string();
+            if (!isMpcDebugLogFilename(name)) {
+                continue;
+            }
 
-        if (best.empty() || entry.path().filename().string() > best.filename().string()) {
-            best = entry.path();
+            const std::filesystem::file_time_type writeTime =
+                std::filesystem::last_write_time(entry.path());
+            if (!hasBest || writeTime > bestWriteTime) {
+                best = entry.path();
+                bestWriteTime = writeTime;
+                hasBest = true;
+            }
         }
     }
 
     if (best.empty()) {
-        throw std::runtime_error("No standing_mpc_debug_*.json file found in " + dir.string());
+        throw std::runtime_error(
+            "No MPC debug JSON file found under logs/debug/standing_mpc or logs/debug/walking_mpc");
     }
     return best;
 }
@@ -356,12 +398,14 @@ void writeCsvRowsForVec3(std::ostream& out,
 void writePlotCsv(std::ostream& out,
                   const std::filesystem::path& logPath,
                   const std::string& robotType,
+                  const std::string& locomotionMode,
                   const std::string& desiredReferencePoint,
                   const std::vector<FootContactResult>& results) {
     out << std::setprecision(17);
     out << "# source_json_file=" << logPath.filename().string() << '\n';
     out << "# source_json_path=" << std::filesystem::absolute(logPath).string() << '\n';
     out << "# robot_type=" << robotType << '\n';
+    out << "# locomotion_mode=" << locomotionMode << '\n';
     out << "side,measurement_point,quantity,axis,desired,measured,error,contacts,comparable\n";
 
     for (const FootContactResult& result : results) {
@@ -435,6 +479,7 @@ void writeReport(std::ostream& out,
                  const int totalContacts,
                  const double maxCtrlClampDelta,
                  const std::string& robotType,
+                 const std::string& locomotionMode,
                  const std::string& footSource,
                  const std::string& desiredReferencePoint,
                  const std::string& contactWrenchModel,
@@ -443,6 +488,7 @@ void writeReport(std::ostream& out,
     out << "[stand_contact_probe]\n"
         << "  log: " << std::filesystem::absolute(logPath).string() << "\n"
         << "  robot_type: " << robotType << "\n"
+        << "  locomotion_mode: " << locomotionMode << "\n"
         << "  model: " << modelPath << "\n"
         << "  total_contacts: " << totalContacts << "\n"
         << "  max_ctrl_clamp_delta: " << maxCtrlClampDelta << "\n"
@@ -478,14 +524,13 @@ void writeReport(std::ostream& out,
 
 int main(int argc, char** argv) {
     if (argc > 2 || (argc >= 2 && std::string(argv[1]) == "--help")) {
-        std::cout << "Usage: stand_contact_probe [standing_mpc_debug.json]\n"
-                  << "  If the log path is omitted, the latest logs/debug/standing_mpc log is used.\n";
+        std::cout << "Usage: stand_contact_probe [mpc_debug.json]\n"
+                  << "  If the log path is omitted, the latest standing_mpc or walking_mpc log is used.\n";
         return (argc > 2) ? EXIT_FAILURE : EXIT_SUCCESS;
     }
 
     const std::filesystem::path logPath =
         (argc >= 2) ? std::filesystem::path(argv[1]) : latestDebugLogPath();
-    const ContactProbeOutputPaths outputPaths = defaultOutputPaths();
 
     std::ifstream logStream(logPath);
     if (!logStream.is_open()) {
@@ -497,12 +542,15 @@ int main(int argc, char** argv) {
 
     const json metadata = log.value("metadata", json::object());
     const std::string robotType = readJsonStringOr(metadata, "robot_type", "unknown");
+    const std::string locomotionMode =
+        normalizedLocomotionMode(readJsonStringOr(metadata, "locomotion_mode", "standing"));
     const std::string footSource =
         readJsonStringOr(metadata, "foot_end_effector_source", "unknown");
     const std::string desiredReferencePoint =
         readJsonStringOr(metadata, "desired_wrench_reference_point", "unknown");
     const std::string contactWrenchModel =
         readJsonStringOr(metadata, "contact_wrench_model", "unknown");
+    const ContactProbeOutputPaths outputPaths = defaultOutputPaths(locomotionMode);
 
     const std::vector<double> qpos =
         readJsonVector(log.at("robot_state").at("full_qpos"), "robot_state.full_qpos");
@@ -576,6 +624,7 @@ int main(int argc, char** argv) {
                 data->ncon,
                 maxCtrlClampDelta,
                 robotType,
+                locomotionMode,
                 footSource,
                 desiredReferencePoint,
                 contactWrenchModel,
@@ -591,6 +640,7 @@ int main(int argc, char** argv) {
                 data->ncon,
                 maxCtrlClampDelta,
                 robotType,
+                locomotionMode,
                 footSource,
                 desiredReferencePoint,
                 contactWrenchModel,
@@ -601,7 +651,7 @@ int main(int argc, char** argv) {
     if (!csv.is_open()) {
         throw std::runtime_error("Failed to open plot CSV output: " + outputPaths.csv.string());
     }
-    writePlotCsv(csv, logPath, robotType, desiredReferencePoint, results);
+    writePlotCsv(csv, logPath, robotType, locomotionMode, desiredReferencePoint, results);
     csv.close();
     if (!csv.good()) {
         throw std::runtime_error("Failed while writing plot CSV output: " + outputPaths.csv.string());

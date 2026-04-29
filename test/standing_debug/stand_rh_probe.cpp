@@ -25,6 +25,7 @@
 #include "ControllerConfig.h"
 #include "Robot/RobotParams.h"
 #include "RobotConfig.h"
+#include "Utilities/MatrixUtils.h"
 #include "Utilities/UserCommand.h"
 
 namespace {
@@ -89,6 +90,8 @@ struct RolloutResult {
     DesiredFootPositions desiredFootPositions;
     Vec3<double> leftFootXAxis_W = Vec3<double>::UnitX();
     Vec3<double> rightFootXAxis_W = Vec3<double>::UnitX();
+    UserCommand userCommand;
+    LocomotionMode locomotionMode{LocomotionMode::Standing};
     double sourceControllerTime{0.0};
     double sourceClockT0{0.0};
     int sourceHorizonSteps{0};
@@ -98,6 +101,40 @@ struct RolloutResult {
     std::optional<double> firstHorizonStateDeltaToLog;
     std::string failureMessage;
 };
+
+bool isMpcDebugLogFilename(const std::string& name) {
+    const bool standingLog = name.rfind("standing_mpc_debug_", 0) == 0;
+    const bool walkingLog = name.rfind("walking_mpc_debug_", 0) == 0;
+    return (standingLog || walkingLog) &&
+           std::filesystem::path(name).extension() == ".json";
+}
+
+std::string locomotionModeName(const LocomotionMode mode) {
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking";
+        case LocomotionMode::Standing:
+            return "standing";
+    }
+    return "unknown";
+}
+
+std::string shortLocomotionPrefix(const LocomotionMode mode) {
+    return mode == LocomotionMode::Walking ? "walk" : "stand";
+}
+
+std::string debugDirectoryNameForMode(const LocomotionMode mode) {
+    return mode == LocomotionMode::Walking ? "walking_mpc" : "standing_mpc";
+}
+
+std::vector<std::filesystem::path> mpcDebugLogDirectories() {
+    const std::filesystem::path debugRoot =
+        std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug";
+    return {
+        debugRoot / "standing_mpc",
+        debugRoot / "walking_mpc",
+    };
+}
 
 std::string timestampToken() {
     using clock = std::chrono::system_clock;
@@ -111,23 +148,24 @@ std::string timestampToken() {
     return out.str();
 }
 
-OutputPaths defaultOutputPaths() {
+OutputPaths defaultOutputPaths(const LocomotionMode locomotionMode) {
     const std::string timestamp = timestampToken();
+    const std::string prefix = shortLocomotionPrefix(locomotionMode) + "_rh_";
     const std::filesystem::path dir =
         std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" /
-        "standing_mpc" / "receding_horizon";
+        debugDirectoryNameForMode(locomotionMode) / "receding_horizon";
     const std::filesystem::path txtDir = dir / "txt";
     const std::filesystem::path csvDir = dir / "csv";
     const std::filesystem::path plotDir = dir / "plots";
-    const std::filesystem::path plotRunDir = plotDir / ("stand_rh_" + timestamp);
+    const std::filesystem::path plotRunDir = plotDir / (prefix + timestamp);
     std::filesystem::create_directories(txtDir);
     std::filesystem::create_directories(csvDir);
     std::filesystem::create_directories(plotRunDir);
     std::filesystem::create_directories(plotDir);
 
     OutputPaths paths;
-    paths.report = txtDir / ("stand_rh_" + timestamp + ".txt");
-    paths.csv = csvDir / ("stand_rh_" + timestamp + ".csv");
+    paths.report = txtDir / (prefix + timestamp + ".txt");
+    paths.csv = csvDir / (prefix + timestamp + ".csv");
     paths.plotsDir = plotRunDir;
     paths.statesPlot = plotRunDir / "states.png";
     paths.wrenchPlot = plotRunDir / "wrench.png";
@@ -136,30 +174,36 @@ OutputPaths defaultOutputPaths() {
 }
 
 std::filesystem::path latestDebugLogPath() {
-    const std::filesystem::path dir =
-        std::filesystem::path(PROJECT_ROOT_DIR) / "logs" / "debug" / "standing_mpc";
-    if (!std::filesystem::exists(dir)) {
-        throw std::runtime_error("Debug log directory does not exist: " + dir.string());
-    }
-
     std::filesystem::path best;
-    for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-        if (!entry.is_regular_file()) {
+    std::filesystem::file_time_type bestWriteTime{};
+    bool hasBest = false;
+    for (const std::filesystem::path& dir : mpcDebugLogDirectories()) {
+        if (!std::filesystem::exists(dir)) {
             continue;
         }
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
 
-        const std::string name = entry.path().filename().string();
-        if (name.rfind("standing_mpc_debug_", 0) != 0 || entry.path().extension() != ".json") {
-            continue;
-        }
+            const std::string name = entry.path().filename().string();
+            if (!isMpcDebugLogFilename(name)) {
+                continue;
+            }
 
-        if (best.empty() || entry.path().filename().string() > best.filename().string()) {
-            best = entry.path();
+            const std::filesystem::file_time_type writeTime =
+                std::filesystem::last_write_time(entry.path());
+            if (!hasBest || writeTime > bestWriteTime) {
+                best = entry.path();
+                bestWriteTime = writeTime;
+                hasBest = true;
+            }
         }
     }
 
     if (best.empty()) {
-        throw std::runtime_error("No standing_mpc_debug_*.json file found in " + dir.string());
+        throw std::runtime_error(
+            "No MPC debug JSON file found under logs/debug/standing_mpc or logs/debug/walking_mpc");
     }
     return best;
 }
@@ -668,6 +712,31 @@ int metadataIntOr(const json& metadata, const char* key, const int fallback) {
     return metadata.at(key).get<int>();
 }
 
+double jsonDoubleOr(const json& value, const char* key, const double fallback) {
+    if (!value.is_object() || !value.contains(key) || value.at(key).is_null()) {
+        return fallback;
+    }
+    return value.at(key).get<double>();
+}
+
+UserCommand userCommandFromLog(const json& log) {
+    UserCommand out;
+    if (!log.contains("user_command") || !log.at("user_command").is_object()) {
+        return out;
+    }
+
+    const json& command = log.at("user_command");
+    out.x_dot = jsonDoubleOr(command, "x_dot", 0.0);
+    out.y_dot = jsonDoubleOr(command, "y_dot", 0.0);
+    out.psi_dot = jsonDoubleOr(command, "psi_dot", 0.0);
+    out.z_dot = jsonDoubleOr(command, "z_dot", 0.0);
+    out.standing_roll_offset_rad =
+        jsonDoubleOr(command, "standing_roll_offset_rad", 0.0);
+    out.standing_pitch_offset_rad =
+        jsonDoubleOr(command, "standing_pitch_offset_rad", 0.0);
+    return out;
+}
+
 double maxAbsDelta(const DVec<double>& left, const DVec<double>& right) {
     if (left.size() != right.size()) {
         return std::numeric_limits<double>::quiet_NaN();
@@ -810,6 +879,13 @@ Vec13<double> fixedReferenceFromLog(const json& log) {
 }
 
 double clockT0FromLog(const json& log, const double fallback) {
+    if (log.contains("metadata") &&
+        log.at("metadata").is_object() &&
+        log.at("metadata").contains("horizon_clock_t0") &&
+        !log.at("metadata").at("horizon_clock_t0").is_null()) {
+        return log.at("metadata").at("horizon_clock_t0").get<double>();
+    }
+
     if (!log.contains("reference_trajectory") ||
         !log.at("reference_trajectory").contains("tk")) {
         return fallback;
@@ -823,13 +899,52 @@ double clockT0FromLog(const json& log, const double fallback) {
     return tk.front();
 }
 
+LocomotionMode locomotionModeFromLog(const json& log, const LocomotionMode fallback) {
+    if (log.contains("metadata") &&
+        log.at("metadata").is_object() &&
+        log.at("metadata").contains("locomotion_mode") &&
+        log.at("metadata").at("locomotion_mode").is_string()) {
+        return locomotionModeFromString(log.at("metadata").at("locomotion_mode").get<std::string>());
+    }
+    if (log.contains("controller_config") &&
+        log.at("controller_config").is_object() &&
+        log.at("controller_config").contains("locomotion_mode") &&
+        log.at("controller_config").at("locomotion_mode").is_string()) {
+        return locomotionModeFromString(
+            log.at("controller_config").at("locomotion_mode").get<std::string>());
+    }
+    return fallback;
+}
+
+double wrapAngle(const double angle) {
+    return std::atan2(std::sin(angle), std::cos(angle));
+}
+
 Vec13<double> referenceSeedForStep(const Vec13<double>& state,
-                                   const Vec13<double>& fixedReference) {
+                                   const Vec13<double>& referenceTarget) {
     Vec13<double> seed = state;
-    seed.segment<3>(0) = fixedReference.segment<3>(0);
-    seed.segment<3>(3) = fixedReference.segment<3>(3);
-    seed[12] = fixedReference[12];
+    seed.segment<3>(0) = referenceTarget.segment<3>(0);
+    seed.segment<3>(3) = referenceTarget.segment<3>(3);
+    seed[12] = referenceTarget[12];
     return seed;
+}
+
+void advanceReferenceTarget(Vec13<double>& target,
+                            const UserCommand& command,
+                            const LocomotionMode locomotionMode,
+                            const double dt) {
+    if (dt <= 0.0) {
+        return;
+    }
+
+    if (locomotionMode == LocomotionMode::Standing) {
+        target[5] += command.z_dot * dt;
+        return;
+    }
+
+    const Vec3<double> vCmd_B(command.x_dot, command.y_dot, 0.0);
+    target.segment<3>(3) += Rz(target[2]) * vCmd_B * dt;
+    target[2] = wrapAngle(target[2] + command.psi_dot * dt);
 }
 
 RolloutRow makeRowSkeleton(const int step,
@@ -859,6 +974,8 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     result.fixedReference = fixedReferenceFromLog(log);
     result.desiredFootPositions = desiredFootPositionsFromLog(log);
     readFootLocalXAxesFromLog(log, result.leftFootXAxis_W, result.rightFootXAxis_W);
+    result.userCommand = userCommandFromLog(log);
+    result.locomotionMode = locomotionModeFromLog(log, config.locomotionMode);
     result.sourceControllerTime = metadataDoubleOr(metadata, "controller_time", 0.0);
     result.sourceClockT0 = clockT0FromLog(log, result.sourceControllerTime);
     result.sourceHorizonSteps = metadataIntOr(metadata, "horizon_steps", 0);
@@ -867,15 +984,15 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     RobotParams<double> robotParams = robotParamsFromLog(log);
     HorizonClock horizonClock(result.sourceClockT0);
     GaitScheduler gaitScheduler(&horizonClock);
-    gaitScheduler.setLocomotionMode(config.locomotionMode);
+    gaitScheduler.setLocomotionMode(result.locomotionMode);
     gaitScheduler.setFootLocalXAxesWorld(result.leftFootXAxis_W, result.rightFootXAxis_W);
     MPCFormulation formulation(&robotParams);
     MPCFormulationOutput formulationOutput;
     ReferenceTrajectoryOutput referenceOutput;
     ConvexMPC mpc;
-    UserCommand standingCommand;
 
     Vec13<double> state = vec13FromJson(log.at("initial_state").at("x0"), "initial_state.x0");
+    Vec13<double> referenceTarget = result.fixedReference;
     const std::optional<DVec<double>> loggedWrenchHorizon =
         optionalSolutionVector(log, "wrench_horizon_vector", "wrench_horizon");
     const std::optional<DVec<double>> loggedPredictedHorizon =
@@ -885,9 +1002,9 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     for (int step = 0; step < rolloutSteps; ++step) {
         horizonClock.reset(result.sourceClockT0 + static_cast<double>(step) * dtMpc());
 
-        const Vec13<double> referenceSeed = referenceSeedForStep(state, result.fixedReference);
+        const Vec13<double> referenceSeed = referenceSeedForStep(state, referenceTarget);
         ReferenceTrajectory(
-            &standingCommand,
+            &result.userCommand,
             referenceSeed,
             result.desiredFootPositions,
             &horizonClock)
@@ -902,7 +1019,12 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
         try {
             gaitScheduler.buildConstraintMatrices();
             formulation.build(referenceOutput, formulationOutput);
-            mpc.updateInput(gaitScheduler, formulationOutput, referenceOutput, state, config.locomotionMode);
+            mpc.updateInput(
+                gaitScheduler,
+                formulationOutput,
+                referenceOutput,
+                state,
+                result.locomotionMode);
             mpc.solve();
         } catch (const std::exception& exception) {
             row.solveOk = false;
@@ -921,13 +1043,13 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
         row.firstWrench = wrenchHorizon.segment<kInputDim>(0);
         row.weightedHorizonErrorNorm =
             weightedHorizonErrorNorm(horizonError,
-                                     config.locomotionMode == LocomotionMode::Standing
+                                     result.locomotionMode == LocomotionMode::Standing
                                          ? config.mpc.standingStateWeight
                                          : config.mpc.walkingStateWeight);
         row.inputNorm = wrenchHorizon.norm();
         row.weightedInputNorm =
             weightedInputNorm(wrenchHorizon,
-                              config.locomotionMode == LocomotionMode::Standing
+                              result.locomotionMode == LocomotionMode::Standing
                                   ? config.mpc.standingInputWeight
                                   : config.mpc.walkingInputWeight);
 
@@ -945,6 +1067,7 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
         }
 
         state = row.nextState;
+        advanceReferenceTarget(referenceTarget, result.userCommand, result.locomotionMode, dtMpc());
         result.rows.push_back(row);
     }
 
@@ -1010,6 +1133,7 @@ void writeReport(std::ostream& out,
     out << "[stand_rh_probe]\n"
         << "  source_log: " << std::filesystem::absolute(logPath).string() << "\n"
         << "  robot_type: " << robotType << "\n"
+        << "  locomotion_mode: " << locomotionModeName(result.locomotionMode) << "\n"
         << "  requested_rollout_steps: " << options.steps << "\n"
         << "  completed_rows: " << result.rows.size() << "\n"
         << "  config_horizon_steps: " << horizonSteps() << "\n"
@@ -1020,13 +1144,13 @@ void writeReport(std::ostream& out,
         << "  source_clock_t0: " << result.sourceClockT0 << "\n"
         << "  contact_wrench_model: "
         << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << "\n"
-        << "  rollout_model: SRB-only true receding horizon, fixed standing reference, fixed foot points\n\n";
+        << "  rollout_model: SRB-only true receding horizon, logged command, fixed logged foot points\n\n";
 
     writeVector(out, "desired_left_foot_W", result.desiredFootPositions.left_des_W);
     writeVector(out, "desired_right_foot_W", result.desiredFootPositions.right_des_W);
     writeVector(out, "left_foot_x_axis_W", result.leftFootXAxis_W);
     writeVector(out, "right_foot_x_axis_W", result.rightFootXAxis_W);
-    writeStateVector(out, "fixed_reference", result.fixedReference);
+    writeStateVector(out, "initial_reference", result.fixedReference);
     writeStateVector(out, "final_state", finalStateFromResult(result));
     writeStateVector(out, "final_error", finalStateFromResult(result) - result.fixedReference);
     out << "\n";
@@ -1096,6 +1220,7 @@ void writeCsv(std::ostream& out,
     out << "# source_json_file=" << logPath.filename().string() << '\n';
     out << "# source_json_path=" << std::filesystem::absolute(logPath).string() << '\n';
     out << "# robot_type=" << robotType << '\n';
+    out << "# locomotion_mode=" << locomotionModeName(result.locomotionMode) << '\n';
     out << "# requested_rollout_steps=" << options.steps << '\n';
     out << "# config_horizon_steps=" << horizonSteps() << '\n';
     out << "# config_dt_mpc=" << dtMpc() << '\n';
@@ -1172,8 +1297,8 @@ Options parseArgs(int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         const std::string arg = argv[index];
         if (arg == "-h" || arg == "--help") {
-            std::cout << "Usage: stand_rh_probe [-n STEPS] [standing_mpc_debug.json]\n"
-                      << "  If the log path is omitted, the latest logs/debug/standing_mpc log is used.\n";
+            std::cout << "Usage: stand_rh_probe [-n STEPS] [mpc_debug.json]\n"
+                      << "  If the log path is omitted, the latest standing_mpc or walking_mpc log is used.\n";
             std::exit(EXIT_SUCCESS);
         }
         if (arg == "-n") {
@@ -1202,7 +1327,6 @@ Options parseArgs(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         const Options options = parseArgs(argc, argv);
-        const OutputPaths outputPaths = defaultOutputPaths();
 
         std::ifstream logStream(options.logPath);
         if (!logStream.is_open()) {
@@ -1219,6 +1343,7 @@ int main(int argc, char** argv) {
         const std::string robotType = robotTypeLabelFromLog(log);
 
         const RolloutResult result = runRollout(log, options.steps);
+        const OutputPaths outputPaths = defaultOutputPaths(result.locomotionMode);
 
         writeReport(std::cout, options.logPath, options, robotType, result, outputPaths);
 

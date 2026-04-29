@@ -7,7 +7,8 @@ add_executable(stand_rh_probe
 )
 
 # Manual debug targets. Intentionally not added to CTest because they depend on
-# standing_mpc_debug_*.json snapshots and produce diagnostic reports/plots.
+# standing_mpc_debug_*.json or walking_mpc_debug_*.json snapshots and produce
+# diagnostic reports/plots.
 
 find_path(NLOHMANN_JSON_INCLUDE_DIR
     NAMES nlohmann/json.hpp

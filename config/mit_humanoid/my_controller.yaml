@@ -24,7 +24,7 @@ mpc:
   contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
   walking:
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [100,  500,  10,     10000,  10000,  500000,      10,     10,     10,     10,    10,    5,   1 ]
+    state_weight_diag: [50000,  800,  20,    60000,   60000,  60000,   100,     40,     20,     10000,    5000,   10,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
     input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
@@ -35,15 +35,15 @@ mpc:
     input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
 
 swing:
-  natural_frequency: [1000.0, 1000.0, 700.0]
-  kd_diag: [10.0, 10.0, 10.0]
+  natural_frequency: [160.0, 160.0, 120.0]
+  kd_diag: [55.0, 55.0, 45.0]
   height: 0.06
   min_remaining_time: 0.001
-  body_velocity_half_stance_offset: 0.5
-  pitch_kp: 700.0
-  pitch_kd: 5.0
-  yaw_kp: 700.0
-  yaw_kd: 5.0
+  body_velocity_half_stance_offset: 0.0
+  pitch_kp: 100.0
+  pitch_kd: 8.0
+  yaw_kp: 105.0
+  yaw_kd: 8.0
   touchdown_target_mode: body_velocity_half_stance
 
 foot_placement:

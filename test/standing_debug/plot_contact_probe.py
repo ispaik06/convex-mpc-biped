@@ -1,4 +1,4 @@
-"""Plot desired vs MuJoCo-realized contact wrench from stand_contact_probe CSV."""
+"""Plot desired vs MuJoCo-realized contact wrench from contact-probe CSV."""
 
 from __future__ import annotations
 
@@ -9,8 +9,12 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CSV_DIR = PROJECT_ROOT / "logs" / "debug" / "standing_mpc" / "contact_probe" / "csv"
-DEFAULT_PLOT_DIR = PROJECT_ROOT / "logs" / "debug" / "standing_mpc" / "contact_probe" / "plots"
+DEBUG_ROOT = PROJECT_ROOT / "logs" / "debug"
+CSV_DIRS = (
+    DEBUG_ROOT / "standing_mpc" / "contact_probe" / "csv",
+    DEBUG_ROOT / "walking_mpc" / "contact_probe" / "csv",
+)
+CSV_PATTERNS = ("stand_contact_probe_*.csv", "walk_contact_probe_*.csv")
 
 
 def timestamp_token() -> str:
@@ -18,17 +22,27 @@ def timestamp_token() -> str:
 
 
 def latest_csv_path() -> Path:
-    paths = sorted(DEFAULT_CSV_DIR.glob("stand_contact_probe_*.csv"))
+    paths = [
+        path
+        for csv_dir in CSV_DIRS
+        for pattern in CSV_PATTERNS
+        for path in csv_dir.glob(pattern)
+    ]
     if not paths:
-        raise FileNotFoundError(f"no contact probe CSV files found in {DEFAULT_CSV_DIR}")
-    return paths[-1]
+        raise FileNotFoundError(f"no contact probe CSV files found under {DEBUG_ROOT}")
+    return max(paths, key=lambda path: path.stat().st_mtime)
 
 
 def default_plot_path(csv_path: Path) -> Path:
     token = csv_path.stem.removeprefix("stand_contact_probe_")
+    prefix = "stand_contact_probe_"
+    if token == csv_path.stem:
+        token = csv_path.stem.removeprefix("walk_contact_probe_")
+        prefix = "walk_contact_probe_"
     if token == csv_path.stem:
         token = timestamp_token()
-    return DEFAULT_PLOT_DIR / f"stand_contact_probe_{token}.png"
+        prefix = "contact_probe_"
+    return csv_path.parent.parent / "plots" / f"{prefix}{token}.png"
 
 
 def parse_float(value: str | None) -> float | None:
@@ -166,8 +180,12 @@ def plot(csv_path: Path, save_path: Path) -> None:
     moment_reference = moment_rows[0]["measurement_point"]
     source_json = metadata.get("source_json_file", "unknown json")
     robot_type = metadata.get("robot_type", "unknown robot")
+    locomotion_mode = metadata.get("locomotion_mode", "unknown mode")
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
-    fig.suptitle(f"{csv_path.name}\n{robot_type}\nsource json: {source_json}", fontsize=12)
+    fig.suptitle(
+        f"{csv_path.name}\n{robot_type} | {locomotion_mode}\nsource json: {source_json}",
+        fontsize=12,
+    )
 
     plot_pair(axes[0, 0], force_rows, "Force at foot_site", "N")
     plot_error(axes[1, 0], force_rows, "Force error at foot_site", "N")
