@@ -14,7 +14,7 @@ model:
   gravity: -9.81
 
 mpc:
-  friction_coefficient: 0.6
+  friction_coefficient: 0.8
   foot_half_length: 0.065
   foot_half_width: 0.01
   torsional_friction_scale: 0.0657
