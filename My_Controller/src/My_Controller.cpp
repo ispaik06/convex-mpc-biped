@@ -150,6 +150,166 @@ const char* locomotionModeName(const LocomotionMode mode) {
     return "unknown";
 }
 
+const char* sideCompactName(const Side side) {
+    switch (side) {
+        case Side::Left:
+            return "L";
+        case Side::Right:
+            return "R";
+        case Side::FL:
+            return "FL";
+        case Side::FR:
+            return "FR";
+        case Side::BL:
+            return "BL";
+        case Side::BR:
+            return "BR";
+    }
+    return "?";
+}
+
+double blockNormOrZero(const DMat<double>& matrix,
+                       const Eigen::Index row,
+                       const Eigen::Index col,
+                       const Eigen::Index rows,
+                       const Eigen::Index cols) {
+    if (matrix.rows() < row + rows || matrix.cols() < col + cols) {
+        return 0.0;
+    }
+    return matrix.block(row, col, rows, cols).norm();
+}
+
+double vectorValueOrNan(const DVec<double>& vector, const Eigen::Index index) {
+    if (index < 0 || index >= vector.size()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return vector(index);
+}
+
+void writeMpcFailureConstraintSummary(const GaitScheduler* gaitScheduler) {
+    if (gaitScheduler == nullptr || gaitScheduler->D.size() == 0 ||
+        gaitScheduler->C_bound.size() == 0) {
+        std::cerr << "[MPC] constraint summary unavailable" << std::endl;
+        return;
+    }
+
+    const Eigen::Index stepsFromD = gaitScheduler->D.rows() / 12;
+    const Eigen::Index stepsFromBounds = gaitScheduler->C_bound.size() / 24;
+    const std::size_t stepsToPrint = static_cast<std::size_t>(
+        std::min<Eigen::Index>({stepsFromD, stepsFromBounds, horizonSteps(), 4}));
+    if (stepsToPrint == 0) {
+        std::cerr << "[MPC] constraint summary unavailable; empty constraint matrices"
+                  << std::endl;
+        return;
+    }
+
+    std::ostringstream constraintLine;
+    constraintLine << std::fixed << std::setprecision(3)
+                   << "[MPC] constraints";
+    for (std::size_t k = 0; k < stepsToPrint; ++k) {
+        const Eigen::Index dOffset = static_cast<Eigen::Index>(12 * k);
+        const Eigen::Index cOffset = static_cast<Eigen::Index>(24 * k);
+        const bool leftForceZeroEq =
+            blockNormOrZero(gaitScheduler->D, dOffset + 0, dOffset + 0, 3, 3) > 1e-9;
+        const bool rightForceZeroEq =
+            blockNormOrZero(gaitScheduler->D, dOffset + 3, dOffset + 3, 3, 3) > 1e-9;
+        const bool leftMomentEq =
+            blockNormOrZero(gaitScheduler->D, dOffset + 6, dOffset + 6, 3, 3) > 1e-9;
+        const bool rightMomentEq =
+            blockNormOrZero(gaitScheduler->D, dOffset + 9, dOffset + 9, 3, 3) > 1e-9;
+        const double leftFzMax = vectorValueOrNan(gaitScheduler->C_bound, cOffset + 4);
+        const double leftFzMin = -vectorValueOrNan(gaitScheduler->C_bound, cOffset + 5);
+        const double rightFzMax = vectorValueOrNan(gaitScheduler->C_bound, cOffset + 16);
+        const double rightFzMin = -vectorValueOrNan(gaitScheduler->C_bound, cOffset + 17);
+
+        constraintLine << " k" << k
+                       << "(L_DF=" << static_cast<int>(leftForceZeroEq)
+                       << ",L_DM=" << static_cast<int>(leftMomentEq)
+                       << ",L_fz=[" << leftFzMin << "," << leftFzMax << "]"
+                       << ",R_DF=" << static_cast<int>(rightForceZeroEq)
+                       << ",R_DM=" << static_cast<int>(rightMomentEq)
+                       << ",R_fz=[" << rightFzMin << "," << rightFzMax << "])";
+    }
+    std::cerr << constraintLine.str() << std::endl;
+}
+
+void writeMpcFailureContactSummary(const ContactManager* contactManager,
+                                   const GaitScheduler* gaitScheduler,
+                                   const HorizonClock* horizonClock,
+                                   const double time,
+                                   const ContactScheduleOverride* contactOverride) {
+    if (contactManager == nullptr) {
+        std::cerr << "[MPC] contact manager unavailable for failure summary" << std::endl;
+    } else {
+        const vectorAligned<ContactManagerLegState> legStates = contactManager->legStates();
+        int activeContactCount = 0;
+        std::ostringstream contactLine;
+        contactLine << std::fixed << std::setprecision(3)
+                    << "[MPC] contact active_count=";
+        for (const auto& state : legStates) {
+            if (state.activeContact) {
+                ++activeContactCount;
+            }
+        }
+        contactLine << activeContactCount;
+        for (const auto& state : legStates) {
+            contactLine << " | " << sideCompactName(state.side)
+                        << " sched=" << static_cast<int>(state.scheduledContact)
+                        << " est=" << static_cast<int>(state.estimatedContact)
+                        << " active=" << static_cast<int>(state.activeContact)
+                        << " early=" << static_cast<int>(state.earlyContact)
+                        << " late=" << static_cast<int>(state.lateContact)
+                        << " search=" << static_cast<int>(state.searchModeActive)
+                        << " fail=" << static_cast<int>(state.recoveryFailure)
+                        << " Fn=" << state.contactNormalForce
+                        << " alpha=" << state.contactRampAlpha;
+        }
+        std::cerr << contactLine.str() << std::endl;
+    }
+
+    if (gaitScheduler != nullptr && horizonClock != nullptr) {
+        std::ostringstream gaitLine;
+        gaitLine << std::fixed << std::setprecision(3)
+                 << "[MPC] gait elapsed=" << (time - horizonClock->t0())
+                 << " t0=" << horizonClock->t0()
+                 << " cycle=" << cycleTime()
+                 << " stance_fraction=" << (stanceTime() / cycleTime());
+        try {
+            gaitLine << " pL=" << gaitScheduler->p(Side::Left, time)
+                     << " pR=" << gaitScheduler->p(Side::Right, time)
+                     << " schedL=" << static_cast<int>(gaitScheduler->c(Side::Left, time))
+                     << " schedR=" << static_cast<int>(gaitScheduler->c(Side::Right, time));
+        } catch (const std::exception& exception) {
+            gaitLine << " phase_unavailable=\"" << exception.what() << "\"";
+        }
+        std::cerr << gaitLine.str() << std::endl;
+    } else {
+        std::cerr << "[MPC] gait phase unavailable for failure summary" << std::endl;
+    }
+
+    writeMpcFailureConstraintSummary(gaitScheduler);
+
+    if (contactOverride == nullptr || contactOverride->steps.empty()) {
+        std::cerr << "[MPC] near horizon contact override unavailable; using nominal gait schedule"
+                  << std::endl;
+        return;
+    }
+
+    std::ostringstream horizonLine;
+    horizonLine << std::fixed << std::setprecision(3)
+                << "[MPC] near horizon lock_steps=" << contactOverride->steps.size();
+    const std::size_t maxStepsToPrint = std::min<std::size_t>(contactOverride->steps.size(), 4);
+    for (std::size_t k = 0; k < maxStepsToPrint; ++k) {
+        const auto& step = contactOverride->steps[k];
+        horizonLine << " k" << k
+                    << "(L=" << static_cast<int>(step.leftContact)
+                    << ",R=" << static_cast<int>(step.rightContact)
+                    << ",aL=" << step.leftNormalForceScale
+                    << ",aR=" << step.rightNormalForceScale << ")";
+    }
+    std::cerr << horizonLine.str() << std::endl;
+}
+
 std::string formatTimeSeconds(const double time) {
     std::ostringstream out;
     out << std::fixed << std::setprecision(2) << time;
@@ -587,14 +747,14 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         return;
     }
 
+    ContactScheduleOverride contactOverride;
+    const ContactScheduleOverride* contactOverridePtr = nullptr;
     try {
         if (getControllerConfig().mpc.contactWrenchModel == ContactWrenchModel::NoRollMoment) {
             _gaitScheduler->setFootLocalXAxesWorld(
                 footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
                 footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Right));
         }
-        ContactScheduleOverride contactOverride;
-        const ContactScheduleOverride* contactOverridePtr = nullptr;
         if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
             contactOverride = _contactManager->buildHorizonOverride();
             contactOverridePtr = &contactOverride;
@@ -631,6 +791,11 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         std::cerr << "[MPC] maybeUpdateMpc failed at iteration " << _iteration
                   << ", t=" << (_stateEstimate != nullptr ? _stateEstimate->time : 0.0)
                   << ": " << exception.what() << std::endl;
+        writeMpcFailureContactSummary(_contactManager.get(),
+                                      _gaitScheduler.get(),
+                                      _horizonClock.get(),
+                                      _stateEstimate != nullptr ? _stateEstimate->time : 0.0,
+                                      contactOverridePtr);
         _stanceWrenchWorld.setZero();
         _standingMpcDebugLogReady = false;
 

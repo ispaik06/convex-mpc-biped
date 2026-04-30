@@ -4,6 +4,8 @@
 #include <Eigen/SparseCore>
 #include <OsqpEigen/OsqpEigen.h>
 
+#include <vector>
+
 #include "ControllerConfig.h"
 #include "GaitScheduler.h"
 #include "MPCFormulation.h"
@@ -58,6 +60,7 @@ private:
     bool updateSolverData();
     void buildHessianMatrix(const DMat<double>& P);
     void buildConstraintMatrix(const DMat<double>& C, const DMat<double>& D);
+    std::vector<int> contactConstraintSignature(const DMat<double>& D) const;
     void updateWarmStart();
     void validateInputDimensions(const ConvexMPCInputView& input) const;
     static const StateWeightMat& stateWeightForMode(LocomotionMode mode);
@@ -68,6 +71,9 @@ private:
     bool _qpReady{false};
     bool _solverInitialized{false};
     bool _hasPreviousSolution{false};
+    bool _hasContactConstraintSignature{false};
+    bool _skipWarmStartForCurrentSolve{false};
+    std::vector<int> _contactConstraintSignature;
 
     OsqpEigen::Solver _solver;
 

@@ -1,6 +1,7 @@
 #include "ConvexMPC.h"
 
 #include <algorithm>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -106,6 +107,73 @@ void fillConstraintValues(const DMat<double>& C,
         }
     }
 }
+
+const char* osqpStatusName(const OsqpEigen::Status status) {
+    switch (status) {
+        case OsqpEigen::Status::DualInfeasibleInaccurate:
+            return "DualInfeasibleInaccurate";
+        case OsqpEigen::Status::PrimalInfeasibleInaccurate:
+            return "PrimalInfeasibleInaccurate";
+        case OsqpEigen::Status::SolvedInaccurate:
+            return "SolvedInaccurate";
+        case OsqpEigen::Status::Solved:
+            return "Solved";
+        case OsqpEigen::Status::MaxIterReached:
+            return "MaxIterReached";
+        case OsqpEigen::Status::PrimalInfeasible:
+            return "PrimalInfeasible";
+        case OsqpEigen::Status::DualInfeasible:
+            return "DualInfeasible";
+        case OsqpEigen::Status::Sigint:
+            return "Sigint";
+        case OsqpEigen::Status::TimeLimitReached:
+            return "TimeLimitReached";
+        case OsqpEigen::Status::NonCvx:
+            return "NonCvx";
+        case OsqpEigen::Status::Unsolved:
+            return "Unsolved";
+    }
+    return "Unknown";
+}
+
+const char* osqpErrorExitFlagName(const OsqpEigen::ErrorExitFlag flag) {
+    switch (flag) {
+        case OsqpEigen::ErrorExitFlag::NoError:
+            return "NoError";
+        case OsqpEigen::ErrorExitFlag::DataValidationError:
+            return "DataValidationError";
+        case OsqpEigen::ErrorExitFlag::SettingsValidationError:
+            return "SettingsValidationError";
+        case OsqpEigen::ErrorExitFlag::LinsysSolverLoadError:
+            return "LinsysSolverLoadError";
+        case OsqpEigen::ErrorExitFlag::LinsysSolverInitError:
+            return "LinsysSolverInitError";
+        case OsqpEigen::ErrorExitFlag::NonCvxError:
+            return "NonCvxError";
+        case OsqpEigen::ErrorExitFlag::MemAllocError:
+            return "MemAllocError";
+        case OsqpEigen::ErrorExitFlag::WorkspaceNotInitError:
+            return "WorkspaceNotInitError";
+    }
+    return "Unknown";
+}
+
+bool isSolvedStatus(const OsqpEigen::Status status) {
+    return status == OsqpEigen::Status::Solved ||
+           status == OsqpEigen::Status::SolvedInaccurate;
+}
+
+std::string formatOsqpStatus(const OsqpEigen::Status status) {
+    std::ostringstream oss;
+    oss << osqpStatusName(status) << "(" << static_cast<int>(status) << ")";
+    return oss.str();
+}
+
+std::string formatOsqpExitFlag(const OsqpEigen::ErrorExitFlag flag) {
+    std::ostringstream oss;
+    oss << osqpErrorExitFlagName(flag) << "(" << static_cast<int>(flag) << ")";
+    return oss.str();
+}
 }  // namespace
 
 ConvexMPC::ConvexMPC()
@@ -189,6 +257,9 @@ void ConvexMPC::clear() {
     _hasInput = false;
     _qpReady = false;
     _hasPreviousSolution = false;
+    _hasContactConstraintSignature = false;
+    _skipWarmStartForCurrentSolve = false;
+    _contactConstraintSignature.clear();
     _optimalWrench.setZero();
     _optimalWrenchHorizon.setZero();
     _warmStart.setZero();
@@ -276,6 +347,10 @@ void ConvexMPC::buildQP() {
 
     buildHessianMatrix(_hessianDense);
     buildConstraintMatrix(C, D);
+    const std::vector<int> currentContactSignature = contactConstraintSignature(D);
+    const bool contactSignatureChanged =
+        _hasContactConstraintSignature &&
+        currentContactSignature != _contactConstraintSignature;
 
     _gradient = _gradientDense.cast<c_float>();
     _lowerBound.head(numIneq()).setConstant(-OsqpEigen::INFTY);
@@ -283,11 +358,15 @@ void ConvexMPC::buildQP() {
     _lowerBound.tail(numEq()).setZero();
     _upperBound.tail(numEq()).setZero();
 
-    const bool success = _solverInitialized ? updateSolverData() : initializeSolver();
+    const bool shouldColdInitialize = !_solverInitialized || contactSignatureChanged;
+    const bool success = shouldColdInitialize ? initializeSolver() : updateSolverData();
     if (!success) {
         throw std::runtime_error("ConvexMPC failed to setup/update OsqpEigen solver");
     }
 
+    _contactConstraintSignature = currentContactSignature;
+    _hasContactConstraintSignature = true;
+    _skipWarmStartForCurrentSolve = contactSignatureChanged;
     _qpReady = true;
 }
 
@@ -300,19 +379,48 @@ void ConvexMPC::solve() {
         buildQP();
     }
 
-    if (_hasPreviousSolution && !_solver.setPrimalVariable(_warmStart)) {
-        throw std::runtime_error("ConvexMPC failed to set OsqpEigen warm start");
-    }
+    auto solveCurrentProblem = [this](const bool useWarmStart,
+                                      const char* context) -> OsqpEigen::Status {
+        if (useWarmStart && _hasPreviousSolution && !_solver.setPrimalVariable(_warmStart)) {
+            std::ostringstream oss;
+            oss << "ConvexMPC failed to set OsqpEigen warm start"
+                << " context=" << context;
+            throw std::runtime_error(oss.str());
+        }
 
-    const auto exitFlag = _solver.solveProblem();
-    if (exitFlag != OsqpEigen::ErrorExitFlag::NoError) {
-        throw std::runtime_error("ConvexMPC OsqpEigen solveProblem failed");
-    }
+        const auto exitFlag = _solver.solveProblem();
+        if (exitFlag != OsqpEigen::ErrorExitFlag::NoError) {
+            std::ostringstream oss;
+            oss << "ConvexMPC OsqpEigen solveProblem failed"
+                << " context=" << context
+                << " exit_flag=" << formatOsqpExitFlag(exitFlag);
+            throw std::runtime_error(oss.str());
+        }
+        return _solver.getStatus();
+    };
 
-    const auto status = _solver.getStatus();
-    if (status != OsqpEigen::Status::Solved &&
-        status != OsqpEigen::Status::SolvedInaccurate) {
-        throw std::runtime_error("ConvexMPC OsqpEigen did not converge to a valid solution");
+    const auto firstStatus = solveCurrentProblem(!_skipWarmStartForCurrentSolve, "initial");
+    if (!isSolvedStatus(firstStatus)) {
+        if (!initializeSolver()) {
+            std::ostringstream oss;
+            oss << "ConvexMPC OsqpEigen fresh retry initialize failed"
+                << " first_status=" << formatOsqpStatus(firstStatus);
+            throw std::runtime_error(oss.str());
+        }
+
+        const auto retryStatus = solveCurrentProblem(false, "fresh_cold_retry");
+        if (!isSolvedStatus(retryStatus)) {
+            std::ostringstream oss;
+            oss << "ConvexMPC OsqpEigen did not converge to a valid solution"
+                << " first_status=" << formatOsqpStatus(firstStatus)
+                << " retry_status=" << formatOsqpStatus(retryStatus);
+            throw std::runtime_error(oss.str());
+        }
+
+        std::cerr << "[MPC] OSQP fresh cold retry recovered"
+                  << " first_status=" << formatOsqpStatus(firstStatus)
+                  << " retry_status=" << formatOsqpStatus(retryStatus)
+                  << std::endl;
     }
 
     const auto& solution = _solver.getSolution();
@@ -325,6 +433,7 @@ void ConvexMPC::solve() {
     _hasPreviousSolution = true;
     _optimalWrenchHorizon = solution.cast<double>();
     _optimalWrench = solution.segment(0, 12).cast<double>();
+    _skipWarmStartForCurrentSolve = false;
 }
 
 void ConvexMPC::validateInputDimensions(const ConvexMPCInputView& input) const {
@@ -352,6 +461,8 @@ bool ConvexMPC::initializeSolver() {
     if (_solver.isInitialized()) {
         _solver.clearSolver();
     }
+    _solver.data()->clearHessianMatrix();
+    _solver.data()->clearLinearConstraintsMatrix();
 
     _solver.settings()->setVerbosity(false);
     _solver.settings()->setWarmStart(true);
@@ -396,6 +507,21 @@ void ConvexMPC::buildHessianMatrix(const DMat<double>& P) {
 
 void ConvexMPC::buildConstraintMatrix(const DMat<double>& C, const DMat<double>& D) {
     fillConstraintValues(C, D, _constraintMatrix);
+}
+
+std::vector<int> ConvexMPC::contactConstraintSignature(const DMat<double>& D) const {
+    std::vector<int> signature;
+    signature.reserve(static_cast<std::size_t>(2 * horizonSteps()));
+    for (int k = 0; k < horizonSteps(); ++k) {
+        const Eigen::Index offset = static_cast<Eigen::Index>(12 * k);
+        const bool leftForceZeroEquality =
+            D.block(offset + 0, offset + 0, 3, 3).norm() > 1e-9;
+        const bool rightForceZeroEquality =
+            D.block(offset + 3, offset + 3, 3, 3).norm() > 1e-9;
+        signature.push_back(leftForceZeroEquality ? 0 : 1);
+        signature.push_back(rightForceZeroEquality ? 0 : 1);
+    }
+    return signature;
 }
 
 void ConvexMPC::updateWarmStart() {
