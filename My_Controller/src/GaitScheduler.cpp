@@ -1,6 +1,7 @@
+#include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
-#include <cmath>
 #include <string>
 
 #include "GaitScheduler.h"
@@ -70,7 +71,7 @@ bool GaitScheduler::c(Side i, double t) const {
     return (0.0 <= phase && phase < stanceFraction);
 }
 
-void GaitScheduler::buildConstraintMatrices() {
+void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* contactOverride) {
     if (_horizonClock == nullptr) {
         throw std::runtime_error(
             "GaitScheduler::buildConstraintMatrices requires initialized HorizonClock");
@@ -92,8 +93,19 @@ void GaitScheduler::buildConstraintMatrices() {
         Mat3<double> S_right = Mat3<double>::Zero();
         Mat12<double> C_left = Mat12<double>::Zero();
         Mat12<double> C_right = Mat12<double>::Zero();
-        const bool leftStance = c(Side::Left, tk);
-        const bool rightStance = c(Side::Right, tk);
+        bool leftStance = c(Side::Left, tk);
+        bool rightStance = c(Side::Right, tk);
+        double leftNormalForceScale = 1.0;
+        double rightNormalForceScale = 1.0;
+        if (contactOverride != nullptr &&
+            k < static_cast<int>(contactOverride->steps.size()) &&
+            contactOverride->steps[static_cast<std::size_t>(k)].enabled) {
+            const auto& step = contactOverride->steps[static_cast<std::size_t>(k)];
+            leftStance = step.leftContact;
+            rightStance = step.rightContact;
+            leftNormalForceScale = std::clamp(step.leftNormalForceScale, 0.0, 1.0);
+            rightNormalForceScale = std::clamp(step.rightNormalForceScale, 0.0, 1.0);
+        }
 
         if (!leftStance) {  // swing
             S_left = Mat3<double>::Identity();
@@ -101,8 +113,8 @@ void GaitScheduler::buildConstraintMatrices() {
         else {  // stance
             C_left.block<12, 3>(0, 0) = C_unit.block<12, 3>(0, 0);
             C_left.block<12, 3>(0, 6) = C_unit.block<12, 3>(0, 3);
-            Ck_bound(4) = mpc.normalForceMax;
-            Ck_bound(5) = -mpc.normalForceMin;
+            Ck_bound(4) = leftNormalForceScale * mpc.normalForceMax;
+            Ck_bound(5) = -leftNormalForceScale * mpc.normalForceMin;
         }
 
         if (!rightStance) {  // swing
@@ -111,8 +123,8 @@ void GaitScheduler::buildConstraintMatrices() {
         else {  // stance
             C_right.block<12, 3>(0, 3) = C_unit.block<12, 3>(0, 0);
             C_right.block<12, 3>(0, 9) = C_unit.block<12, 3>(0, 3);
-            Ck_bound(16) = mpc.normalForceMax;
-            Ck_bound(17) = -mpc.normalForceMin;
+            Ck_bound(16) = rightNormalForceScale * mpc.normalForceMax;
+            Ck_bound(17) = -rightNormalForceScale * mpc.normalForceMin;
         }
 
         Mat12<double> Dk = Mat12<double>::Zero();

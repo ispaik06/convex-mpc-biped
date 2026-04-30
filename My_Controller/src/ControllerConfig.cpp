@@ -239,6 +239,41 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         params.footPlacement.nominalLateralOffset);
     readScalarIfPresent(footPlacement, "swing_bias", params.footPlacement.swingBias);
 
+    const YAML::Node contactManager = config["contact_manager"];
+    readScalarIfPresent(contactManager,
+                        "contact_force_on_threshold",
+                        params.contactManager.contactForceOnThreshold);
+    readScalarIfPresent(contactManager,
+                        "contact_force_off_threshold",
+                        params.contactManager.contactForceOffThreshold);
+    readScalarIfPresent(contactManager,
+                        "contact_on_confirm_ticks",
+                        params.contactManager.contactOnConfirmTicks);
+    readScalarIfPresent(contactManager,
+                        "contact_off_confirm_ticks",
+                        params.contactManager.contactOffConfirmTicks);
+    readScalarIfPresent(contactManager,
+                        "contact_ramp_duration",
+                        params.contactManager.contactRampDuration);
+    readScalarIfPresent(contactManager,
+                        "contact_lock_steps",
+                        params.contactManager.contactLockSteps);
+    readScalarIfPresent(contactManager,
+                        "late_contact_timeout",
+                        params.contactManager.lateContactTimeout);
+    readScalarIfPresent(contactManager,
+                        "ground_search_velocity",
+                        params.contactManager.groundSearchVelocity);
+    readScalarIfPresent(contactManager,
+                        "ground_search_max_depth",
+                        params.contactManager.groundSearchMaxDepth);
+    readScalarIfPresent(contactManager,
+                        "enable_early_contact_handling",
+                        params.contactManager.enableEarlyContactHandling);
+    readScalarIfPresent(contactManager,
+                        "enable_late_contact_handling",
+                        params.contactManager.enableLateContactHandling);
+
     const YAML::Node logging = config["logging"];
     readScalarIfPresent(logging, "gait_status_interval", params.logging.gaitStatusInterval);
     readVectorIfPresent(logging,
@@ -313,6 +348,25 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; attitude gains must be non-negative");
+    }
+    if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
+        !std::isfinite(params.contactManager.contactForceOffThreshold) ||
+        !std::isfinite(params.contactManager.contactRampDuration) ||
+        !std::isfinite(params.contactManager.lateContactTimeout) ||
+        !std::isfinite(params.contactManager.groundSearchVelocity) ||
+        !std::isfinite(params.contactManager.groundSearchMaxDepth) ||
+        params.contactManager.contactForceOnThreshold < 0.0 ||
+        params.contactManager.contactForceOffThreshold < 0.0 ||
+        params.contactManager.contactForceOnThreshold < params.contactManager.contactForceOffThreshold ||
+        params.contactManager.contactOnConfirmTicks <= 0 ||
+        params.contactManager.contactOffConfirmTicks <= 0 ||
+        params.contactManager.contactRampDuration < 0.0 ||
+        params.contactManager.contactLockSteps < 0 ||
+        params.contactManager.lateContactTimeout < 0.0 ||
+        params.contactManager.groundSearchVelocity < 0.0 ||
+        params.contactManager.groundSearchMaxDepth < 0.0) {
+        throw std::runtime_error(
+            "contact_manager thresholds, ticks, ramp, lock steps, timeout, and ground-search parameters are invalid");
     }
 
     return params;

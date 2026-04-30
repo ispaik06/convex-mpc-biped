@@ -254,6 +254,7 @@ void MyController::initializeRuntimeObjects() {
 
     _horizonClock = std::make_unique<HorizonClock>(_stateEstimate->time);
     _gaitScheduler = std::make_unique<GaitScheduler>(_horizonClock.get());
+    _contactManager = std::make_unique<ContactManager>(getControllerConfig().contactManager);
     _swingFootPlanner = std::make_unique<SwingFootPlanner>(
         _gaitScheduler.get(), _horizonClock.get(), _stateEstimate, _robotParams, _userCommand);
     _mpcFormulation = std::make_unique<MPCFormulation>(_robotParams);
@@ -271,6 +272,7 @@ void MyController::initializeRuntimeObjects() {
     _locomotionMode = locomotionOutput.mode;
     _legDynamicsRequest = locomotionOutput.dynamicsRequest;
     _gaitScheduler->setLocomotionMode(_locomotionMode);
+    _contactManager->reset(*_stateEstimate, *_robotParams, *_gaitScheduler, _locomotionMode);
     std::cout << "[MyController] locomotion mode initialized to "
               << locomotionModeName(_locomotionMode) << " at t="
               << formatTimeSeconds(_stateEstimate->time) << std::endl;
@@ -366,6 +368,9 @@ void MyController::resetSwingState() {
 
     if (_swingFootPlanner != nullptr) {
         _swingFootPlanner->reset();
+    }
+    if (_contactManager != nullptr) {
+        _contactManager->reset(*_stateEstimate, *_robotParams, *_gaitScheduler, _locomotionMode);
     }
     _lastControlTime = _stateEstimate->time;
 }
@@ -475,6 +480,23 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] + psi_dot * dt);
 }
 
+bool MyController::activeContactForSide(const Side side, const double time) const {
+    if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
+        return _contactManager->activeContact(side);
+    }
+    if (_gaitScheduler == nullptr) {
+        throw std::runtime_error("MyController::activeContactForSide requires gait scheduler");
+    }
+    return _gaitScheduler->c(side, time);
+}
+
+double MyController::contactRampAlphaForSide(const Side side) const {
+    if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
+        return _contactManager->contactRampAlpha(side);
+    }
+    return 1.0;
+}
+
 void MyController::updateSwingTrajectories(
     const DesiredFootPositions& desiredFootPositions) {
     if (_stateEstimate == nullptr || _gaitScheduler == nullptr || _robotParams == nullptr) {
@@ -488,7 +510,7 @@ void MyController::updateSwingTrajectories(
 
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
         const Side side = _robotParams->legs[leg].side;
-        const bool isStance = _gaitScheduler->c(side, time);
+        const bool isStance = activeContactForSide(side, time);
         auto& runtime = _legRuntime[leg];
 
         if (isStance) {
@@ -571,7 +593,13 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
                 footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
                 footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Right));
         }
-        _gaitScheduler->buildConstraintMatrices();
+        ContactScheduleOverride contactOverride;
+        const ContactScheduleOverride* contactOverridePtr = nullptr;
+        if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
+            contactOverride = _contactManager->buildHorizonOverride();
+            contactOverridePtr = &contactOverride;
+        }
+        _gaitScheduler->buildConstraintMatrices(contactOverridePtr);
 
         Vec13<double> referenceSeed = x0;
         referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
@@ -606,7 +634,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         const double time = _stateEstimate->time;
         int stanceLegCount = 0;
         for (const auto& leg : _robotParams->legs) {
-            if (_gaitScheduler->c(leg.side, time)) {
+            if (activeContactForSide(leg.side, time)) {
                 ++stanceLegCount;
             }
         }
@@ -616,7 +644,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
                 (_robotParams->bodyMass * std::abs(getControllerConfig().model.gravity)) /
                 static_cast<double>(stanceLegCount);
             for (const auto& leg : _robotParams->legs) {
-                if (!_gaitScheduler->c(leg.side, time)) {
+                if (!activeContactForSide(leg.side, time)) {
                     continue;
                 }
 
@@ -716,6 +744,8 @@ void MyController::maybeWriteStandingMpcDebugLog(
             _standingMpcDebugRequestSource,
             _standingMpcDebugRequestTime,
             _standingMpcDebugTriggerTime,
+            _contactManager != nullptr ? _contactManager->legStates()
+                                       : vectorAligned<ContactManagerLegState>{},
         };
 
         const std::string logPath = writeStandingMpcDebugLog(snapshot);
@@ -767,7 +797,7 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
         marker.orientation_W = rollPitchYawToQuaternion(yawEuler_W);
         const bool isStance =
             _gaitScheduler != nullptr && _stateEstimate != nullptr &&
-            _gaitScheduler->c(side, _stateEstimate->time);
+            activeContactForSide(side, _stateEstimate->time);
         marker.hasRgba = true;
         marker.rgba = touchdownMarkerRgba<double>(isStance);
         marker.active = true;
@@ -866,20 +896,25 @@ void MyController::writeLegCommands() {
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
         auto& command = _legController->commands[leg];
         const Side side = _robotParams->legs[leg].side;
-        const bool isStance = _gaitScheduler->c(side, time);
+        const bool isStance = activeContactForSide(side, time);
 
         if (isStance) {
             command.mode = LegControlMode::StanceWrench;
+            const double contactRampAlpha = contactRampAlphaForSide(side);
 
             //! MPC solves for the ground reaction on the body; the foot command pushes the ground.
             switch (side) {
                 case Side::Left:
-                    command.forceFeedForward_W = -_stanceWrenchWorld.template segment<3>(0);
-                    command.momentFeedForward_W = -_stanceWrenchWorld.template segment<3>(6);
+                    command.forceFeedForward_W =
+                        -contactRampAlpha * _stanceWrenchWorld.template segment<3>(0);
+                    command.momentFeedForward_W =
+                        -contactRampAlpha * _stanceWrenchWorld.template segment<3>(6);
                     break;
                 case Side::Right:
-                    command.forceFeedForward_W = -_stanceWrenchWorld.template segment<3>(3);
-                    command.momentFeedForward_W = -_stanceWrenchWorld.template segment<3>(9);
+                    command.forceFeedForward_W =
+                        -contactRampAlpha * _stanceWrenchWorld.template segment<3>(3);
+                    command.momentFeedForward_W =
+                        -contactRampAlpha * _stanceWrenchWorld.template segment<3>(9);
                     break;
                 default:
                     throw std::runtime_error(
@@ -930,11 +965,22 @@ void MyController::runController() {
         target.z() = -0.005;
         return target;
     };
-    const DesiredFootPositions desiredFootPositions =
+    const DesiredFootPositions nominalDesiredFootPositions =
         (_locomotionMode == LocomotionMode::Standing)
             ? DesiredFootPositions{standingFootTarget(Side::Left),
                                    standingFootTarget(Side::Right)}
             : _swingFootPlanner->desiredFootPositions();
+    if (_contactManager != nullptr) {
+        _contactManager->update(*_stateEstimate,
+                                *_robotParams,
+                                *_gaitScheduler,
+                                _locomotionMode,
+                                nominalDesiredFootPositions);
+    }
+    const DesiredFootPositions desiredFootPositions =
+        (_contactManager != nullptr)
+            ? _contactManager->managedFootPositions(nominalDesiredFootPositions)
+            : nominalDesiredFootPositions;
 
     updateSwingTrajectories(desiredFootPositions);
     updateTouchdownDebugTarget(desiredFootPositions);

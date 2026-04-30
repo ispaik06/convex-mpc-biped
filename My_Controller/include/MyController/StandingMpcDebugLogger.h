@@ -5,6 +5,7 @@
 
 #include "Controllers/ArmController.h"
 #include "Controllers/LegController.h"
+#include "ContactManager.h"
 #include "MPCFormulation.h"
 #include "ReferenceTrajectory.h"
 #include "StateEstimator/StateEstimator.h"
@@ -27,6 +28,7 @@ struct StandingMpcDebugSnapshot {
     std::string debugRequestSource;
     double debugRequestTime{0.0};
     double debugTriggerTime{0.0};
+    vectorAligned<ContactManagerLegState> contactManagerLegs;
 };
 
 std::string writeStandingMpcDebugLog(const StandingMpcDebugSnapshot& snapshot);

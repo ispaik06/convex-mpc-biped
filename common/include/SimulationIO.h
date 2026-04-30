@@ -22,6 +22,9 @@ struct RobotLegState {
     bool hasFootJacobians = false;    // foot Jacobians/time-derivatives are available
     bool hasLegDynamics = false;
     bool contact = true;
+    bool hasContactForce = false;
+    Vec3<T> contactForce_W = Vec3<T>::Zero();
+    T contactNormalForce{0};
 
     bool matchesLayout(Eigen::Index q_size, Eigen::Index qd_size, Eigen::Index tau_size) const {
         return q.size() == q_size &&
@@ -56,6 +59,9 @@ struct RobotLegState {
         hasFootJacobians = false;
         hasLegDynamics = false;
         contact = true;
+        hasContactForce = false;
+        contactForce_W.setZero();
+        contactNormalForce = T(0);
     }
 };
 

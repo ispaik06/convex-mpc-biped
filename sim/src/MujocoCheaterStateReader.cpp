@@ -1,11 +1,22 @@
 #include "MujocoCheaterStateReader.h"
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
 #include <mujoco/mujoco.h>
 
 namespace {
+struct FootContactInfo {
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+    bool contact{false};
+    int contactCount{0};
+    double normalForce{0.0};
+    Vec3<double> force_W = Vec3<double>::Zero();
+};
+
 Vec3<double> readBodyPosition(const mjData* data, int body_id) {
     if (body_id < 0) {
         throw std::runtime_error("Invalid body id for world position query");
@@ -16,6 +27,65 @@ Vec3<double> readBodyPosition(const mjData* data, int body_id) {
         pos[i] = static_cast<double>(data->xpos[3 * body_id + i]);
     }
     return pos;
+}
+
+Vec3<double> readMujocoVec3(const mjtNum* raw) {
+    Vec3<double> out = Vec3<double>::Zero();
+    for (int i = 0; i < 3; ++i) {
+        out[i] = static_cast<double>(raw[i]);
+    }
+    return out;
+}
+
+Mat3<double> contactFrameRowsWorld(const mjContact& contact) {
+    Mat3<double> frame = Mat3<double>::Zero();
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            frame(row, col) = static_cast<double>(contact.frame[3 * row + col]);
+        }
+    }
+    return frame;
+}
+
+bool geomBelongsToFoot(const mjModel* model,
+                       const int geomId,
+                       const MujocoEndEffectorBinding& foot) {
+    if (geomId < 0) {
+        return false;
+    }
+    if (std::find(foot.collisionGeomIds.begin(), foot.collisionGeomIds.end(), geomId) !=
+        foot.collisionGeomIds.end()) {
+        return true;
+    }
+    return model->geom_bodyid[geomId] == foot.bodyId;
+}
+
+FootContactInfo readFootContactInfo(const mjModel* model,
+                                    const mjData* data,
+                                    const MujocoEndEffectorBinding& foot) {
+    FootContactInfo info;
+    for (int contactIndex = 0; contactIndex < data->ncon; ++contactIndex) {
+        const mjContact& contact = data->contact[contactIndex];
+        const bool footIsGeom1 = geomBelongsToFoot(model, contact.geom1, foot);
+        const bool footIsGeom2 = geomBelongsToFoot(model, contact.geom2, foot);
+        if (!footIsGeom1 && !footIsGeom2) {
+            continue;
+        }
+
+        mjtNum contactForceLocal[6] = {};
+        mj_contactForce(model, data, contactIndex, contactForceLocal);
+
+        const Mat3<double> frameRows_W = contactFrameRowsWorld(contact);
+        const Vec3<double> forcePositiveOnGeom2_W =
+            frameRows_W.transpose() * readMujocoVec3(contactForceLocal);
+        const double signForFoot = footIsGeom2 ? 1.0 : -1.0;
+
+        info.contact = true;
+        ++info.contactCount;
+        info.force_W += signForFoot * forcePositiveOnGeom2_W;
+        info.normalForce += std::abs(static_cast<double>(contactForceLocal[0]));
+    }
+    return info;
 }
 
 Vec3<double> readCollisionGeomCenterPosition(const mjData* data,
@@ -288,6 +358,11 @@ void fillCheaterState(const mjModel* model,
         leg_state.footVel_W = readFootEndEffectorVelocity(model, data, foot, bindings.footSource);
         leg_state.footEndVel_W = leg_state.footVel_W;
         leg_state.R_WF = readFootEndEffectorRotation(data, foot, bindings.footSource);
+        const FootContactInfo contactInfo = readFootContactInfo(model, data, foot);
+        leg_state.contact = contactInfo.contact;
+        leg_state.hasContactForce = true;
+        leg_state.contactForce_W = contactInfo.force_W;
+        leg_state.contactNormalForce = contactInfo.normalForce;
         leg_state.hasFootFrame = true;
         leg_state.hasFootJacobians = false;
         leg_state.hasLegDynamics = false;

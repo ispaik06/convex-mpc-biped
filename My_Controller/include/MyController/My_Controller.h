@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Controllers/ControlGains.h"
+#include "ContactManager.h"
 #include "ConvexMPC.h"
 #include "GaitScheduler.h"
 #include "HorizonClock.h"
@@ -58,6 +59,8 @@ private:
 	void applyLocomotionOutput(const LocomotionFSMOutput& output);
 	LocomotionFSMOutput syncLocomotionFSM();
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
+	bool activeContactForSide(Side side, double time) const;
+	double contactRampAlphaForSide(Side side) const;
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
 	void updateTouchdownDebugTarget(const DesiredFootPositions& desiredFootPositions);
 	double swingFootYawTargetWorld() const;
@@ -88,6 +91,7 @@ private:
 	vectorAligned<LegRuntimeState> _legRuntime;
 	std::unique_ptr<HorizonClock> _horizonClock;
 	std::unique_ptr<GaitScheduler> _gaitScheduler;
+	std::unique_ptr<ContactManager> _contactManager;
 	std::unique_ptr<LocomotionFSM> _locomotionFSM;
 	std::unique_ptr<SwingFootPlanner> _swingFootPlanner;
 	std::unique_ptr<MPCFormulation> _mpcFormulation;

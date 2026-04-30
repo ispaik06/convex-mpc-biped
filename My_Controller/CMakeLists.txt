@@ -1,5 +1,6 @@
 add_library(My_Controller
 	src/My_Controller.cpp
+	src/ContactManager.cpp
 	src/ControllerConfig.cpp
 	src/GaitScheduler.cpp
 	src/LocomotionFSM.cpp

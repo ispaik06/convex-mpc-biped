@@ -76,6 +76,20 @@ struct FootPlacementParameters {
     double swingBias{0.0};
 };
 
+struct ContactManagerParameters {
+    double contactForceOnThreshold{20.0};
+    double contactForceOffThreshold{5.0};
+    int contactOnConfirmTicks{2};
+    int contactOffConfirmTicks{2};
+    double contactRampDuration{0.08};
+    int contactLockSteps{3};
+    double lateContactTimeout{0.20};
+    double groundSearchVelocity{0.08};
+    double groundSearchMaxDepth{0.04};
+    bool enableEarlyContactHandling{true};
+    bool enableLateContactHandling{true};
+};
+
 struct LoggingParameters {
     int gaitStatusInterval{50};
     std::vector<double> standingMpcDebugTriggerTimes;
@@ -108,6 +122,7 @@ struct ControllerConfig {
     MPCParameters mpc;
     SwingParameters swing;
     FootPlacementParameters footPlacement;
+    ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;
     InitialPoseParameters initialPose;

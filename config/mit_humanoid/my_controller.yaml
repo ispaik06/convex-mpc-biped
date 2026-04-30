@@ -53,6 +53,19 @@ foot_placement:
   nominal_lateral_offset: 0.0
   swing_bias: 0.0
 
+contact_manager:
+  contact_force_on_threshold: 20.0
+  contact_force_off_threshold: 5.0
+  contact_on_confirm_ticks: 2
+  contact_off_confirm_ticks: 2
+  contact_ramp_duration: 0.08
+  contact_lock_steps: 3
+  late_contact_timeout: 0.20
+  ground_search_velocity: 0.08
+  ground_search_max_depth: 0.04
+  enable_early_contact_handling: true
+  enable_late_contact_handling: true
+
 logging:
   gait_status_interval: 50
   standing_mpc_debug_trigger_times: []

@@ -433,6 +433,31 @@ json controllerConfigJson(const ControllerConfig& config,
     footPlacement["swing_bias"] = config.footPlacement.swingBias;
     root["foot_placement"] = std::move(footPlacement);
 
+    json contactManager = json::object();
+    contactManager["contact_force_on_threshold"] =
+        config.contactManager.contactForceOnThreshold;
+    contactManager["contact_force_off_threshold"] =
+        config.contactManager.contactForceOffThreshold;
+    contactManager["contact_on_confirm_ticks"] =
+        config.contactManager.contactOnConfirmTicks;
+    contactManager["contact_off_confirm_ticks"] =
+        config.contactManager.contactOffConfirmTicks;
+    contactManager["contact_ramp_duration"] =
+        config.contactManager.contactRampDuration;
+    contactManager["contact_lock_steps"] =
+        config.contactManager.contactLockSteps;
+    contactManager["late_contact_timeout"] =
+        config.contactManager.lateContactTimeout;
+    contactManager["ground_search_velocity"] =
+        config.contactManager.groundSearchVelocity;
+    contactManager["ground_search_max_depth"] =
+        config.contactManager.groundSearchMaxDepth;
+    contactManager["enable_early_contact_handling"] =
+        config.contactManager.enableEarlyContactHandling;
+    contactManager["enable_late_contact_handling"] =
+        config.contactManager.enableLateContactHandling;
+    root["contact_manager"] = std::move(contactManager);
+
     json logging = json::object();
     logging["gait_status_interval"] = config.logging.gaitStatusInterval;
     logging["standing_mpc_debug_trigger_times"] =
@@ -834,6 +859,10 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         legJson["foot_vel_W"] = vectorToJson(legState.footVel_W);
         legJson["R_WF"] = matrixToFlatJson(legState.R_WF);
         legJson["foot_x_axis_W"] = vectorToJson(legState.R_WF.col(0));
+        legJson["raw_contact"] = legState.contact;
+        legJson["has_contact_force"] = legState.hasContactForce;
+        legJson["contact_force_W"] = vectorToJson(legState.contactForce_W);
+        legJson["contact_normal_force"] = scalarToJson(legState.contactNormalForce);
         if (legState.hasFootJacobians) {
             legJson["Jv_W"] = matrixToFlatJson(legState.Jv_W);
             legJson["Jw_W"] = matrixToFlatJson(legState.Jw_W);
@@ -851,6 +880,33 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     }
     feet["legs"] = std::move(legs);
     root["feet"] = std::move(feet);
+
+    json contactManager = json::object();
+    contactManager["contact_lock_steps"] = config.contactManager.contactLockSteps;
+    contactManager["active_contact_lock_steps"] = config.contactManager.contactLockSteps;
+    contactManager["far_horizon_uses_nominal_schedule"] = true;
+    json contactManagerLegs = json::array();
+    for (const auto& legState : snapshot.contactManagerLegs) {
+        json legJson = json::object();
+        legJson["side"] = sideName(legState.side);
+        legJson["scheduled_contact"] = legState.scheduledContact;
+        legJson["estimated_contact"] = legState.estimatedContact;
+        legJson["active_contact"] = legState.activeContact;
+        legJson["early_contact"] = legState.earlyContact;
+        legJson["late_contact"] = legState.lateContact;
+        legJson["search_mode_active"] = legState.searchModeActive;
+        legJson["recovery_failure"] = legState.recoveryFailure;
+        legJson["contact_ramp_alpha"] = scalarToJson(legState.contactRampAlpha);
+        legJson["late_contact_time"] = scalarToJson(legState.lateContactTime);
+        legJson["contact_normal_force"] = scalarToJson(legState.contactNormalForce);
+        legJson["frozen_touchdown_position_W"] =
+            vectorToJson(legState.frozenTouchdownPosition_W);
+        legJson["commanded_foot_target_W"] =
+            vectorToJson(legState.commandedFootTarget_W);
+        contactManagerLegs.push_back(std::move(legJson));
+    }
+    contactManager["legs"] = std::move(contactManagerLegs);
+    root["contact_manager_state"] = std::move(contactManager);
 
     json referenceTrajectory = json::object();
     referenceTrajectory["tk"] = vectorToJson(snapshot.referenceTrajectory.tk);

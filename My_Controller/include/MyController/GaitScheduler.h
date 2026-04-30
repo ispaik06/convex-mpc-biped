@@ -1,6 +1,7 @@
 #ifndef GAIT_SCHEDULER_H
 #define GAIT_SCHEDULER_H
 
+#include "ContactSchedule.h"
 #include "ControllerConfig.h"
 #include "HorizonClock.h"
 #include "Robot/RobotParams.h"
@@ -20,7 +21,7 @@ public:
     double p(Side, double) const;
     bool c(Side, double) const;
 
-    void buildConstraintMatrices();
+    void buildConstraintMatrices(const ContactScheduleOverride* contactOverride = nullptr);
 
     DMat<double> D;
     DMat<double> C;
