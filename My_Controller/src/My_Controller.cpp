@@ -627,7 +627,10 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             _standingMpcDebugLogReady = true;
         }
 
-    } catch (const std::exception&) {
+    } catch (const std::exception& exception) {
+        std::cerr << "[MPC] maybeUpdateMpc failed at iteration " << _iteration
+                  << ", t=" << (_stateEstimate != nullptr ? _stateEstimate->time : 0.0)
+                  << ": " << exception.what() << std::endl;
         _stanceWrenchWorld.setZero();
         _standingMpcDebugLogReady = false;
 

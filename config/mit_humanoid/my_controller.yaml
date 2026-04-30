@@ -18,15 +18,15 @@ mpc:
   foot_half_length: 0.065
   foot_half_width: 0.01
   torsional_friction_scale: 0.0657
-  normal_force_max: 1000.0
+  normal_force_max: 800.0
   normal_force_min: 5.0
   iterations_between_solve: 10
   contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
   walking:
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [50000,  1000,  20,    60000,   60000,  1000000,   100,     40,     20,     10000,    5000,   10,   1 ]
+    state_weight_diag: [5000,     1,    1,    1,   5000,  50000,   1000,     1,     1,     1,    1000,   1000,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
-    input_weight_diag: [1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6, 1.0e-6]
+    input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
     # Keep the same baseline for now; tune this separately from walking later.
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
@@ -58,10 +58,10 @@ contact_manager:
   contact_force_off_threshold: 5.0
   contact_on_confirm_ticks: 2
   contact_off_confirm_ticks: 2
-  contact_ramp_duration: 0.08
+  contact_ramp_duration: 0.0
   contact_lock_steps: 3
   late_contact_timeout: 0.20
-  ground_search_velocity: 0.08
+  ground_search_velocity: 0.0
   ground_search_max_depth: 0.04
   enable_early_contact_handling: true
   enable_late_contact_handling: true
@@ -72,7 +72,7 @@ logging:
 
 startup:
   # If locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
-  post_init_standing_settle_time: 2.5
+  post_init_standing_settle_time: 1.5
 
 joint_tracking:
   leg:
