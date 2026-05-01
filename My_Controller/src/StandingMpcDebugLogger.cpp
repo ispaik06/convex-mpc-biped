@@ -424,19 +424,12 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["height"] = config.swing.height;
     swing["min_remaining_time"] = config.swing.minRemainingTime;
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
+    swing["swing_foot_yaw_lead_scale"] = config.swing.swingFootYawLeadScale;
     swing["pitch_kp"] = config.swing.pitchKp;
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;
     swing["yaw_kd"] = config.swing.yawKd;
     root["swing"] = std::move(swing);
-
-    json footPlacement = json::object();
-    footPlacement["velocity_feedback_gain"] = config.footPlacement.velocityFeedbackGain;
-    footPlacement["placement_clamp"] = config.footPlacement.placementClamp;
-    footPlacement["touchdown_height"] = config.footPlacement.touchdownHeight;
-    footPlacement["nominal_lateral_offset"] = config.footPlacement.nominalLateralOffset;
-    footPlacement["swing_bias"] = config.footPlacement.swingBias;
-    root["foot_placement"] = std::move(footPlacement);
 
     json contactManager = json::object();
     contactManager["contact_force_on_threshold"] =

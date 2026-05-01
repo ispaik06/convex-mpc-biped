@@ -36,7 +36,6 @@ private:
     void ensureNominalFootOffsets();
     double bodyYawTargetWorld() const;
     double touchdownPreviewTime() const;
-    double touchdownYawTargetWorld() const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex) const;
     void recordSequentialTouchdown(std::size_t legIndex, const Vec3<double>& target_W);

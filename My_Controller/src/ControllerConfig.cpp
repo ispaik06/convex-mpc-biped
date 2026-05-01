@@ -217,25 +217,18 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(swing,
                         "body_velocity_half_stance_offset",
                         params.swing.bodyVelocityHalfStanceOffset);
+    if (swing && swing["swing_foot_yaw_lead_scale"]) {
+        params.swing.swingFootYawLeadScale =
+            swing["swing_foot_yaw_lead_scale"].as<double>();
+    } else {
+        readScalarIfPresent(swing,
+                            "touchdown_yaw_lead_scale",
+                            params.swing.swingFootYawLeadScale);
+    }
     readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
     readScalarIfPresent(swing, "yaw_kd", params.swing.yawKd);
-
-    const YAML::Node footPlacement = config["foot_placement"];
-    readScalarIfPresent(footPlacement,
-                        "velocity_feedback_gain",
-                        params.footPlacement.velocityFeedbackGain);
-    readScalarIfPresent(footPlacement,
-                        "placement_clamp",
-                        params.footPlacement.placementClamp);
-    readScalarIfPresent(footPlacement,
-                        "touchdown_height",
-                        params.footPlacement.touchdownHeight);
-    readScalarIfPresent(footPlacement,
-                        "nominal_lateral_offset",
-                        params.footPlacement.nominalLateralOffset);
-    readScalarIfPresent(footPlacement, "swing_bias", params.footPlacement.swingBias);
 
     const YAML::Node contactManager = config["contact_manager"];
     readScalarIfPresent(contactManager,
@@ -343,12 +336,15 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         throw std::runtime_error("MPC normal force max must be >= min");
     }
     if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
+        !std::isfinite(params.swing.swingFootYawLeadScale) ||
         !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
         !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
+        params.swing.bodyVelocityHalfStanceOffset < 0.0 ||
+        params.swing.swingFootYawLeadScale < 0.0 ||
         params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0 ||
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
-            "swing.body_velocity_half_stance_offset, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; attitude gains must be non-negative");
+            "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; offsets must be non-negative and attitude gains must be non-negative");
     }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
         !std::isfinite(params.contactManager.contactForceOffThreshold) ||

@@ -57,18 +57,11 @@ struct SwingParameters {
     double height{0.06};
     double minRemainingTime{1e-3};
     double bodyVelocityHalfStanceOffset{0.0};
+    double swingFootYawLeadScale{1.0};
     double pitchKp{0.0};
     double pitchKd{0.0};
     double yawKp{0.0};
     double yawKd{0.0};
-};
-
-struct FootPlacementParameters {
-    double velocityFeedbackGain{0.03};
-    double placementClamp{0.3};
-    double touchdownHeight{-0.003};
-    double nominalLateralOffset{0.065};
-    double swingBias{0.0};
 };
 
 struct ContactManagerParameters {
@@ -116,7 +109,6 @@ struct ControllerConfig {
     ModelParameters model;
     MPCParameters mpc;
     SwingParameters swing;
-    FootPlacementParameters footPlacement;
     ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;

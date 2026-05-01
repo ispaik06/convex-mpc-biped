@@ -1,11 +1,11 @@
-locomotion_mode: walking  # walking or standing
+requested_locomotion_mode: walking  # requested startup mode: walking or standing
 
 timing:
-  cycle: 1.0
-  swing: 0.25
-  stance: 0.75
+  cycle: 0.5
+  swing: 0.15
+  stance: 0.35
   horizon: 0.5
-  horizon_steps: 20
+  horizon_steps: 25
 
 model:
   xml_path: models/mit_humanoid/scene.xml
@@ -21,68 +21,38 @@ mpc:
   normal_force_max: 1000.0
   normal_force_min: 5.0
   iterations_between_solve: 10
-  contact_wrench_model: no_roll_moment  # full_wrench or no_roll_moment
   walking:
+    contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [3000,  3500,  80,    6000,  8500, 19000,   500,     500,     30,     100,    100,  2000,   1 ]
+    state_weight_diag: [18000,  5000,  10,   5000,  47300,  59000,     10,     10,     10,     10,    10,    50,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
     input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
+    contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     # Keep the same baseline for now; tune this separately from walking later.
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [100,  500,  10,      5000,  5000,  50000,      10,     10,     10,     10,    10,    5,   1 ]
+    state_weight_diag: [100,  500,   10,    5000,  5000,  50000,      10,     10,     10,     10,    10,    5,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
     input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
 
 swing:
-  natural_frequency: [85.0, 85.0, 160.0]
-  kd_diag: [28.0, 28.0, 50.0]
+  natural_frequency: [111.0, 111.0, 110.0]
+  kd_diag: [20.0, 20.0, 25.0]
   height: 0.055
   min_remaining_time: 0.001
-  body_velocity_half_stance_offset: 0.0
+  body_velocity_half_stance_offset: 0.5
+  swing_foot_yaw_lead_scale: 1.5
   pitch_kp: 150.0
   pitch_kd: 18.0
-  yaw_kp: 105.0
-  yaw_kd: 8.0
-  touchdown_target_mode: body_velocity_half_stance
-
-foot_placement:
-  velocity_feedback_gain: 0.03
-  placement_clamp: 0.2
-  touchdown_height: -0.005
-  nominal_lateral_offset: 0.0
-  swing_bias: 0.0
-
-walking_balance:
-  enable_support_shift: true
-  support_preview_time: 0.30
-  lateral_shift_fraction: 0.95
-  fore_aft_shift_fraction: 0.0
-  shift_smoothing_time: 0.04
-  enable_support_roll_lean: false
-  lateral_roll_gain: 0.0
-  max_roll_lean: 0.0
-  roll_smoothing_time: 0.06
-  enable_liftoff_guard: true
-  liftoff_com_lateral_fraction: 0.35
-  liftoff_com_lateral_tolerance: 0.020
-  liftoff_max_delay: 0.18
-  liftoff_max_abs_roll: 0.30
-  liftoff_max_abs_roll_rate: 1.20
-  liftoff_min_com_height: 0.58
-  liftoff_max_hold_foot_height: 0.0
-  enable_recovery_hold: true
-  recovery_enter_max_abs_angle: 0.42
-  recovery_exit_max_abs_angle: 0.22
-  recovery_min_com_height: 0.58
-  recovery_min_hold_time: 0.20
+  yaw_kp: 155.0
+  yaw_kd: 18.0
 
 contact_manager:
   contact_force_on_threshold: 10.0
   contact_force_off_threshold: 0.5
   contact_on_confirm_ticks: 1
   contact_off_confirm_ticks: 4
-  contact_ramp_duration: 0.04
+  contact_ramp_duration: 0.03
   contact_lock_steps: 1
   late_contact_timeout: 0.20
   ground_search_velocity: 0.40
@@ -90,15 +60,14 @@ contact_manager:
   ground_search_tracking_time: 0.08
   stance_contact_loss_foot_height: 0.060
   enable_early_contact_handling: true
-  enable_late_contact_handling: true
+  enable_late_contact_handling: false
 
 logging:
-  gait_status_interval: 50
   standing_mpc_debug_trigger_times: []
 
 startup:
-  # If locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
-  post_init_standing_settle_time: 1.5
+  # If requested_locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
+  post_init_standing_settle_time: 1.0
 
 joint_tracking:
   leg:
@@ -121,4 +90,3 @@ initial_pose:
 
 gait_swing_hold_test:
   xml_path: models/mit_humanoid/scene_test.xml
-  touchdown_target_mode: body_velocity_half_stance

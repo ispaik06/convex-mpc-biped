@@ -785,10 +785,11 @@ double MyController::swingFootYawTargetWorld() const {
 
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const double baseYaw_W = _bodyTarget.initialized ? _bodyTarget.euler_W[2] : _stateEstimate->psi;
+    const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
     const double previewTime =
         std::max(0.0, (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) *
                           stanceTime());
-    return wrapAngle(baseYaw_W + psi_dot * previewTime);
+    return wrapAngle(baseYaw_W + leadScale * psi_dot * previewTime);
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,

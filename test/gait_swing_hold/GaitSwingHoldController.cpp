@@ -114,8 +114,11 @@ double swingFootYawTargetWorld(const StateEstimate<double>* stateEstimate,
     }
 
     const double psi_dot = (userCommand != nullptr) ? userCommand->psi_dot : 0.0;
-    return std::atan2(std::sin(stateEstimate->psi + psi_dot * stanceTime() * 0.5),
-                      std::cos(stateEstimate->psi + psi_dot * stanceTime() * 0.5));
+    const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
+    const double previewTime =
+        (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) * stanceTime();
+    const double yaw = stateEstimate->psi + leadScale * psi_dot * previewTime;
+    return std::atan2(std::sin(yaw), std::cos(yaw));
 }
 }  // namespace
 

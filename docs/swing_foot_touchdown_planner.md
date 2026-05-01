@@ -103,23 +103,27 @@ previewTime = (0.5 + 0.5) * stanceTime = 1.0 * stanceTime
 
 즉 touchdown target은 한 stance time 뒤의 desired footprint center를 보게 된다.
 
-## 5. Touchdown yaw
+## 5. Swing Foot Yaw
 
-landing 시점의 body desired yaw는 다음처럼 예측한다.
+스윙 중 발 자체의 yaw target은 다음처럼 잡는다.
 
 ```text
 yaw0 = 현재 SRB desired yaw
-touchdownYaw = yaw0 + psi_dot * previewTime
+swingFootYawTarget = yaw0 + swing_foot_yaw_lead_scale * psi_dot * previewTime
 ```
 
-여기서 `psi_dot`은 user command의 yaw rate다.
+여기서 `psi_dot`은 user command의 yaw rate다. 실제 구현에서는 이 lead 항에
+`swing_foot_yaw_lead_scale`를 곱한다.
+
+예를 들어 scale이 `1.5`면, 같은 `psi_dot`에 대해 swing foot yaw를 50% 더 앞서게 잡는다.
 
 이 yaw는 두 군데에 쓰인다.
 
-1. 발의 좌우 offset을 world로 돌릴 때
-2. swing foot yaw target을 만들 때
+1. swing foot attitude PD의 yaw target
+2. debug visualization의 swing foot yaw marker
 
-따라서 제자리 회전 중에는 발 위치도 desired yaw에 맞춰 회전 배치되고, swing foot의 yaw PD target도 같은 방향을 본다.
+따라서 제자리 회전 중에는 발 자체가 더 강하게 desired yaw를 따라간다.
+이 값은 touchdown 위치를 직접 바꾸지 않는다.
 
 ## 6. Translation yaw와 0.5의 의미
 
@@ -132,7 +136,7 @@ step_W = Rz(translationYaw) * [x_dot, y_dot, 0] * previewTime
 
 왜 `0.5`가 들어가나?
 
-preview 구간 동안 body yaw가 `yaw0`에서 `touchdownYaw`까지 계속 변한다고 생각하면,
+preview 구간 동안 body yaw가 `yaw0`에서 `yaw0 + psi_dot * previewTime`까지 계속 변한다고 생각하면,
 속도 명령 `[x_dot, y_dot]`를 world로 바꿀 때 yaw도 시간에 따라 변한다.
 
 정확히는 다음 적분이다.
@@ -165,7 +169,7 @@ translationYaw = yaw0
 ```text
 currentCenter_W = bodyTarget_W
 futureCenter_W = currentCenter_W + step_W
-target_W = futureCenter_W + Rz(touchdownYaw) * nominalFootOffset_B[leg]
+target_W = futureCenter_W + Rz(yaw0) * nominalFootOffset_B[leg]
 target_W.z = kSwingFootTargetZ
 ```
 
@@ -174,12 +178,11 @@ target_W.z = kSwingFootTargetZ
 ```cpp
 const double previewTime = touchdownPreviewTime();
 const double yaw0 = bodyYawTargetWorld();
-const double touchdownYaw_W = yaw0 + psi_dot * previewTime;
 const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
 const Vec3<double> step_W = Rz(translationYaw_W) * v_body_cmd * previewTime;
 
 Vec3<double> target =
-    currentCenter_W + step_W + Rz(touchdownYaw_W) * _nominalFootOffsets_B[legIndex];
+    currentCenter_W + step_W + Rz(yaw0) * _nominalFootOffsets_B[legIndex];
 ```
 
 `currentCenter_W`는 보통 `_bodyTarget.position_W`다.
@@ -200,7 +203,7 @@ Vec3<double> target =
 그래서 현재 구현은 "발 위치 자체"를 다음 기준으로 쓰지 않고, 다음처럼 center를 복원한다.
 
 ```text
-footprintCenter = target_W - Rz(touchdownYaw) * nominalFootOffset_B[leg]
+footprintCenter = target_W - Rz(yaw0) * nominalFootOffset_B[leg]
 ```
 
 그러면 왼발 target으로부터도 center를 알 수 있고, 오른발 target으로부터도 같은 center를 알 수 있다.
@@ -212,7 +215,6 @@ footprintCenter = target_W - Rz(touchdownYaw) * nominalFootOffset_B[leg]
 
 ```text
 step_W = 0
-touchdownYaw = yaw0
 target_W = bodyTarget_W + Rz(yaw0) * nominalFootOffset_B[leg]
 ```
 
@@ -261,27 +263,26 @@ step_W = Rz(yaw0) * [0, y_dot, 0] * previewTime
 
 ```text
 step_W = 0
-touchdownYaw = yaw0 + psi_dot * previewTime
-target_W = bodyTarget_W + Rz(touchdownYaw) * offset_B[leg]
+target_W = bodyTarget_W + Rz(yaw0) * offset_B[leg]
 ```
 
 결과:
 
 - footprint center는 body desired marker에 고정된다.
 - 발 위치만 center 주변에서 회전 배치된다.
-- swing foot yaw target도 같은 `touchdownYaw` 계열을 사용하므로 발의 x-axis가 desired yaw를 따라간다.
+- swing foot yaw target은 별도의 `swing_foot_yaw_lead_scale`를 사용해서 더 강하게 desired yaw를 따라간다.
 
 ### 9.6 이동하면서 회전: x_dot/y_dot != 0, psi_dot != 0
 
 ```text
 step_W = Rz(yaw0 + 0.5 * psi_dot * previewTime) * v_cmd_B * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0 + psi_dot * previewTime) * offset_B[leg]
+target_W = bodyTarget_W + step_W + Rz(yaw0) * offset_B[leg]
 ```
 
 결과:
 
 - center 이동은 preview 구간의 중간 yaw를 기준으로 근사한다.
-- 발 좌우 배치는 landing yaw를 기준으로 한다.
+- 발 좌우 배치는 body desired yaw를 기준으로 한다.
 - 따라서 몸이 회전하며 이동할 때도 발이 미래 heading에 맞춰 놓인다.
 
 ## 10. Red marker와 균형
@@ -292,8 +293,8 @@ MPC reference는 이 marker를 기반으로 만들어진다.
 정지 시 target 식이 다음처럼 되므로:
 
 ```text
-leftTarget_W  = bodyTarget_W + Rz(yaw) * leftOffset_B
-rightTarget_W = bodyTarget_W + Rz(yaw) * rightOffset_B
+leftTarget_W  = bodyTarget_W + Rz(yaw0) * leftOffset_B
+rightTarget_W = bodyTarget_W + Rz(yaw0) * rightOffset_B
 ```
 
 그리고 offset이 초기 양발 평균 기준으로 저장되어 있다면:

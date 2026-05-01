@@ -86,7 +86,6 @@ The MPC optimizes stance wrenches. Swing-foot tracking is handled separately by 
 - `model`: gravity and MuJoCo model paths
 - `mpc`: friction, contact wrench model, state/input weights, and solve cadence
 - `swing`: swing gains and end-effector source
-- `foot_placement`: touchdown heuristics
 - `logging`: gait status and standing MPC debug triggers
 
 `config/simulation.yaml` controls simulation runtime settings:

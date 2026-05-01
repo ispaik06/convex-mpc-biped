@@ -110,7 +110,6 @@ Important sections:
 - `model.xml_path`: fallback MuJoCo scene XML if the test-specific path is empty.
 - `timing`: swing/stance durations.
 - `swing`: swing height and Cartesian gains.
-- `foot_placement`: touchdown feedback and clamps.
 
 ## Notes
 

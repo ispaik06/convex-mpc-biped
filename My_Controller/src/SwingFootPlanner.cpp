@@ -112,11 +112,6 @@ double SwingFootPlanner::touchdownPreviewTime() const {
     return std::max(0.0, stanceFraction * stanceTime());
 }
 
-double SwingFootPlanner::touchdownYawTargetWorld() const {
-    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
-    return bodyYawTargetWorld() + psi_dot * touchdownPreviewTime();
-}
-
 Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex) const {
     const Vec3<double> v_body_cmd(
@@ -126,7 +121,6 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const double previewTime = touchdownPreviewTime();
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const double yaw0 = bodyYawTargetWorld();
-    const double touchdownYaw_W = yaw0 + psi_dot * previewTime;
     const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
     const Vec3<double> step_W = Rz(translationYaw_W) * v_body_cmd * previewTime;
     const Vec3<double> currentCenter_W =
@@ -134,15 +128,14 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
             ? _bodyPositionTarget_W
             : (_footprintCenterValid ? _footprintCenter_W : currentFootTouchdownTarget(legIndex));
     Vec3<double> target =
-        currentCenter_W + step_W + Rz(touchdownYaw_W) * _nominalFootOffsets_B[legIndex];
+        currentCenter_W + step_W + Rz(yaw0) * _nominalFootOffsets_B[legIndex];
     target.z() = kSwingFootTargetZ;
     return target;
 }
 
 void SwingFootPlanner::recordSequentialTouchdown(const std::size_t legIndex,
                                                  const Vec3<double>& target_W) {
-    _footprintCenter_W =
-        target_W - Rz(touchdownYawTargetWorld()) * _nominalFootOffsets_B[legIndex];
+    _footprintCenter_W = target_W - Rz(bodyYawTargetWorld()) * _nominalFootOffsets_B[legIndex];
     _footprintCenter_W.z() = target_W.z();
     _footprintCenterValid = true;
 }

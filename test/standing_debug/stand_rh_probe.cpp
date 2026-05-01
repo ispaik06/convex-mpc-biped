@@ -551,6 +551,13 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.swing.bodyVelocityHalfStanceOffset =
                 swing.at("body_velocity_half_stance_offset").get<double>();
         }
+        if (swing.contains("swing_foot_yaw_lead_scale")) {
+            out.swing.swingFootYawLeadScale =
+                swing.at("swing_foot_yaw_lead_scale").get<double>();
+        } else if (swing.contains("touchdown_yaw_lead_scale")) {
+            out.swing.swingFootYawLeadScale =
+                swing.at("touchdown_yaw_lead_scale").get<double>();
+        }
         if (swing.contains("pitch_kp")) {
             out.swing.pitchKp = swing.at("pitch_kp").get<double>();
         }
@@ -562,27 +569,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         }
         if (swing.contains("yaw_kd")) {
             out.swing.yawKd = swing.at("yaw_kd").get<double>();
-        }
-    }
-
-    if (cfg.contains("foot_placement") && cfg.at("foot_placement").is_object()) {
-        const json& footPlacement = cfg.at("foot_placement");
-        if (footPlacement.contains("velocity_feedback_gain")) {
-            out.footPlacement.velocityFeedbackGain =
-                footPlacement.at("velocity_feedback_gain").get<double>();
-        }
-        if (footPlacement.contains("placement_clamp")) {
-            out.footPlacement.placementClamp = footPlacement.at("placement_clamp").get<double>();
-        }
-        if (footPlacement.contains("touchdown_height")) {
-            out.footPlacement.touchdownHeight = footPlacement.at("touchdown_height").get<double>();
-        }
-        if (footPlacement.contains("nominal_lateral_offset")) {
-            out.footPlacement.nominalLateralOffset =
-                footPlacement.at("nominal_lateral_offset").get<double>();
-        }
-        if (footPlacement.contains("swing_bias")) {
-            out.footPlacement.swingBias = footPlacement.at("swing_bias").get<double>();
         }
     }
 
