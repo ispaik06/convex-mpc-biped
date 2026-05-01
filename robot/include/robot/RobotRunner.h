@@ -28,6 +28,7 @@ public:
     bool legInitializationComplete() const;
     bool armInitializationComplete() const;
     bool initializationComplete() const;
+    const LegController<double>* legController() const;
 
     virtual ~RobotRunner() = default;
 

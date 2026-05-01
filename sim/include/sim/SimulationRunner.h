@@ -2,6 +2,9 @@
 #define SIMULATION_RUNNER_H
 
 #include <atomic>
+#include <fstream>
+#include <iosfwd>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -39,6 +42,7 @@ private:
 	void applyFixedJointCommands();
 	void applyRobotCommand();
 	void updateDebugVisualization();
+	void writeHeadlessTelemetry();
 
 	struct DebugMocapBinding {
 		std::string name;
@@ -67,6 +71,11 @@ private:
 	bool _headless = true;
 	std::atomic<bool> _stopRequested = false;
 	KeyboardCommand _keyboardCommand;
+	std::unique_ptr<std::ofstream> _headlessTelemetryOut;
+	std::string _headlessTelemetryPath;
+	double _headlessTelemetryInterval{0.02};
+	double _nextHeadlessTelemetryTime{0.0};
+	bool _headlessTelemetryInitialized{false};
 };
 
 #endif  // SIMULATION_RUNNER_H

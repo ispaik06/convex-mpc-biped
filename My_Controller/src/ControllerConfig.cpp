@@ -239,6 +239,74 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         params.footPlacement.nominalLateralOffset);
     readScalarIfPresent(footPlacement, "swing_bias", params.footPlacement.swingBias);
 
+    const YAML::Node walkingBalance = config["walking_balance"];
+    readScalarIfPresent(walkingBalance,
+                        "enable_support_shift",
+                        params.walkingBalance.enableSupportShift);
+    readScalarIfPresent(walkingBalance,
+                        "support_preview_time",
+                        params.walkingBalance.supportPreviewTime);
+    readScalarIfPresent(walkingBalance,
+                        "lateral_shift_fraction",
+                        params.walkingBalance.lateralShiftFraction);
+    readScalarIfPresent(walkingBalance,
+                        "fore_aft_shift_fraction",
+                        params.walkingBalance.foreAftShiftFraction);
+    readScalarIfPresent(walkingBalance,
+                        "shift_smoothing_time",
+                        params.walkingBalance.shiftSmoothingTime);
+    readScalarIfPresent(walkingBalance,
+                        "enable_support_roll_lean",
+                        params.walkingBalance.enableSupportRollLean);
+    readScalarIfPresent(walkingBalance,
+                        "lateral_roll_gain",
+                        params.walkingBalance.lateralRollGain);
+    readScalarIfPresent(walkingBalance,
+                        "max_roll_lean",
+                        params.walkingBalance.maxRollLean);
+    readScalarIfPresent(walkingBalance,
+                        "roll_smoothing_time",
+                        params.walkingBalance.rollSmoothingTime);
+    readScalarIfPresent(walkingBalance,
+                        "enable_liftoff_guard",
+                        params.walkingBalance.enableLiftoffGuard);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_com_lateral_fraction",
+                        params.walkingBalance.liftoffComLateralFraction);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_com_lateral_tolerance",
+                        params.walkingBalance.liftoffComLateralTolerance);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_max_delay",
+                        params.walkingBalance.liftoffMaxDelay);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_max_abs_roll",
+                        params.walkingBalance.liftoffMaxAbsRoll);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_max_abs_roll_rate",
+                        params.walkingBalance.liftoffMaxAbsRollRate);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_min_com_height",
+                        params.walkingBalance.liftoffMinComHeight);
+    readScalarIfPresent(walkingBalance,
+                        "liftoff_max_hold_foot_height",
+                        params.walkingBalance.liftoffMaxHoldFootHeight);
+    readScalarIfPresent(walkingBalance,
+                        "enable_recovery_hold",
+                        params.walkingBalance.enableRecoveryHold);
+    readScalarIfPresent(walkingBalance,
+                        "recovery_enter_max_abs_angle",
+                        params.walkingBalance.recoveryEnterMaxAbsAngle);
+    readScalarIfPresent(walkingBalance,
+                        "recovery_exit_max_abs_angle",
+                        params.walkingBalance.recoveryExitMaxAbsAngle);
+    readScalarIfPresent(walkingBalance,
+                        "recovery_min_com_height",
+                        params.walkingBalance.recoveryMinComHeight);
+    readScalarIfPresent(walkingBalance,
+                        "recovery_min_hold_time",
+                        params.walkingBalance.recoveryMinHoldTime);
+
     const YAML::Node contactManager = config["contact_manager"];
     readScalarIfPresent(contactManager,
                         "contact_force_on_threshold",
@@ -267,6 +335,12 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(contactManager,
                         "ground_search_max_depth",
                         params.contactManager.groundSearchMaxDepth);
+    readScalarIfPresent(contactManager,
+                        "ground_search_tracking_time",
+                        params.contactManager.groundSearchTrackingTime);
+    readScalarIfPresent(contactManager,
+                        "stance_contact_loss_foot_height",
+                        params.contactManager.stanceContactLossFootHeight);
     readScalarIfPresent(contactManager,
                         "enable_early_contact_handling",
                         params.contactManager.enableEarlyContactHandling);
@@ -349,12 +423,53 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; attitude gains must be non-negative");
     }
+    if (!std::isfinite(params.walkingBalance.supportPreviewTime) ||
+        !std::isfinite(params.walkingBalance.lateralShiftFraction) ||
+        !std::isfinite(params.walkingBalance.foreAftShiftFraction) ||
+        !std::isfinite(params.walkingBalance.shiftSmoothingTime) ||
+        !std::isfinite(params.walkingBalance.lateralRollGain) ||
+        !std::isfinite(params.walkingBalance.maxRollLean) ||
+        !std::isfinite(params.walkingBalance.rollSmoothingTime) ||
+        !std::isfinite(params.walkingBalance.liftoffComLateralFraction) ||
+        !std::isfinite(params.walkingBalance.liftoffComLateralTolerance) ||
+        !std::isfinite(params.walkingBalance.liftoffMaxDelay) ||
+        !std::isfinite(params.walkingBalance.liftoffMaxAbsRoll) ||
+        !std::isfinite(params.walkingBalance.liftoffMaxAbsRollRate) ||
+        !std::isfinite(params.walkingBalance.liftoffMinComHeight) ||
+        !std::isfinite(params.walkingBalance.liftoffMaxHoldFootHeight) ||
+        !std::isfinite(params.walkingBalance.recoveryEnterMaxAbsAngle) ||
+        !std::isfinite(params.walkingBalance.recoveryExitMaxAbsAngle) ||
+        !std::isfinite(params.walkingBalance.recoveryMinComHeight) ||
+        !std::isfinite(params.walkingBalance.recoveryMinHoldTime) ||
+        params.walkingBalance.supportPreviewTime < 0.0 ||
+        params.walkingBalance.lateralShiftFraction < 0.0 ||
+        params.walkingBalance.foreAftShiftFraction < 0.0 ||
+        params.walkingBalance.shiftSmoothingTime < 0.0 ||
+        params.walkingBalance.lateralRollGain < 0.0 ||
+        params.walkingBalance.maxRollLean < 0.0 ||
+        params.walkingBalance.rollSmoothingTime < 0.0 ||
+        params.walkingBalance.liftoffComLateralFraction < 0.0 ||
+        params.walkingBalance.liftoffComLateralTolerance < 0.0 ||
+        params.walkingBalance.liftoffMaxDelay < 0.0 ||
+        params.walkingBalance.liftoffMaxAbsRoll < 0.0 ||
+        params.walkingBalance.liftoffMaxAbsRollRate < 0.0 ||
+        params.walkingBalance.liftoffMinComHeight < 0.0 ||
+        params.walkingBalance.liftoffMaxHoldFootHeight < 0.0 ||
+        params.walkingBalance.recoveryEnterMaxAbsAngle < 0.0 ||
+        params.walkingBalance.recoveryExitMaxAbsAngle < 0.0 ||
+        params.walkingBalance.recoveryMinComHeight < 0.0 ||
+        params.walkingBalance.recoveryMinHoldTime < 0.0) {
+        throw std::runtime_error(
+            "walking_balance support-shift parameters must be finite and non-negative");
+    }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
         !std::isfinite(params.contactManager.contactForceOffThreshold) ||
         !std::isfinite(params.contactManager.contactRampDuration) ||
         !std::isfinite(params.contactManager.lateContactTimeout) ||
         !std::isfinite(params.contactManager.groundSearchVelocity) ||
         !std::isfinite(params.contactManager.groundSearchMaxDepth) ||
+        !std::isfinite(params.contactManager.groundSearchTrackingTime) ||
+        !std::isfinite(params.contactManager.stanceContactLossFootHeight) ||
         params.contactManager.contactForceOnThreshold < 0.0 ||
         params.contactManager.contactForceOffThreshold < 0.0 ||
         params.contactManager.contactForceOnThreshold < params.contactManager.contactForceOffThreshold ||
@@ -364,7 +479,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.contactManager.contactLockSteps < 0 ||
         params.contactManager.lateContactTimeout < 0.0 ||
         params.contactManager.groundSearchVelocity < 0.0 ||
-        params.contactManager.groundSearchMaxDepth < 0.0) {
+        params.contactManager.groundSearchMaxDepth < 0.0 ||
+        params.contactManager.groundSearchTrackingTime <= 0.0 ||
+        params.contactManager.stanceContactLossFootHeight < 0.0) {
         throw std::runtime_error(
             "contact_manager thresholds, ticks, ramp, lock steps, timeout, and ground-search parameters are invalid");
     }

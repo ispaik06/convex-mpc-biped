@@ -1,8 +1,14 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <thread>
 
@@ -12,6 +18,7 @@
 #include "RobotConfig.h"
 #include "SimulationConfig.h"
 #include "SimulationRunner.h"
+#include "Utilities/MatrixUtils.h"
 #include "ViewerSyncThrottle.h"
 #include "setupRobotParams.h"
 
@@ -19,6 +26,54 @@ namespace {
 
 bool standingKeyboardControlsFromRequest(const LegDynamicsRequest& request) {
 	return request.standingFootJacobians;
+}
+
+Vec2<double> rollPitchFromQuaternion(Quat<double> quat) {
+	quat.normalize();
+	const double w = quat.w();
+	const double x = quat.x();
+	const double y = quat.y();
+	const double z = quat.z();
+
+	Vec2<double> rollPitch = Vec2<double>::Zero();
+	rollPitch[0] = std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
+	const double sinPitch = std::clamp(2.0 * (w * y - z * x), -1.0, 1.0);
+	rollPitch[1] = std::asin(sinPitch);
+	return rollPitch;
+}
+
+int legControlModeCode(const LegControlMode mode) {
+	switch (mode) {
+		case LegControlMode::JointPd:
+			return 0;
+		case LegControlMode::JointTorque:
+			return 1;
+		case LegControlMode::SwingFoot:
+			return 2;
+		case LegControlMode::StanceWrench:
+			return 3;
+	}
+	return -1;
+}
+
+void writeVec3Csv(std::ostream& out, const Vec3<double>& value) {
+	out << value.x() << ',' << value.y() << ',' << value.z();
+}
+
+const ControllerContactDebugLegState* contactDebugForSide(
+	const std::vector<ControllerContactDebugLegState>& states,
+	const Side side) {
+	for (const auto& state : states) {
+		if (state.side == side) {
+			return &state;
+		}
+	}
+	return nullptr;
+}
+
+std::filesystem::path defaultHeadlessTelemetryPath() {
+	return std::filesystem::path("logs") / "debug" / "headless_telemetry" /
+	       "walking_telemetry.csv";
 }
 
 void applyMarkerColor(mjModel* model, const int bodyId, const DebugVizMarker<double>& marker) {
@@ -110,6 +165,16 @@ void SimulationRunner::run() {
 void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 	const auto wallStart = std::chrono::steady_clock::now();
 	const double simStart = data->time;
+	double headlessStopTime = 0.0;
+	if (_headless) {
+		const char* stopEnv = std::getenv("CONVEXMPC_HEADLESS_STOP_TIME");
+		if (stopEnv != nullptr && std::string(stopEnv).size() > 0) {
+			const double stopTime = std::atof(stopEnv);
+			if (std::isfinite(stopTime) && stopTime > 0.0) {
+				headlessStopTime = stopTime;
+			}
+		}
+	}
 	const auto& simulationConfig = getSimulationConfig();
 	const auto viewerSyncPeriod =
 		std::chrono::duration_cast<std::chrono::steady_clock::duration>(
@@ -126,6 +191,10 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 		runRobotControl();
 		mj_step(model, data);
 		++_iterations;
+
+		if (headlessStopTime > 0.0 && data->time - simStart >= headlessStopTime) {
+			_stopRequested = true;
+		}
 
 		if (syncViewer && sim::shouldSyncViewer(nextViewerSync, viewerSyncPeriod)) {
 			_mainThread.sync();
@@ -192,6 +261,204 @@ void SimulationRunner::runRobotControl() {
 	applyFixedJointCommands();
 	updateDebugVisualization();
 	applyRobotCommand();
+	writeHeadlessTelemetry();
+}
+
+void SimulationRunner::writeHeadlessTelemetry() {
+	if (!_headlessTelemetryInitialized) {
+		_headlessTelemetryInitialized = true;
+		const char* telemetryEnv = std::getenv("CONVEXMPC_HEADLESS_TELEMETRY");
+		if (!_headless || telemetryEnv == nullptr || std::string(telemetryEnv).empty() ||
+		    std::string(telemetryEnv) == "0") {
+			return;
+		}
+
+		const char* intervalEnv = std::getenv("CONVEXMPC_HEADLESS_TELEMETRY_DT");
+		if (intervalEnv != nullptr && std::string(intervalEnv).size() > 0) {
+			const double interval = std::atof(intervalEnv);
+			if (std::isfinite(interval) && interval > 0.0) {
+				_headlessTelemetryInterval = interval;
+			}
+		}
+
+		std::filesystem::path path =
+			std::string(telemetryEnv) == "1" ? defaultHeadlessTelemetryPath()
+			                                 : std::filesystem::path(telemetryEnv);
+		if (path.is_relative()) {
+			path = std::filesystem::current_path() / path;
+		}
+		if (path.has_parent_path()) {
+			std::filesystem::create_directories(path.parent_path());
+		}
+
+		_headlessTelemetryPath = path.string();
+		_headlessTelemetryOut = std::make_unique<std::ofstream>(path, std::ios::out | std::ios::trunc);
+		if (!_headlessTelemetryOut->is_open()) {
+			std::cerr << "[HeadlessTelemetry] failed to open " << _headlessTelemetryPath
+			          << std::endl;
+			_headlessTelemetryOut.reset();
+			return;
+		}
+
+		auto& out = *_headlessTelemetryOut;
+		out << "time,com_x,com_y,com_z,roll,pitch,yaw,vx,vy,vz,wx,wy,wz,"
+		       "target_x,target_y,target_z,target_roll,target_pitch,target_yaw,"
+		       "gait_recovery_hold,gait_recovery_hold_time,"
+		       "total_actual_fz,total_desired_fz,torque_norm,"
+		       "total_actual_mx,total_actual_my,total_actual_mz,"
+		       "total_desired_mx,total_desired_my,total_desired_mz";
+		for (const char* prefix : {"left", "right"}) {
+			out << ',' << prefix << "_mode"
+			    << ',' << prefix << "_contact"
+			    << ',' << prefix << "_cm_scheduled"
+			    << ',' << prefix << "_cm_estimated"
+			    << ',' << prefix << "_cm_active"
+			    << ',' << prefix << "_cm_early"
+			    << ',' << prefix << "_cm_late"
+			    << ',' << prefix << "_cm_liftoff_hold"
+			    << ',' << prefix << "_cm_search"
+			    << ',' << prefix << "_cm_fail"
+			    << ',' << prefix << "_cm_alpha"
+			    << ',' << prefix << "_cm_late_time"
+			    << ',' << prefix << "_cm_liftoff_hold_time"
+			    << ',' << prefix << "_fn"
+			    << ',' << prefix << "_foot_x"
+			    << ',' << prefix << "_foot_y"
+			    << ',' << prefix << "_foot_z"
+			    << ',' << prefix << "_actual_fx"
+			    << ',' << prefix << "_actual_fy"
+			    << ',' << prefix << "_actual_fz"
+			    << ',' << prefix << "_desired_fx"
+			    << ',' << prefix << "_desired_fy"
+			    << ',' << prefix << "_desired_fz"
+			    << ',' << prefix << "_desired_mx"
+			    << ',' << prefix << "_desired_my"
+			    << ',' << prefix << "_desired_mz"
+			    << ',' << prefix << "_force_error_norm";
+		}
+		out << '\n';
+		std::cout << "[HeadlessTelemetry] writing " << _headlessTelemetryPath
+		          << " dt=" << _headlessTelemetryInterval << " sec" << std::endl;
+	}
+
+	if (_headlessTelemetryOut == nullptr || data == nullptr ||
+	    data->time + 1e-12 < _nextHeadlessTelemetryTime) {
+		return;
+	}
+	_nextHeadlessTelemetryTime = data->time + _headlessTelemetryInterval;
+
+	const LegController<double>* legController =
+		_robotRunner != nullptr ? _robotRunner->legController() : nullptr;
+	if (legController == nullptr || _stateEstimate.legs.size() < 2 ||
+	    legController->commands.size() < 2) {
+		return;
+	}
+
+	const Vec3<double> com_W =
+		_stateEstimate.torsoPos_W + Rz(_stateEstimate.psi) * _params.bodyComLocation;
+	const Vec2<double> rollPitch = rollPitchFromQuaternion(_stateEstimate.torsoQuat_W);
+	const double totalActualFz =
+		_stateEstimate.legs[0].contactForce_W.z() + _stateEstimate.legs[1].contactForce_W.z();
+
+	Vec3<double> desiredForceLeft_W = Vec3<double>::Zero();
+	Vec3<double> desiredForceRight_W = Vec3<double>::Zero();
+	Vec3<double> desiredMomentLeft_W = Vec3<double>::Zero();
+	Vec3<double> desiredMomentRight_W = Vec3<double>::Zero();
+	if (legController->commands[0].mode == LegControlMode::StanceWrench) {
+		desiredForceLeft_W = -legController->commands[0].forceFeedForward_W;
+		desiredMomentLeft_W = -legController->commands[0].momentFeedForward_W;
+	}
+	if (legController->commands[1].mode == LegControlMode::StanceWrench) {
+		desiredForceRight_W = -legController->commands[1].forceFeedForward_W;
+		desiredMomentRight_W = -legController->commands[1].momentFeedForward_W;
+	}
+	const double totalDesiredFz = desiredForceLeft_W.z() + desiredForceRight_W.z();
+	const Vec3<double> totalActualMoment_W =
+		(_stateEstimate.legs[0].footPos_W - com_W).cross(_stateEstimate.legs[0].contactForce_W) +
+		(_stateEstimate.legs[1].footPos_W - com_W).cross(_stateEstimate.legs[1].contactForce_W);
+	const Vec3<double> totalDesiredMoment_W =
+		(_stateEstimate.legs[0].footPos_W - com_W).cross(desiredForceLeft_W) +
+		desiredMomentLeft_W +
+		(_stateEstimate.legs[1].footPos_W - com_W).cross(desiredForceRight_W) +
+		desiredMomentRight_W;
+	const std::vector<ControllerContactDebugLegState> contactDebugStates =
+		(_robotRunner != nullptr && _robotRunner->_robot_ctrl != nullptr)
+			? _robotRunner->_robot_ctrl->contactDebugLegStates()
+			: std::vector<ControllerContactDebugLegState>{};
+	const ControllerBodyTargetDebugState bodyTargetDebug =
+		(_robotRunner != nullptr && _robotRunner->_robot_ctrl != nullptr)
+			? _robotRunner->_robot_ctrl->bodyTargetDebugState()
+			: ControllerBodyTargetDebugState{};
+
+	auto& out = *_headlessTelemetryOut;
+	out << std::fixed << std::setprecision(6)
+	    << _stateEstimate.time << ',';
+	writeVec3Csv(out, com_W);
+	out << ',' << rollPitch.x()
+	    << ',' << rollPitch.y()
+	    << ',' << _stateEstimate.psi
+	    << ',';
+	writeVec3Csv(out, _stateEstimate.torsoLinVel_W);
+	out << ',';
+	writeVec3Csv(out, _stateEstimate.torsoAngVel_W);
+	out << ',';
+	writeVec3Csv(out,
+	             bodyTargetDebug.initialized ? bodyTargetDebug.position_W
+	                                         : Vec3<double>::Constant(std::numeric_limits<double>::quiet_NaN()));
+	out << ',';
+	writeVec3Csv(out,
+	             bodyTargetDebug.initialized ? bodyTargetDebug.euler_W
+	                                         : Vec3<double>::Constant(std::numeric_limits<double>::quiet_NaN()));
+	out << ',' << static_cast<int>(bodyTargetDebug.gaitRecoveryHoldActive)
+	    << ',' << bodyTargetDebug.gaitRecoveryHoldTime
+	    << ',' << totalActualFz
+	    << ',' << totalDesiredFz
+	    << ',' << _robotCommand.tau.norm()
+	    << ',';
+	writeVec3Csv(out, totalActualMoment_W);
+	out << ',';
+	writeVec3Csv(out, totalDesiredMoment_W);
+
+	for (std::size_t leg = 0; leg < 2; ++leg) {
+		const auto& state = _stateEstimate.legs[leg];
+		const auto& command = legController->commands[leg];
+		const Side side = leg == 0 ? Side::Left : Side::Right;
+		const ControllerContactDebugLegState* contactDebug =
+			contactDebugForSide(contactDebugStates, side);
+		Vec3<double> desiredForce_W = Vec3<double>::Zero();
+		Vec3<double> desiredMoment_W = Vec3<double>::Zero();
+		if (command.mode == LegControlMode::StanceWrench) {
+			desiredForce_W = -command.forceFeedForward_W;
+			desiredMoment_W = -command.momentFeedForward_W;
+		}
+		const double forceErrorNorm = (desiredForce_W - state.contactForce_W).norm();
+
+		out << ',' << legControlModeCode(command.mode)
+		    << ',' << static_cast<int>(state.contact)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->scheduledContact) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->estimatedContact) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->activeContact) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->earlyContact) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->lateContact) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->liftoffHold) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->searchModeActive) : -1)
+		    << ',' << (contactDebug != nullptr ? static_cast<int>(contactDebug->recoveryFailure) : -1)
+		    << ',' << (contactDebug != nullptr ? contactDebug->contactRampAlpha : -1.0)
+		    << ',' << (contactDebug != nullptr ? contactDebug->lateContactTime : -1.0)
+		    << ',' << (contactDebug != nullptr ? contactDebug->liftoffHoldTime : -1.0)
+		    << ',' << state.contactNormalForce
+		    << ',' << state.footPos_W.x()
+		    << ',' << state.footPos_W.y()
+		    << ',' << state.footPos_W.z()
+		    << ',';
+		writeVec3Csv(out, state.contactForce_W);
+		out << ',';
+		writeVec3Csv(out, desiredForce_W);
+		out << ',';
+		writeVec3Csv(out, desiredMoment_W);
+		out << ',' << forceErrorNorm;
+	}
+	out << '\n';
 }
 
 void SimulationRunner::applyFixedJointCommands() {

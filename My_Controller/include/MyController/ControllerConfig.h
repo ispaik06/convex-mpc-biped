@@ -76,6 +76,31 @@ struct FootPlacementParameters {
     double swingBias{0.0};
 };
 
+struct WalkingBalanceParameters {
+    bool enableSupportShift{true};
+    double supportPreviewTime{0.25};
+    double lateralShiftFraction{0.85};
+    double foreAftShiftFraction{0.0};
+    double shiftSmoothingTime{0.04};
+    bool enableSupportRollLean{true};
+    double lateralRollGain{1.0};
+    double maxRollLean{0.12};
+    double rollSmoothingTime{0.06};
+    bool enableLiftoffGuard{true};
+    double liftoffComLateralFraction{0.45};
+    double liftoffComLateralTolerance{0.015};
+    double liftoffMaxDelay{0.18};
+    double liftoffMaxAbsRoll{0.30};
+    double liftoffMaxAbsRollRate{1.20};
+    double liftoffMinComHeight{0.58};
+    double liftoffMaxHoldFootHeight{0.035};
+    bool enableRecoveryHold{true};
+    double recoveryEnterMaxAbsAngle{0.45};
+    double recoveryExitMaxAbsAngle{0.25};
+    double recoveryMinComHeight{0.58};
+    double recoveryMinHoldTime{0.20};
+};
+
 struct ContactManagerParameters {
     double contactForceOnThreshold{20.0};
     double contactForceOffThreshold{5.0};
@@ -86,6 +111,8 @@ struct ContactManagerParameters {
     double lateContactTimeout{0.20};
     double groundSearchVelocity{0.08};
     double groundSearchMaxDepth{0.04};
+    double groundSearchTrackingTime{0.08};
+    double stanceContactLossFootHeight{0.025};
     bool enableEarlyContactHandling{true};
     bool enableLateContactHandling{true};
 };
@@ -122,6 +149,7 @@ struct ControllerConfig {
     MPCParameters mpc;
     SwingParameters swing;
     FootPlacementParameters footPlacement;
+    WalkingBalanceParameters walkingBalance;
     ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;

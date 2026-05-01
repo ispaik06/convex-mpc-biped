@@ -29,6 +29,8 @@ public:
 
 	virtual void runController() override;
 	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const override;
+	virtual std::vector<ControllerContactDebugLegState> contactDebugLegStates() const override;
+	virtual ControllerBodyTargetDebugState bodyTargetDebugState() const override;
 	virtual bool usesStandingOnlyLegDynamics() const override;
 
 private:
@@ -47,6 +49,7 @@ private:
 		SwingFootTrajectory swingTrajectory;
 		double touchdownYaw_W{0.0};
 		bool wasInStance{true};
+		bool wasSearchMode{false};
 	};
 
 	static Mat3<double> makeDiagonal(double x, double y, double z);
@@ -59,6 +62,8 @@ private:
 	void applyLocomotionOutput(const LocomotionFSMOutput& output);
 	LocomotionFSMOutput syncLocomotionFSM();
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
+	void syncGaitRecoveryClock();
+	void updateGaitRecoveryHold(const Vec13<double>& x0);
 	bool activeContactForSide(Side side, double time) const;
 	double contactRampAlphaForSide(Side side) const;
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
@@ -81,11 +86,13 @@ private:
 	u64 _lastMpcIteration{0};
 	bool _standingMpcDebugLogPending{false};
 	bool _standingMpcDebugLogReady{false};
+	bool _gaitRecoveryHoldActive{false};
 	unsigned long long _lastStandingMpcDebugLogRequest{0};
 	std::size_t _nextStandingMpcDebugTriggerIndex{0};
 	std::string _standingMpcDebugRequestSource;
 	double _standingMpcDebugRequestTime{0.0};
 	double _standingMpcDebugTriggerTime{0.0};
+	double _gaitRecoveryHoldStartTime{0.0};
 	double _lastControlTime{0.0};
 	Vec12<double> _stanceWrenchWorld = Vec12<double>::Zero();
 	vectorAligned<LegRuntimeState> _legRuntime;

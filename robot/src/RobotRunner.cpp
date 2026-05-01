@@ -257,3 +257,7 @@ bool RobotRunner::armInitializationComplete() const {
 bool RobotRunner::initializationComplete() const {
     return _legInitializationComplete && _armInitializationComplete;
 }
+
+const LegController<double>* RobotRunner::legController() const {
+    return _legController.get();
+}

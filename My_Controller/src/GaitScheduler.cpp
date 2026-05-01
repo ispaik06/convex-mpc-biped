@@ -95,16 +95,16 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
         Mat12<double> C_right = Mat12<double>::Zero();
         bool leftStance = c(Side::Left, tk);
         bool rightStance = c(Side::Right, tk);
-        double leftNormalForceScale = 1.0;
-        double rightNormalForceScale = 1.0;
+        double leftNormalForceMinScale = 1.0;
+        double rightNormalForceMinScale = 1.0;
         if (contactOverride != nullptr &&
             k < static_cast<int>(contactOverride->steps.size()) &&
             contactOverride->steps[static_cast<std::size_t>(k)].enabled) {
             const auto& step = contactOverride->steps[static_cast<std::size_t>(k)];
             leftStance = step.leftContact;
             rightStance = step.rightContact;
-            leftNormalForceScale = std::clamp(step.leftNormalForceScale, 0.0, 1.0);
-            rightNormalForceScale = std::clamp(step.rightNormalForceScale, 0.0, 1.0);
+            leftNormalForceMinScale = std::clamp(step.leftNormalForceMinScale, 0.0, 1.0);
+            rightNormalForceMinScale = std::clamp(step.rightNormalForceMinScale, 0.0, 1.0);
         }
 
         if (!leftStance) {  // swing
@@ -113,8 +113,8 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
         else {  // stance
             C_left.block<12, 3>(0, 0) = C_unit.block<12, 3>(0, 0);
             C_left.block<12, 3>(0, 6) = C_unit.block<12, 3>(0, 3);
-            Ck_bound(4) = leftNormalForceScale * mpc.normalForceMax;
-            Ck_bound(5) = -leftNormalForceScale * mpc.normalForceMin;
+            Ck_bound(4) = mpc.normalForceMax;
+            Ck_bound(5) = -leftNormalForceMinScale * mpc.normalForceMin;
         }
 
         if (!rightStance) {  // swing
@@ -123,8 +123,8 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
         else {  // stance
             C_right.block<12, 3>(0, 3) = C_unit.block<12, 3>(0, 0);
             C_right.block<12, 3>(0, 9) = C_unit.block<12, 3>(0, 3);
-            Ck_bound(16) = rightNormalForceScale * mpc.normalForceMax;
-            Ck_bound(17) = -rightNormalForceScale * mpc.normalForceMin;
+            Ck_bound(16) = mpc.normalForceMax;
+            Ck_bound(17) = -rightNormalForceMinScale * mpc.normalForceMin;
         }
 
         Mat12<double> Dk = Mat12<double>::Zero();

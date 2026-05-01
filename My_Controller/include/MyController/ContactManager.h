@@ -18,10 +18,12 @@ struct ContactManagerLegState {
     bool activeContact{true};
     bool earlyContact{false};
     bool lateContact{false};
+    bool liftoffHold{false};
     bool searchModeActive{false};
     bool recoveryFailure{false};
     double contactRampAlpha{1.0};
     double lateContactTime{0.0};
+    double liftoffHoldTime{0.0};
     double contactNormalForce{0.0};
     Vec3<double> frozenTouchdownPosition_W = Vec3<double>::Zero();
     Vec3<double> commandedFootTarget_W = Vec3<double>::Zero();
@@ -42,7 +44,8 @@ public:
                 const RobotParams<double>& robotParams,
                 const GaitScheduler& gaitScheduler,
                 LocomotionMode locomotionMode,
-                const DesiredFootPositions& nominalDesiredFootPositions);
+                const DesiredFootPositions& nominalDesiredFootPositions,
+                bool recoveryHoldActive = false);
 
     bool activeContact(Side side) const;
     bool scheduledContact(Side side) const;
@@ -64,12 +67,15 @@ private:
         bool initialized{false};
         bool rawContactEstimate{true};
         bool previousActiveContact{true};
+        bool previousScheduledContact{true};
         bool previousLateContact{false};
         bool releasedContactDuringSwing{false};
+        bool liftoffReleasedDuringSwing{false};
         int contactOnTicks{0};
         int contactOffTicks{0};
         double contactRampTime{0.0};
         double searchDepth{0.0};
+        double liftoffHoldTime{0.0};
     };
 
     RuntimeLegState& runtimeForSide(Side side);
@@ -78,6 +84,11 @@ private:
     void ensureRuntimeLayout(const RobotParams<double>& robotParams);
     bool updateEstimatedContact(RuntimeLegState& runtime,
                                 const RobotLegState<double>& legState) const;
+    bool shouldHoldLiftoff(RuntimeLegState& runtime,
+                           const ContactManagerLegState& state,
+                           const StateEstimate<double>& stateEstimate,
+                           const RobotParams<double>& robotParams,
+                           double dt) const;
     Vec3<double> nominalDesiredFootPosition(const DesiredFootPositions& desiredFootPositions,
                                             Side side) const;
 

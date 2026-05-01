@@ -7,8 +7,8 @@ struct ContactScheduleOverrideStep {
     bool enabled{false};
     bool leftContact{true};
     bool rightContact{true};
-    double leftNormalForceScale{1.0};
-    double rightNormalForceScale{1.0};
+    double leftNormalForceMinScale{1.0};
+    double rightNormalForceMinScale{1.0};
 };
 
 struct ContactScheduleOverride {
