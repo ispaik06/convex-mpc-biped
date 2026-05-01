@@ -103,9 +103,8 @@ Important sections:
 - `gait_swing_hold_test.xml_path`: MuJoCo scene XML loaded by `GaitSwingHoldTestRunner`.
 - `model.xml_path`: fallback MuJoCo scene XML if the test-specific path is empty.
 - `timing`: swing/stance durations.
-- `swing`: swing height, gains, touchdown target mode defaults.
+- `swing`: swing height and gains.
 - `foot_placement`: placement feedback/clamps.
-- `gait_swing_hold_test.touchdown_target_mode`: overrides the touchdown target mode for this test.
 
 ## Notes
 

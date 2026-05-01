@@ -89,7 +89,7 @@ Vec3<double> readVec3(const YAML::Node& node, const char* keyName) {
     return Vec3<double>(node[0].as<double>(), node[1].as<double>(), node[2].as<double>());
 }
 
-LocomotionMode parseLocomotionMode(const YAML::Node& node) {
+LocomotionMode parseLocomotionMode(const YAML::Node& node, const char* keyName) {
     if (!node || !node.IsScalar()) {
         return LocomotionMode::Walking;
     }
@@ -102,25 +102,8 @@ LocomotionMode parseLocomotionMode(const YAML::Node& node) {
         return LocomotionMode::Standing;
     }
 
-    throw std::runtime_error(
-        "Invalid locomotion_mode. Expected one of: walking, walk, standing, stand");
-}
-
-TouchdownTargetMode parseTouchdownTargetMode(const YAML::Node& node) {
-    if (!node || !node.IsScalar()) {
-        return TouchdownTargetMode::BodyVelocityHalfStance;
-    }
-
-    const std::string mode = node.as<std::string>();
-    if (mode == "body_velocity_half_stance") {
-        return TouchdownTargetMode::BodyVelocityHalfStance;
-    }
-    if (mode == "legacy_com_yaw_corrected") {
-        return TouchdownTargetMode::LegacyComYawCorrected;
-    }
-
-    throw std::runtime_error(
-        "Invalid swing.touchdown_target_mode. Expected body_velocity_half_stance or legacy_com_yaw_corrected");
+    throw std::runtime_error(std::string("Invalid ") + keyName +
+                             ". Expected one of: walking, walk, standing, stand");
 }
 
 FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
@@ -141,9 +124,12 @@ FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
         "Invalid model.foot_end_effector_source. Expected site or collision_geom_center");
 }
 
-ContactWrenchModel parseContactWrenchModel(const YAML::Node& node) {
+ContactWrenchModel parseContactWrenchModel(const YAML::Node& node,
+                                           const char* keyName,
+                                           const ContactWrenchModel defaultModel =
+                                               ContactWrenchModel::FullWrench) {
     if (!node || !node.IsScalar()) {
-        return ContactWrenchModel::FullWrench;
+        return defaultModel;
     }
 
     const std::string model = node.as<std::string>();
@@ -154,8 +140,8 @@ ContactWrenchModel parseContactWrenchModel(const YAML::Node& node) {
         return ContactWrenchModel::NoRollMoment;
     }
 
-    throw std::runtime_error(
-        "Invalid mpc.contact_wrench_model. Expected full_wrench or no_roll_moment");
+    throw std::runtime_error(std::string("Invalid ") + keyName +
+                             ". Expected full_wrench or no_roll_moment");
 }
 
 ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
@@ -171,7 +157,11 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                                  + ": " + exception.what());
     }
 
-    params.locomotionMode = parseLocomotionMode(config["locomotion_mode"]);
+    const YAML::Node requestedLocomotionMode =
+        config["requested_locomotion_mode"] ? config["requested_locomotion_mode"]
+                                            : config["locomotion_mode"];
+    params.requestedLocomotionMode =
+        parseLocomotionMode(requestedLocomotionMode, "requested_locomotion_mode");
 
     const YAML::Node timing = config["timing"];
     readScalarIfPresent(timing, "cycle", params.timing.cycle);
@@ -195,7 +185,16 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(mpc, "normal_force_max", params.mpc.normalForceMax);
     readScalarIfPresent(mpc, "normal_force_min", params.mpc.normalForceMin);
     readScalarIfPresent(mpc, "iterations_between_solve", params.mpc.iterationsBetweenSolve);
-    params.mpc.contactWrenchModel = parseContactWrenchModel(mpc["contact_wrench_model"]);
+    const ContactWrenchModel defaultContactWrenchModel =
+        parseContactWrenchModel(mpc["contact_wrench_model"], "mpc.contact_wrench_model");
+    params.mpc.walkingContactWrenchModel =
+        parseContactWrenchModel(mpc["walking"]["contact_wrench_model"],
+                                "mpc.walking.contact_wrench_model",
+                                defaultContactWrenchModel);
+    params.mpc.standingContactWrenchModel =
+        parseContactWrenchModel(mpc["standing"]["contact_wrench_model"],
+                                "mpc.standing.contact_wrench_model",
+                                defaultContactWrenchModel);
     readModeWeights(mpc["walking"],
                     "walking",
                     params.mpc.walkingStateWeight,
@@ -222,7 +221,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
     readScalarIfPresent(swing, "yaw_kd", params.swing.yawKd);
-    params.swing.touchdownTargetMode = parseTouchdownTargetMode(swing["touchdown_target_mode"]);
 
     const YAML::Node footPlacement = config["foot_placement"];
     readScalarIfPresent(footPlacement,
@@ -238,74 +236,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         "nominal_lateral_offset",
                         params.footPlacement.nominalLateralOffset);
     readScalarIfPresent(footPlacement, "swing_bias", params.footPlacement.swingBias);
-
-    const YAML::Node walkingBalance = config["walking_balance"];
-    readScalarIfPresent(walkingBalance,
-                        "enable_support_shift",
-                        params.walkingBalance.enableSupportShift);
-    readScalarIfPresent(walkingBalance,
-                        "support_preview_time",
-                        params.walkingBalance.supportPreviewTime);
-    readScalarIfPresent(walkingBalance,
-                        "lateral_shift_fraction",
-                        params.walkingBalance.lateralShiftFraction);
-    readScalarIfPresent(walkingBalance,
-                        "fore_aft_shift_fraction",
-                        params.walkingBalance.foreAftShiftFraction);
-    readScalarIfPresent(walkingBalance,
-                        "shift_smoothing_time",
-                        params.walkingBalance.shiftSmoothingTime);
-    readScalarIfPresent(walkingBalance,
-                        "enable_support_roll_lean",
-                        params.walkingBalance.enableSupportRollLean);
-    readScalarIfPresent(walkingBalance,
-                        "lateral_roll_gain",
-                        params.walkingBalance.lateralRollGain);
-    readScalarIfPresent(walkingBalance,
-                        "max_roll_lean",
-                        params.walkingBalance.maxRollLean);
-    readScalarIfPresent(walkingBalance,
-                        "roll_smoothing_time",
-                        params.walkingBalance.rollSmoothingTime);
-    readScalarIfPresent(walkingBalance,
-                        "enable_liftoff_guard",
-                        params.walkingBalance.enableLiftoffGuard);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_com_lateral_fraction",
-                        params.walkingBalance.liftoffComLateralFraction);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_com_lateral_tolerance",
-                        params.walkingBalance.liftoffComLateralTolerance);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_max_delay",
-                        params.walkingBalance.liftoffMaxDelay);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_max_abs_roll",
-                        params.walkingBalance.liftoffMaxAbsRoll);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_max_abs_roll_rate",
-                        params.walkingBalance.liftoffMaxAbsRollRate);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_min_com_height",
-                        params.walkingBalance.liftoffMinComHeight);
-    readScalarIfPresent(walkingBalance,
-                        "liftoff_max_hold_foot_height",
-                        params.walkingBalance.liftoffMaxHoldFootHeight);
-    readScalarIfPresent(walkingBalance,
-                        "enable_recovery_hold",
-                        params.walkingBalance.enableRecoveryHold);
-    readScalarIfPresent(walkingBalance,
-                        "recovery_enter_max_abs_angle",
-                        params.walkingBalance.recoveryEnterMaxAbsAngle);
-    readScalarIfPresent(walkingBalance,
-                        "recovery_exit_max_abs_angle",
-                        params.walkingBalance.recoveryExitMaxAbsAngle);
-    readScalarIfPresent(walkingBalance,
-                        "recovery_min_com_height",
-                        params.walkingBalance.recoveryMinComHeight);
-    readScalarIfPresent(walkingBalance,
-                        "recovery_min_hold_time",
-                        params.walkingBalance.recoveryMinHoldTime);
 
     const YAML::Node contactManager = config["contact_manager"];
     readScalarIfPresent(contactManager,
@@ -349,7 +279,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         params.contactManager.enableLateContactHandling);
 
     const YAML::Node logging = config["logging"];
-    readScalarIfPresent(logging, "gait_status_interval", params.logging.gaitStatusInterval);
     readVectorIfPresent(logging,
                         "standing_mpc_debug_trigger_times",
                         params.logging.standingMpcDebugTriggerTimes);
@@ -402,8 +331,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(gaitSwingHoldTest,
                         "xml_path",
                         params.gaitSwingHoldTest.xmlPath);
-    params.gaitSwingHoldTest.touchdownTargetMode =
-        parseTouchdownTargetMode(gaitSwingHoldTest["touchdown_target_mode"]);
 
     if (params.timing.cycle <= 0.0 || params.timing.swing <= 0.0 || params.timing.stance <= 0.0 ||
         params.timing.horizon <= 0.0 || params.timing.horizonSteps <= 0) {
@@ -422,45 +349,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; attitude gains must be non-negative");
-    }
-    if (!std::isfinite(params.walkingBalance.supportPreviewTime) ||
-        !std::isfinite(params.walkingBalance.lateralShiftFraction) ||
-        !std::isfinite(params.walkingBalance.foreAftShiftFraction) ||
-        !std::isfinite(params.walkingBalance.shiftSmoothingTime) ||
-        !std::isfinite(params.walkingBalance.lateralRollGain) ||
-        !std::isfinite(params.walkingBalance.maxRollLean) ||
-        !std::isfinite(params.walkingBalance.rollSmoothingTime) ||
-        !std::isfinite(params.walkingBalance.liftoffComLateralFraction) ||
-        !std::isfinite(params.walkingBalance.liftoffComLateralTolerance) ||
-        !std::isfinite(params.walkingBalance.liftoffMaxDelay) ||
-        !std::isfinite(params.walkingBalance.liftoffMaxAbsRoll) ||
-        !std::isfinite(params.walkingBalance.liftoffMaxAbsRollRate) ||
-        !std::isfinite(params.walkingBalance.liftoffMinComHeight) ||
-        !std::isfinite(params.walkingBalance.liftoffMaxHoldFootHeight) ||
-        !std::isfinite(params.walkingBalance.recoveryEnterMaxAbsAngle) ||
-        !std::isfinite(params.walkingBalance.recoveryExitMaxAbsAngle) ||
-        !std::isfinite(params.walkingBalance.recoveryMinComHeight) ||
-        !std::isfinite(params.walkingBalance.recoveryMinHoldTime) ||
-        params.walkingBalance.supportPreviewTime < 0.0 ||
-        params.walkingBalance.lateralShiftFraction < 0.0 ||
-        params.walkingBalance.foreAftShiftFraction < 0.0 ||
-        params.walkingBalance.shiftSmoothingTime < 0.0 ||
-        params.walkingBalance.lateralRollGain < 0.0 ||
-        params.walkingBalance.maxRollLean < 0.0 ||
-        params.walkingBalance.rollSmoothingTime < 0.0 ||
-        params.walkingBalance.liftoffComLateralFraction < 0.0 ||
-        params.walkingBalance.liftoffComLateralTolerance < 0.0 ||
-        params.walkingBalance.liftoffMaxDelay < 0.0 ||
-        params.walkingBalance.liftoffMaxAbsRoll < 0.0 ||
-        params.walkingBalance.liftoffMaxAbsRollRate < 0.0 ||
-        params.walkingBalance.liftoffMinComHeight < 0.0 ||
-        params.walkingBalance.liftoffMaxHoldFootHeight < 0.0 ||
-        params.walkingBalance.recoveryEnterMaxAbsAngle < 0.0 ||
-        params.walkingBalance.recoveryExitMaxAbsAngle < 0.0 ||
-        params.walkingBalance.recoveryMinComHeight < 0.0 ||
-        params.walkingBalance.recoveryMinHoldTime < 0.0) {
-        throw std::runtime_error(
-            "walking_balance support-shift parameters must be finite and non-negative");
     }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
         !std::isfinite(params.contactManager.contactForceOffThreshold) ||
@@ -588,15 +476,26 @@ const DMat<double>& getK(const LocomotionMode mode) {
 }
 
 const DMat<double>& getL() {
-    return getL(locomotionMode());
+    return getL(requestedLocomotionMode());
 }
 
 const DMat<double>& getK() {
-    return getK(locomotionMode());
+    return getK(requestedLocomotionMode());
 }
 
-LocomotionMode locomotionMode() {
-    return getControllerConfig().locomotionMode;
+LocomotionMode requestedLocomotionMode() {
+    return getControllerConfig().requestedLocomotionMode;
+}
+
+ContactWrenchModel contactWrenchModelForMode(const MPCParameters& mpc,
+                                             const LocomotionMode mode) {
+    return mode == LocomotionMode::Standing
+               ? mpc.standingContactWrenchModel
+               : mpc.walkingContactWrenchModel;
+}
+
+ContactWrenchModel contactWrenchModel(const LocomotionMode mode) {
+    return contactWrenchModelForMode(getControllerConfig().mpc, mode);
 }
 
 std::string contactWrenchModelName(const ContactWrenchModel model) {

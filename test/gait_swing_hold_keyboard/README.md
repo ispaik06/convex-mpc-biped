@@ -111,7 +111,6 @@ Important sections:
 - `timing`: swing/stance durations.
 - `swing`: swing height and Cartesian gains.
 - `foot_placement`: touchdown feedback and clamps.
-- `gait_swing_hold_test.touchdown_target_mode`: touchdown target mode used by `GaitSwingHoldController`.
 
 ## Notes
 

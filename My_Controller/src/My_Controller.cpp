@@ -16,23 +16,12 @@
 #include "Utilities/MatrixUtils.h"
 
 namespace {
-constexpr double kCommandZeroEpsilon = 1e-12;
-
 double clampUnit(const double value) {
     return std::clamp(value, -1.0, 1.0);
 }
 
 double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
-}
-
-bool hasPlanarMotionCommand(const UserCommand* command) {
-    if (command == nullptr) {
-        return false;
-    }
-    return std::abs(command->x_dot) > kCommandZeroEpsilon ||
-           std::abs(command->y_dot) > kCommandZeroEpsilon ||
-           std::abs(command->psi_dot) > kCommandZeroEpsilon;
 }
 
 Vec3<double> desiredFootPositionForSide(const DesiredFootPositions& desiredFootPositions,
@@ -358,39 +347,6 @@ Vec2<double> averageFootEndEffectorXY(const StateEstimate<double>& stateEstimate
     return sumXY / static_cast<double>(robotParams.legs.size());
 }
 
-Vec2<double> footEndEffectorXYForSide(const StateEstimate<double>& stateEstimate,
-                                      const RobotParams<double>& robotParams,
-                                      const Side side) {
-    for (std::size_t leg = 0; leg < robotParams.legs.size(); ++leg) {
-        if (robotParams.legs[leg].side == side) {
-            if (leg >= stateEstimate.legs.size()) {
-                throw std::runtime_error("Foot target seed requires matching leg state");
-            }
-            return stateEstimate.legs[leg].footPos_W.template head<2>();
-        }
-    }
-
-    throw std::runtime_error("Foot target seed could not find requested side");
-}
-
-double previewStanceWeight(const GaitScheduler& gaitScheduler,
-                           const Side side,
-                           const double time,
-                           const double previewTime) {
-    if (previewTime <= 0.0) {
-        return gaitScheduler.c(side, time) ? 1.0 : 0.0;
-    }
-
-    constexpr int kPreviewSamples = 8;
-    double weight = 0.0;
-    for (int sample = 0; sample <= kPreviewSamples; ++sample) {
-        const double tau = previewTime * static_cast<double>(sample) /
-                           static_cast<double>(kPreviewSamples);
-        weight += gaitScheduler.c(side, time + tau) ? 1.0 : 0.0;
-    }
-    return weight;
-}
-
 Vec3<double> reducedBodyComWorldFromBasePose(const Vec3<double>& basePosition_W,
                                              const Vec3<double>& baseEuler_W,
                                              const RobotParams<double>& robotParams) {
@@ -456,7 +412,9 @@ void MyController::initializeRuntimeObjects() {
 
     const auto& config = getControllerConfig();
     _locomotionFSM = std::make_unique<LocomotionFSM>(
-        config.locomotionMode, config.startup.postInitStandingSettleTime, _stateEstimate->time);
+        config.requestedLocomotionMode,
+        config.startup.postInitStandingSettleTime,
+        _stateEstimate->time);
     setFootEndEffectorSource(config.model.footEndEffectorSource);
     _swingNaturalFrequency = config.swing.naturalFrequency;
     _swingKd = makeDiagonal(config.swing.kdDiag[0], config.swing.kdDiag[1], config.swing.kdDiag[2]);
@@ -484,13 +442,11 @@ void MyController::initializeRuntimeObjects() {
     _lastMpcIteration = 0;
     _standingMpcDebugLogPending = false;
     _standingMpcDebugLogReady = false;
-    _gaitRecoveryHoldActive = false;
     _lastStandingMpcDebugLogRequest = 0;
     _nextStandingMpcDebugTriggerIndex = 0;
     _standingMpcDebugRequestSource.clear();
     _standingMpcDebugRequestTime = std::numeric_limits<double>::quiet_NaN();
     _standingMpcDebugTriggerTime = std::numeric_limits<double>::quiet_NaN();
-    _gaitRecoveryHoldStartTime = 0.0;
     _lastControlTime = _stateEstimate->time;
     _bodyTarget = BodyTargetState{};
     _initialized = true;
@@ -515,7 +471,7 @@ LegDynamicsRequest MyController::legDynamicsRequest() const {
 
     const auto& config = getControllerConfig();
     LegDynamicsRequest request;
-    if (config.locomotionMode == LocomotionMode::Walking &&
+    if (config.requestedLocomotionMode == LocomotionMode::Walking &&
         config.startup.postInitStandingSettleTime <= 0.0) {
         request.swingLegDynamics = true;
         request.standingFootJacobians = false;
@@ -589,7 +545,7 @@ void MyController::applyLocomotionOutput(const LocomotionFSMOutput& output) {
         resetSwingState();
     }
     if (output.justTransitioned) {
-        seedBodyTargetFromCurrentState();
+        // seedBodyTargetFromCurrentState();
         std::cout << "[LocomotionFSM] switched to " << locomotionModeName(output.mode)
                   << " at t=" << formatTimeSeconds(_stateEstimate->time) << std::endl;
     }
@@ -676,173 +632,6 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
 
     _bodyTarget.position_W += Rz(_bodyTarget.euler_W[2]) * v_cmd_B * dt;
     _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] + psi_dot * dt);
-
-    const auto& balance = getControllerConfig().walkingBalance;
-    if (_gaitRecoveryHoldActive && !hasPlanarMotionCommand(_userCommand) &&
-        _contactManager != nullptr && _robotParams != nullptr) {
-        Vec2<double> supportXY = Vec2<double>::Zero();
-        double supportCount = 0.0;
-        const vectorAligned<ContactManagerLegState> states = _contactManager->legStates();
-        for (const auto& state : states) {
-            if (!state.estimatedContact) {
-                continue;
-            }
-            supportXY += footEndEffectorXYForSide(*_stateEstimate, *_robotParams, state.side);
-            supportCount += 1.0;
-        }
-        if (supportCount <= 1e-9) {
-            supportXY = averageFootEndEffectorXY(*_stateEstimate, *_robotParams);
-            supportCount = 1.0;
-        }
-
-        supportXY /= supportCount;
-        const double alpha =
-            balance.shiftSmoothingTime <= 1e-9
-                ? 1.0
-                : std::clamp(dt / balance.shiftSmoothingTime, 0.0, 1.0);
-        _bodyTarget.position_W.x() += alpha * (supportXY.x() - _bodyTarget.position_W.x());
-        _bodyTarget.position_W.y() += alpha * (supportXY.y() - _bodyTarget.position_W.y());
-        return;
-    }
-
-    if (!balance.enableSupportShift || hasPlanarMotionCommand(_userCommand) ||
-        _gaitScheduler == nullptr || _robotParams == nullptr) {
-        return;
-    }
-
-    const Vec2<double> leftFootXY =
-        footEndEffectorXYForSide(*_stateEstimate, *_robotParams, Side::Left);
-    const Vec2<double> rightFootXY =
-        footEndEffectorXYForSide(*_stateEstimate, *_robotParams, Side::Right);
-    const Vec2<double> midpointXY = 0.5 * (leftFootXY + rightFootXY);
-
-    double leftWeight = previewStanceWeight(*_gaitScheduler,
-                                            Side::Left,
-                                            _stateEstimate->time,
-                                            balance.supportPreviewTime);
-    double rightWeight = previewStanceWeight(*_gaitScheduler,
-                                             Side::Right,
-                                             _stateEstimate->time,
-                                             balance.supportPreviewTime);
-    const double weightSum = leftWeight + rightWeight;
-    if (weightSum <= 1e-9) {
-        leftWeight = 1.0;
-        rightWeight = 1.0;
-    }
-
-    const Vec2<double> previewSupportXY =
-        (leftWeight * leftFootXY + rightWeight * rightFootXY) /
-        (leftWeight + rightWeight);
-
-    Vec2<double> supportShiftedXY = midpointXY;
-    supportShiftedXY.x() +=
-        balance.foreAftShiftFraction * (previewSupportXY.x() - midpointXY.x());
-    supportShiftedXY.y() +=
-        balance.lateralShiftFraction * (previewSupportXY.y() - midpointXY.y());
-
-    const double alpha =
-        balance.shiftSmoothingTime <= 1e-9
-            ? 1.0
-            : std::clamp(dt / balance.shiftSmoothingTime, 0.0, 1.0);
-    _bodyTarget.position_W.x() += alpha * (supportShiftedXY.x() - _bodyTarget.position_W.x());
-    _bodyTarget.position_W.y() += alpha * (supportShiftedXY.y() - _bodyTarget.position_W.y());
-
-    if (balance.enableSupportRollLean) {
-        const double lateralShift = supportShiftedXY.y() - midpointXY.y();
-        const double rollOffset = std::clamp(balance.lateralRollGain * lateralShift,
-                                             -balance.maxRollLean,
-                                             balance.maxRollLean);
-        const double desiredRoll = _bodyTarget.eulerSeed_W.x() + rollOffset;
-        const double rollAlpha =
-            balance.rollSmoothingTime <= 1e-9
-                ? 1.0
-                : std::clamp(dt / balance.rollSmoothingTime, 0.0, 1.0);
-        _bodyTarget.euler_W.x() += rollAlpha * (desiredRoll - _bodyTarget.euler_W.x());
-    }
-}
-
-void MyController::syncGaitRecoveryClock() {
-    if (_gaitRecoveryHoldActive && _locomotionMode == LocomotionMode::Walking &&
-        _horizonClock != nullptr && _stateEstimate != nullptr) {
-        _horizonClock->reset(_stateEstimate->time);
-    }
-}
-
-void MyController::updateGaitRecoveryHold(const Vec13<double>& x0) {
-    if (_stateEstimate == nullptr || _robotParams == nullptr ||
-        _contactManager == nullptr || _horizonClock == nullptr) {
-        return;
-    }
-
-    const auto& balance = getControllerConfig().walkingBalance;
-    if (_locomotionMode != LocomotionMode::Walking || !balance.enableRecoveryHold) {
-        _gaitRecoveryHoldActive = false;
-        return;
-    }
-
-    const vectorAligned<ContactManagerLegState> states = _contactManager->legStates();
-    int activeCount = 0;
-    int estimatedCount = 0;
-    bool hasLateOrFailure = false;
-    for (const auto& state : states) {
-        activeCount += state.activeContact ? 1 : 0;
-        estimatedCount += state.estimatedContact ? 1 : 0;
-        hasLateOrFailure = hasLateOrFailure ||
-                           state.lateContact ||
-                           state.searchModeActive ||
-                           state.recoveryFailure;
-    }
-
-    const double maxAbsAngle = std::max(std::abs(x0[0]), std::abs(x0[1]));
-    const double comZ = x0[5];
-    const double time = _stateEstimate->time;
-    const bool postureEnter =
-        balance.recoveryEnterMaxAbsAngle > 0.0 &&
-        maxAbsAngle >= balance.recoveryEnterMaxAbsAngle;
-    const bool shouldEnter = hasLateOrFailure || activeCount == 0 || postureEnter;
-
-    if (!_gaitRecoveryHoldActive && shouldEnter) {
-        _gaitRecoveryHoldActive = true;
-        _gaitRecoveryHoldStartTime = time;
-        for (auto& runtime : _legRuntime) {
-            runtime.swingTrajectory.deactivate();
-            runtime.wasInStance = true;
-            runtime.wasSearchMode = false;
-        }
-        if (_swingFootPlanner != nullptr) {
-            _swingFootPlanner->reset();
-        }
-    }
-
-    if (!_gaitRecoveryHoldActive) {
-        return;
-    }
-
-    _horizonClock->reset(time);
-
-    const bool heldLongEnough =
-        (time - _gaitRecoveryHoldStartTime) >= balance.recoveryMinHoldTime;
-    const bool postureRecovered =
-        (balance.recoveryExitMaxAbsAngle <= 0.0 ||
-         maxAbsAngle <= balance.recoveryExitMaxAbsAngle) &&
-        (balance.recoveryMinComHeight <= 0.0 || comZ >= balance.recoveryMinComHeight);
-    const bool contactsRecovered =
-        estimatedCount >= static_cast<int>(_robotParams->legs.size()) &&
-        activeCount >= static_cast<int>(_robotParams->legs.size()) &&
-        !hasLateOrFailure;
-
-    if (heldLongEnough && postureRecovered && contactsRecovered) {
-        _gaitRecoveryHoldActive = false;
-        _horizonClock->reset(time);
-        for (auto& runtime : _legRuntime) {
-            runtime.swingTrajectory.deactivate();
-            runtime.wasInStance = true;
-            runtime.wasSearchMode = false;
-        }
-        if (_swingFootPlanner != nullptr) {
-            _swingFootPlanner->reset();
-        }
-    }
 }
 
 bool MyController::activeContactForSide(const Side side, const double time) const {
@@ -894,11 +683,8 @@ ControllerBodyTargetDebugState MyController::bodyTargetDebugState() const {
     out.position_W = _bodyTarget.position_W;
     out.euler_W = _bodyTarget.euler_W;
     out.initialized = _bodyTarget.initialized;
-    out.gaitRecoveryHoldActive = _gaitRecoveryHoldActive;
-    out.gaitRecoveryHoldTime =
-        (_gaitRecoveryHoldActive && _stateEstimate != nullptr)
-            ? std::max(0.0, _stateEstimate->time - _gaitRecoveryHoldStartTime)
-            : 0.0;
+    out.gaitRecoveryHoldActive = false;
+    out.gaitRecoveryHoldTime = 0.0;
     return out;
 }
 
@@ -954,9 +740,7 @@ void MyController::updateSwingTrajectories(
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
-            if (hasPlanarMotionCommand(_userCommand)) {
-                runtime.touchdownYaw_W = swingFootYawTargetWorld();
-            }
+            runtime.touchdownYaw_W = swingFootYawTargetWorld();
             runtime.swingTrajectory.reset(
                 currentFootPosition,
                 touchdownTarget,
@@ -1000,7 +784,11 @@ double MyController::swingFootYawTargetWorld() const {
     }
 
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
-    return wrapAngle(_stateEstimate->psi + psi_dot * stanceTime() * 0.5);
+    const double baseYaw_W = _bodyTarget.initialized ? _bodyTarget.euler_W[2] : _stateEstimate->psi;
+    const double previewTime =
+        std::max(0.0, (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) *
+                          stanceTime());
+    return wrapAngle(baseYaw_W + psi_dot * previewTime);
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,
@@ -1019,7 +807,7 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     ContactScheduleOverride contactOverride;
     const ContactScheduleOverride* contactOverridePtr = nullptr;
     try {
-        if (getControllerConfig().mpc.contactWrenchModel == ContactWrenchModel::NoRollMoment) {
+        if (contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment) {
             _gaitScheduler->setFootLocalXAxesWorld(
                 footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
                 footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Right));
@@ -1176,6 +964,7 @@ void MyController::maybeWriteStandingMpcDebugLog(
             _convexMPC->optimalWrenchHorizon(),
             _iteration,
             _locomotionMode,
+            _locomotionFSM != nullptr ? _locomotionFSM->state() : LocomotionState::StandingSettle,
             _horizonClock != nullptr ? _horizonClock->t0() : 0.0,
             _userCommand != nullptr ? *_userCommand : UserCommand{},
             _standingMpcDebugRequestSource,
@@ -1254,24 +1043,6 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
                            _rightTouchdownTarget_W,
                            _rightTouchdownTargetYaw_W);
     }
-}
-
-void MyController::maybePrintGaitScheduler() const {
-    if (_gaitScheduler == nullptr || _stateEstimate == nullptr) {
-        return;
-    }
-
-    const int interval = getControllerConfig().logging.gaitStatusInterval;
-    if (interval <= 0 || (_iteration % static_cast<u64>(interval)) != 0) {
-        return;
-    }
-
-    const double time = _stateEstimate->time;
-    const bool leftStance = _gaitScheduler->c(Side::Left, time);
-    const bool rightStance = _gaitScheduler->c(Side::Right, time);
-
-    std::cout << "[GaitScheduler] L: " << (leftStance ? "stance" : "swing")
-              << "  R: " << (rightStance ? "stance" : "swing") << std::endl;
 }
 
 void MyController::writeStandingLegCommands() {
@@ -1392,12 +1163,13 @@ void MyController::runController() {
 
     syncLocomotionFSM();
     _horizonClock->sync(_stateEstimate->time);
-    syncGaitRecoveryClock();
-    // maybePrintGaitScheduler();
 
     const Vec13<double> x0 = buildCurrentMpcState();
     const double dt = std::max(0.0, _stateEstimate->time - _lastControlTime);
     updateBodyTarget(x0, dt);
+    if (_bodyTarget.initialized) {
+        _swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W, _bodyTarget.euler_W[2]);
+    }
     const auto standingFootTarget = [&](const Side side) {
         Vec3<double> target = _stateEstimate->legs[findLegIndex(side)].footPos_W;
         target.z() = -0.005;
@@ -1413,8 +1185,7 @@ void MyController::runController() {
                                 *_robotParams,
                                 *_gaitScheduler,
                                 _locomotionMode,
-                                nominalDesiredFootPositions,
-                                _gaitRecoveryHoldActive);
+                                nominalDesiredFootPositions);
     }
     const DesiredFootPositions desiredFootPositions =
         (_contactManager != nullptr)
@@ -1424,7 +1195,6 @@ void MyController::runController() {
     updateSwingTrajectories(desiredFootPositions);
     updateTouchdownDebugTarget(desiredFootPositions);
     updateStandingMpcDebugRequest();
-    updateGaitRecoveryHold(x0);
     maybeUpdateMpc(x0, desiredFootPositions);
     writeLegCommands();
     maybeWriteStandingMpcDebugLog(x0, desiredFootPositions);

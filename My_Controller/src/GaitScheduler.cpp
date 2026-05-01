@@ -80,7 +80,7 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
     const int steps = horizonSteps();
     const auto& mpc = getControllerConfig().mpc;
     const bool constrainFootRollMoment =
-        mpc.contactWrenchModel == ContactWrenchModel::NoRollMoment;
+        contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment;
 
     D.setZero(12 * steps, 12 * steps);
     C.setZero(24 * steps, 12 * steps);

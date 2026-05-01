@@ -335,17 +335,17 @@ LocomotionMode locomotionModeFromString(const std::string& value) {
     if (value == "standing" || value == "stand") {
         return LocomotionMode::Standing;
     }
-    throw std::runtime_error("Invalid controller_config.locomotion_mode: " + value);
+    throw std::runtime_error("Invalid locomotion mode: " + value);
 }
 
-TouchdownTargetMode touchdownTargetModeFromString(const std::string& value) {
-    if (value == "body_velocity_half_stance") {
-        return TouchdownTargetMode::BodyVelocityHalfStance;
+LocomotionMode locomotionModeFromStateString(const std::string& value) {
+    if (value == "walking") {
+        return LocomotionMode::Walking;
     }
-    if (value == "legacy_com_yaw_corrected") {
-        return TouchdownTargetMode::LegacyComYawCorrected;
+    if (value == "standing" || value == "standing_settle") {
+        return LocomotionMode::Standing;
     }
-    throw std::runtime_error("Invalid controller_config.swing.touchdown_target_mode: " + value);
+    throw std::runtime_error("Invalid metadata.locomotion_state: " + value);
 }
 
 FootEndEffectorSource footEndEffectorSourceFromString(const std::string& value) {
@@ -383,8 +383,13 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         setActiveRobotType(robotType);
     }
 
-    if (cfg.contains("locomotion_mode") && cfg.at("locomotion_mode").is_string()) {
-        out.locomotionMode = locomotionModeFromString(cfg.at("locomotion_mode").get<std::string>());
+    if (cfg.contains("requested_locomotion_mode") &&
+        cfg.at("requested_locomotion_mode").is_string()) {
+        out.requestedLocomotionMode = locomotionModeFromString(
+            cfg.at("requested_locomotion_mode").get<std::string>());
+    } else if (cfg.contains("locomotion_mode") && cfg.at("locomotion_mode").is_string()) {
+        out.requestedLocomotionMode =
+            locomotionModeFromString(cfg.at("locomotion_mode").get<std::string>());
     }
 
     if (cfg.contains("timing") && cfg.at("timing").is_object()) {
@@ -448,17 +453,27 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (mpc.contains("iterations_between_solve")) {
             out.mpc.iterationsBetweenSolve = mpc.at("iterations_between_solve").get<int>();
         }
+        ContactWrenchModel defaultContactWrenchModel = ContactWrenchModel::FullWrench;
         if (mpc.contains("contact_wrench_model") && mpc.at("contact_wrench_model").is_string()) {
-            out.mpc.contactWrenchModel =
+            defaultContactWrenchModel =
                 contactWrenchModelFromString(mpc.at("contact_wrench_model").get<std::string>());
         }
+        out.mpc.walkingContactWrenchModel = defaultContactWrenchModel;
+        out.mpc.standingContactWrenchModel = defaultContactWrenchModel;
 
         auto readModeWeights = [&](const json& modeNode,
                                    StateWeightMat& stateWeight,
                                    InputWeightMat& inputWeight,
+                                   ContactWrenchModel& contactWrenchModel,
                                    const std::string& modeName) {
             if (!modeNode.is_object()) {
                 return false;
+            }
+            if (modeNode.contains("contact_wrench_model") &&
+                modeNode.at("contact_wrench_model").is_string()) {
+                contactWrenchModel =
+                    contactWrenchModelFromString(
+                        modeNode.at("contact_wrench_model").get<std::string>());
             }
             if (modeNode.contains("state_weight_diag")) {
                 const std::vector<double> diag = readJsonVector(
@@ -493,11 +508,13 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
                                 readModeWeights(mpc.at("walking"),
                                                 out.mpc.walkingStateWeight,
                                                 out.mpc.walkingInputWeight,
+                                                out.mpc.walkingContactWrenchModel,
                                                 "walking");
         const bool hasStanding = mpc.contains("standing") &&
                                  readModeWeights(mpc.at("standing"),
                                                  out.mpc.standingStateWeight,
                                                  out.mpc.standingInputWeight,
+                                                 out.mpc.standingContactWrenchModel,
                                                  "standing");
 
         if (!hasWalking && !hasStanding) {
@@ -505,9 +522,11 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
                 readModeWeights(mpc,
                                 out.mpc.walkingStateWeight,
                                 out.mpc.walkingInputWeight,
+                                out.mpc.walkingContactWrenchModel,
                                 "walking");
                 out.mpc.standingStateWeight = out.mpc.walkingStateWeight;
                 out.mpc.standingInputWeight = out.mpc.walkingInputWeight;
+                out.mpc.standingContactWrenchModel = out.mpc.walkingContactWrenchModel;
             }
         }
     }
@@ -544,11 +563,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (swing.contains("yaw_kd")) {
             out.swing.yawKd = swing.at("yaw_kd").get<double>();
         }
-        if (swing.contains("touchdown_target_mode") &&
-            swing.at("touchdown_target_mode").is_string()) {
-            out.swing.touchdownTargetMode =
-                touchdownTargetModeFromString(swing.at("touchdown_target_mode").get<std::string>());
-        }
     }
 
     if (cfg.contains("foot_placement") && cfg.at("foot_placement").is_object()) {
@@ -574,9 +588,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
 
     if (cfg.contains("logging") && cfg.at("logging").is_object()) {
         const json& logging = cfg.at("logging");
-        if (logging.contains("gait_status_interval")) {
-            out.logging.gaitStatusInterval = logging.at("gait_status_interval").get<int>();
-        }
         if (logging.contains("standing_mpc_debug_trigger_times")) {
             out.logging.standingMpcDebugTriggerTimes =
                 readJsonVector(logging.at("standing_mpc_debug_trigger_times"),
@@ -621,16 +632,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (initialPose.contains("arm_initialization_time")) {
             out.initialPose.armInitializationTime =
                 initialPose.at("arm_initialization_time").get<double>();
-        }
-    }
-
-    if (cfg.contains("gait_swing_hold_test") && cfg.at("gait_swing_hold_test").is_object()) {
-        const json& gaitSwingHoldTest = cfg.at("gait_swing_hold_test");
-        if (gaitSwingHoldTest.contains("touchdown_target_mode") &&
-            gaitSwingHoldTest.at("touchdown_target_mode").is_string()) {
-            out.gaitSwingHoldTest.touchdownTargetMode =
-                touchdownTargetModeFromString(
-                    gaitSwingHoldTest.at("touchdown_target_mode").get<std::string>());
         }
     }
 
@@ -906,6 +907,27 @@ LocomotionMode locomotionModeFromLog(const json& log, const LocomotionMode fallb
         log.at("metadata").at("locomotion_mode").is_string()) {
         return locomotionModeFromString(log.at("metadata").at("locomotion_mode").get<std::string>());
     }
+    if (log.contains("metadata") &&
+        log.at("metadata").is_object() &&
+        log.at("metadata").contains("locomotion_state") &&
+        log.at("metadata").at("locomotion_state").is_string()) {
+        return locomotionModeFromStateString(
+            log.at("metadata").at("locomotion_state").get<std::string>());
+    }
+    if (log.contains("controller_config") &&
+        log.at("controller_config").is_object() &&
+        log.at("controller_config").contains("effective_locomotion_mode") &&
+        log.at("controller_config").at("effective_locomotion_mode").is_string()) {
+        return locomotionModeFromString(
+            log.at("controller_config").at("effective_locomotion_mode").get<std::string>());
+    }
+    if (log.contains("controller_config") &&
+        log.at("controller_config").is_object() &&
+        log.at("controller_config").contains("requested_locomotion_mode") &&
+        log.at("controller_config").at("requested_locomotion_mode").is_string()) {
+        return locomotionModeFromString(
+            log.at("controller_config").at("requested_locomotion_mode").get<std::string>());
+    }
     if (log.contains("controller_config") &&
         log.at("controller_config").is_object() &&
         log.at("controller_config").contains("locomotion_mode") &&
@@ -975,7 +997,7 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     result.desiredFootPositions = desiredFootPositionsFromLog(log);
     readFootLocalXAxesFromLog(log, result.leftFootXAxis_W, result.rightFootXAxis_W);
     result.userCommand = userCommandFromLog(log);
-    result.locomotionMode = locomotionModeFromLog(log, config.locomotionMode);
+    result.locomotionMode = locomotionModeFromLog(log, config.requestedLocomotionMode);
     result.sourceControllerTime = metadataDoubleOr(metadata, "controller_time", 0.0);
     result.sourceClockT0 = clockT0FromLog(log, result.sourceControllerTime);
     result.sourceHorizonSteps = metadataIntOr(metadata, "horizon_steps", 0);
@@ -1141,7 +1163,7 @@ void writeReport(std::ostream& out,
         << "| Robot type | `" << robotType << "` |\n"
         << "| Locomotion mode | `" << locomotionModeName(result.locomotionMode) << "` |\n"
         << "| Contact wrench model | `"
-        << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << "` |\n\n"
+        << contactWrenchModelName(contactWrenchModel(result.locomotionMode)) << "` |\n\n"
         << "## Method\n\n"
         << "This is an SRB-only true receding-horizon replay. At each step it solves MPC again using "
         << "the logged command and fixed logged foot points, then advances the reduced state with the "
@@ -1254,7 +1276,7 @@ void writeCsv(std::ostream& out,
     out << "# source_controller_time=" << result.sourceControllerTime << '\n';
     out << "# source_clock_t0=" << result.sourceClockT0 << '\n';
     out << "# contact_wrench_model="
-        << contactWrenchModelName(getControllerConfig().mpc.contactWrenchModel) << '\n';
+        << contactWrenchModelName(contactWrenchModel(result.locomotionMode)) << '\n';
     out << "# state_order=" << joinNames(kStateNames) << '\n';
     out << "# input_order=" << joinInputNames() << '\n';
     writeCsvHeader(out);

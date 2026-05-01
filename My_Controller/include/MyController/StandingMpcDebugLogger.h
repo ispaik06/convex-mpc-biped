@@ -7,6 +7,7 @@
 #include "Controllers/LegController.h"
 #include "ContactManager.h"
 #include "MPCFormulation.h"
+#include "LocomotionFSM.h"
 #include "ReferenceTrajectory.h"
 #include "StateEstimator/StateEstimator.h"
 #include "Utilities/UserCommand.h"
@@ -23,6 +24,7 @@ struct StandingMpcDebugSnapshot {
     const DVec<double>& wrenchHorizon;
     u64 iteration{0};
     LocomotionMode locomotionMode{LocomotionMode::Standing};
+    LocomotionState locomotionState{LocomotionState::StandingSettle};
     double horizonClockT0{0.0};
     UserCommand userCommand{};
     std::string debugRequestSource;

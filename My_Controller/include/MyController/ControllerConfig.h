@@ -15,11 +15,6 @@ enum class LocomotionMode {
     Standing,
 };
 
-enum class TouchdownTargetMode {
-    BodyVelocityHalfStance,
-    LegacyComYawCorrected,
-};
-
 enum class ContactWrenchModel {
     FullWrench,
     NoRollMoment,
@@ -52,7 +47,8 @@ struct MPCParameters {
     StateWeightMat standingStateWeight = StateWeightMat::Identity();
     InputWeightMat standingInputWeight = InputWeightMat::Identity();
     int iterationsBetweenSolve{10};
-    ContactWrenchModel contactWrenchModel{ContactWrenchModel::FullWrench};
+    ContactWrenchModel walkingContactWrenchModel{ContactWrenchModel::FullWrench};
+    ContactWrenchModel standingContactWrenchModel{ContactWrenchModel::FullWrench};
 };
 
 struct SwingParameters {
@@ -65,7 +61,6 @@ struct SwingParameters {
     double pitchKd{0.0};
     double yawKp{0.0};
     double yawKd{0.0};
-    TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::BodyVelocityHalfStance};
 };
 
 struct FootPlacementParameters {
@@ -74,31 +69,6 @@ struct FootPlacementParameters {
     double touchdownHeight{-0.003};
     double nominalLateralOffset{0.065};
     double swingBias{0.0};
-};
-
-struct WalkingBalanceParameters {
-    bool enableSupportShift{true};
-    double supportPreviewTime{0.25};
-    double lateralShiftFraction{0.85};
-    double foreAftShiftFraction{0.0};
-    double shiftSmoothingTime{0.04};
-    bool enableSupportRollLean{true};
-    double lateralRollGain{1.0};
-    double maxRollLean{0.12};
-    double rollSmoothingTime{0.06};
-    bool enableLiftoffGuard{true};
-    double liftoffComLateralFraction{0.45};
-    double liftoffComLateralTolerance{0.015};
-    double liftoffMaxDelay{0.18};
-    double liftoffMaxAbsRoll{0.30};
-    double liftoffMaxAbsRollRate{1.20};
-    double liftoffMinComHeight{0.58};
-    double liftoffMaxHoldFootHeight{0.035};
-    bool enableRecoveryHold{true};
-    double recoveryEnterMaxAbsAngle{0.45};
-    double recoveryExitMaxAbsAngle{0.25};
-    double recoveryMinComHeight{0.58};
-    double recoveryMinHoldTime{0.20};
 };
 
 struct ContactManagerParameters {
@@ -118,7 +88,6 @@ struct ContactManagerParameters {
 };
 
 struct LoggingParameters {
-    int gaitStatusInterval{50};
     std::vector<double> standingMpcDebugTriggerTimes;
 };
 
@@ -139,17 +108,15 @@ struct InitialPoseParameters {
 
 struct GaitSwingHoldTestParameters {
     std::string xmlPath;
-    TouchdownTargetMode touchdownTargetMode{TouchdownTargetMode::LegacyComYawCorrected};
 };
 
 struct ControllerConfig {
-    LocomotionMode locomotionMode{LocomotionMode::Walking};
+    LocomotionMode requestedLocomotionMode{LocomotionMode::Walking};
     TimingParameters timing;
     ModelParameters model;
     MPCParameters mpc;
     SwingParameters swing;
     FootPlacementParameters footPlacement;
-    WalkingBalanceParameters walkingBalance;
     ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;
@@ -172,7 +139,9 @@ const DMat<double>& getL();
 const DMat<double>& getK();
 const DMat<double>& getL(LocomotionMode mode);
 const DMat<double>& getK(LocomotionMode mode);
-LocomotionMode locomotionMode();
+LocomotionMode requestedLocomotionMode();
 std::string contactWrenchModelName(ContactWrenchModel model);
+ContactWrenchModel contactWrenchModelForMode(const MPCParameters& mpc, LocomotionMode mode);
+ContactWrenchModel contactWrenchModel(LocomotionMode mode);
 
 #endif  // CONTROLLER_CONFIG_H

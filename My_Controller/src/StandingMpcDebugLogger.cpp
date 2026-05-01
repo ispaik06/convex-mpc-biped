@@ -300,6 +300,18 @@ std::string locomotionModeName(const LocomotionMode mode) {
     return "unknown";
 }
 
+std::string locomotionStateName(const LocomotionState state) {
+    switch (state) {
+        case LocomotionState::StandingSettle:
+            return "standing_settle";
+        case LocomotionState::Standing:
+            return "standing";
+        case LocomotionState::Walking:
+            return "walking";
+    }
+    return "unknown";
+}
+
 std::string legControlModeName(const LegControlMode mode) {
     switch (mode) {
         case LegControlMode::JointPd:
@@ -310,16 +322,6 @@ std::string legControlModeName(const LegControlMode mode) {
             return "swing_foot";
         case LegControlMode::StanceWrench:
             return "stance_wrench";
-    }
-    return "unknown";
-}
-
-std::string touchdownTargetModeName(const TouchdownTargetMode mode) {
-    switch (mode) {
-        case TouchdownTargetMode::BodyVelocityHalfStance:
-            return "body_velocity_half_stance";
-        case TouchdownTargetMode::LegacyComYawCorrected:
-            return "legacy_com_yaw_corrected";
     }
     return "unknown";
 }
@@ -375,7 +377,8 @@ json controllerConfigJson(const ControllerConfig& config,
                           const LocomotionMode locomotionMode) {
     json root = json::object();
     root["robot_type"] = robotTypeName(robotType);
-    root["locomotion_mode"] = locomotionModeName(locomotionMode);
+    root["requested_locomotion_mode"] = locomotionModeName(config.requestedLocomotionMode);
+    root["effective_locomotion_mode"] = locomotionModeName(locomotionMode);
 
     json timing = json::object();
     timing["cycle"] = config.timing.cycle;
@@ -401,12 +404,15 @@ json controllerConfigJson(const ControllerConfig& config,
     mpc["normal_force_max"] = config.mpc.normalForceMax;
     mpc["normal_force_min"] = config.mpc.normalForceMin;
     mpc["iterations_between_solve"] = config.mpc.iterationsBetweenSolve;
-    mpc["contact_wrench_model"] = contactWrenchModelName(config.mpc.contactWrenchModel);
     json walking = json::object();
+    walking["contact_wrench_model"] =
+        contactWrenchModelName(config.mpc.walkingContactWrenchModel);
     walking["state_weight_diag"] = matrixDiagonalToJson(config.mpc.walkingStateWeight);
     walking["input_weight_diag"] = matrixDiagonalToJson(config.mpc.walkingInputWeight);
     mpc["walking"] = std::move(walking);
     json standing = json::object();
+    standing["contact_wrench_model"] =
+        contactWrenchModelName(config.mpc.standingContactWrenchModel);
     standing["state_weight_diag"] = matrixDiagonalToJson(config.mpc.standingStateWeight);
     standing["input_weight_diag"] = matrixDiagonalToJson(config.mpc.standingInputWeight);
     mpc["standing"] = std::move(standing);
@@ -422,7 +428,6 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;
     swing["yaw_kd"] = config.swing.yawKd;
-    swing["touchdown_target_mode"] = touchdownTargetModeName(config.swing.touchdownTargetMode);
     root["swing"] = std::move(swing);
 
     json footPlacement = json::object();
@@ -459,7 +464,6 @@ json controllerConfigJson(const ControllerConfig& config,
     root["contact_manager"] = std::move(contactManager);
 
     json logging = json::object();
-    logging["gait_status_interval"] = config.logging.gaitStatusInterval;
     logging["standing_mpc_debug_trigger_times"] =
         stdVectorToJson(config.logging.standingMpcDebugTriggerTimes);
     root["logging"] = std::move(logging);
@@ -483,8 +487,6 @@ json controllerConfigJson(const ControllerConfig& config,
     if (!config.gaitSwingHoldTest.xmlPath.empty()) {
         gaitSwingHoldTest["xml_path"] = config.gaitSwingHoldTest.xmlPath;
     }
-    gaitSwingHoldTest["touchdown_target_mode"] =
-        touchdownTargetModeName(config.gaitSwingHoldTest.touchdownTargetMode);
     root["gait_swing_hold_test"] = std::move(gaitSwingHoldTest);
 
     return root;
@@ -792,6 +794,7 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     metadata["type"] = locomotionModeName(snapshot.locomotionMode) + std::string("_mpc_solve_debug");
     metadata["generated_at_local"] = timestamp.localTime;
     metadata["log_path"] = logPath;
+    metadata["locomotion_state"] = locomotionStateName(snapshot.locomotionState);
     metadata["controller_time"] = snapshot.stateEstimate.time;
     metadata["controller_iteration"] = snapshot.iteration;
     metadata["locomotion_mode"] = locomotionModeName(snapshot.locomotionMode);
@@ -807,7 +810,7 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     metadata["desired_wrench_reference_point"] =
         desiredWrenchReferencePointName(config.model.footEndEffectorSource);
     metadata["contact_wrench_model"] =
-        contactWrenchModelName(config.mpc.contactWrenchModel);
+        contactWrenchModelName(contactWrenchModelForMode(config.mpc, snapshot.locomotionMode));
     root["metadata"] = std::move(metadata);
 
     root["controller_config"] =

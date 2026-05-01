@@ -64,7 +64,6 @@ private:
     JointPdGains<double> _jointHoldGains;
     Vec3<double> _swingNaturalFrequency = Vec3<double>::Zero();
     Mat3<double> _swingKd = Mat3<double>::Zero();
-    TouchdownTargetMode _touchdownTargetMode{TouchdownTargetMode::LegacyComYawCorrected};
     double _touchdownTargetZOffset{0.0};
     double _swingDuration{0.8};
     double _swingHeight{0.06};

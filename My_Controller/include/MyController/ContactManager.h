@@ -44,8 +44,7 @@ public:
                 const RobotParams<double>& robotParams,
                 const GaitScheduler& gaitScheduler,
                 LocomotionMode locomotionMode,
-                const DesiredFootPositions& nominalDesiredFootPositions,
-                bool recoveryHoldActive = false);
+                const DesiredFootPositions& nominalDesiredFootPositions);
 
     bool activeContact(Side side) const;
     bool scheduledContact(Side side) const;
@@ -70,12 +69,10 @@ private:
         bool previousScheduledContact{true};
         bool previousLateContact{false};
         bool releasedContactDuringSwing{false};
-        bool liftoffReleasedDuringSwing{false};
         int contactOnTicks{0};
         int contactOffTicks{0};
         double contactRampTime{0.0};
         double searchDepth{0.0};
-        double liftoffHoldTime{0.0};
     };
 
     RuntimeLegState& runtimeForSide(Side side);
@@ -84,11 +81,6 @@ private:
     void ensureRuntimeLayout(const RobotParams<double>& robotParams);
     bool updateEstimatedContact(RuntimeLegState& runtime,
                                 const RobotLegState<double>& legState) const;
-    bool shouldHoldLiftoff(RuntimeLegState& runtime,
-                           const ContactManagerLegState& state,
-                           const StateEstimate<double>& stateEstimate,
-                           const RobotParams<double>& robotParams,
-                           double dt) const;
     Vec3<double> nominalDesiredFootPosition(const DesiredFootPositions& desiredFootPositions,
                                             Side side) const;
 
