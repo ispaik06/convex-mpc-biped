@@ -24,6 +24,17 @@ double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
+double lowPassBlendAlpha(const double tau, const double dt) {
+    if (!(tau > 0.0) || !(dt > 0.0)) {
+        return 1.0;
+    }
+    return std::clamp(-std::expm1(-dt / tau), 0.0, 1.0);
+}
+
+bool planarCommandIsZero(const UserCommand& command) {
+    return command.x_dot == 0.0 && command.y_dot == 0.0 && command.psi_dot == 0.0;
+}
+
 Vec3<double> desiredFootPositionForSide(const DesiredFootPositions& desiredFootPositions,
                                         const Side side) {
     switch (side) {
@@ -406,7 +417,11 @@ void MyController::initializeRuntimeObjects() {
     _gaitScheduler = std::make_unique<GaitScheduler>(_horizonClock.get());
     _contactManager = std::make_unique<ContactManager>(getControllerConfig().contactManager);
     _swingFootPlanner = std::make_unique<SwingFootPlanner>(
-        _gaitScheduler.get(), _horizonClock.get(), _stateEstimate, _robotParams, _userCommand);
+        _gaitScheduler.get(),
+        _horizonClock.get(),
+        _stateEstimate,
+        _robotParams,
+        &_filteredUserCommand);
     _mpcFormulation = std::make_unique<MPCFormulation>(_robotParams);
     _convexMPC = std::make_unique<ConvexMPC>();
 
@@ -429,6 +444,8 @@ void MyController::initializeRuntimeObjects() {
               << locomotionModeName(_locomotionMode) << " at t="
               << formatTimeSeconds(_stateEstimate->time) << std::endl;
 
+    updateFilteredUserCommand(0.0);
+
     _legRuntime.assign(_robotParams->legs.size(), LegRuntimeState{});
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
         _legRuntime[leg].wasInStance =
@@ -436,6 +453,9 @@ void MyController::initializeRuntimeObjects() {
         _legRuntime[leg].wasSearchMode = false;
         _legRuntime[leg].touchdownYaw_W = swingFootYawTargetWorld();
     }
+
+    _swingFootPlanner->setStopRequested(
+        planarCommandIsZero((_userCommand != nullptr) ? *_userCommand : UserCommand{}));
 
     _stanceWrenchWorld.setZero();
     _iteration = 0;
@@ -561,6 +581,40 @@ LocomotionFSMOutput MyController::syncLocomotionFSM() {
     return output;
 }
 
+void MyController::updateFilteredUserCommand(const double dt) {
+    const UserCommand rawCommand = (_userCommand != nullptr) ? *_userCommand : UserCommand{};
+    if (!_filteredUserCommandInitialized) {
+        _filteredUserCommand = rawCommand;
+        _filteredUserCommandInitialized = true;
+        return;
+    }
+
+    const UserCommand previousCommand = _filteredUserCommand;
+    _filteredUserCommand = rawCommand;
+
+    const auto& filter = getControllerConfig().userCommandFilter;
+    _filteredUserCommand.x_dot = previousCommand.x_dot +
+                                 lowPassBlendAlpha(filter.xDotTau, dt) *
+                                     (rawCommand.x_dot - previousCommand.x_dot);
+    _filteredUserCommand.y_dot = previousCommand.y_dot +
+                                 lowPassBlendAlpha(filter.yDotTau, dt) *
+                                     (rawCommand.y_dot - previousCommand.y_dot);
+    _filteredUserCommand.psi_dot = previousCommand.psi_dot +
+                                   lowPassBlendAlpha(filter.psiDotTau, dt) *
+                                       (rawCommand.psi_dot - previousCommand.psi_dot);
+    _filteredUserCommand.z_dot = previousCommand.z_dot +
+                                 lowPassBlendAlpha(filter.zDotTau, dt) *
+                                     (rawCommand.z_dot - previousCommand.z_dot);
+    _filteredUserCommand.standing_roll_offset_rad =
+        previousCommand.standing_roll_offset_rad +
+        lowPassBlendAlpha(filter.standingRollOffsetTau, dt) *
+            (rawCommand.standing_roll_offset_rad - previousCommand.standing_roll_offset_rad);
+    _filteredUserCommand.standing_pitch_offset_rad =
+        previousCommand.standing_pitch_offset_rad +
+        lowPassBlendAlpha(filter.standingPitchOffsetTau, dt) *
+            (rawCommand.standing_pitch_offset_rad - previousCommand.standing_pitch_offset_rad);
+}
+
 Vec13<double> MyController::buildCurrentMpcState() const {
     if (_stateEstimate == nullptr) {
         throw std::runtime_error("MyController::buildCurrentMpcState requires state estimate");
@@ -608,11 +662,9 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         // Keep the stance footprint centered under the feet and move only in height.
         _bodyTarget.position_W[0] = avgFootXY[0];
         _bodyTarget.position_W[1] = avgFootXY[1];
-        const double z_dot = (_userCommand != nullptr) ? _userCommand->z_dot : 0.0;
-        const double standingRollOffset =
-            (_userCommand != nullptr) ? _userCommand->standing_roll_offset_rad : 0.0;
-        const double standingPitchOffset =
-            (_userCommand != nullptr) ? _userCommand->standing_pitch_offset_rad : 0.0;
+        const double z_dot = _filteredUserCommand.z_dot;
+        const double standingRollOffset = _filteredUserCommand.standing_roll_offset_rad;
+        const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
         _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
         _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
         if (dt > 0.0) {
@@ -625,9 +677,9 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         return;
     }
 
-    const double x_dot = (_userCommand != nullptr) ? _userCommand->x_dot : 0.0;
-    const double y_dot = (_userCommand != nullptr) ? _userCommand->y_dot : 0.0;
-    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    const double x_dot = _filteredUserCommand.x_dot;
+    const double y_dot = _filteredUserCommand.y_dot;
+    const double psi_dot = _filteredUserCommand.psi_dot;
     const Vec3<double> v_cmd_B(x_dot, y_dot, 0.0);
 
     _bodyTarget.position_W += Rz(_bodyTarget.euler_W[2]) * v_cmd_B * dt;
@@ -783,7 +835,7 @@ double MyController::swingFootYawTargetWorld() const {
         throw std::runtime_error("MyController::swingFootYawTargetWorld requires state estimate");
     }
 
-    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    const double psi_dot = _filteredUserCommand.psi_dot;
     const double baseYaw_W = _bodyTarget.initialized ? _bodyTarget.euler_W[2] : _stateEstimate->psi;
     const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
     const double previewTime =
@@ -823,14 +875,9 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
         referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
 
-        UserCommand referenceCommand{};
-        if (_userCommand != nullptr) {
-            if (_locomotionMode == LocomotionMode::Standing) {
-                referenceCommand.z_dot = _userCommand->z_dot;
-            } else {
-                referenceCommand = *_userCommand;
-                referenceCommand.z_dot = 0.0;
-            }
+        UserCommand referenceCommand = _filteredUserCommand;
+        if (_locomotionMode != LocomotionMode::Standing) {
+            referenceCommand.z_dot = 0.0;
         }
 
         ReferenceTrajectory(&referenceCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
@@ -902,19 +949,17 @@ void MyController::updateStandingMpcDebugRequest() {
     }
 
     const double time = _stateEstimate->time;
-    if (_userCommand != nullptr) {
-        const unsigned long long request = _userCommand->standing_mpc_debug_log_request;
-        if (request > _lastStandingMpcDebugLogRequest) {
-            _lastStandingMpcDebugLogRequest = request;
-            queueStandingMpcDebugLog(
-                "keyboard",
-                time,
-                std::numeric_limits<double>::quiet_NaN());
-            std::cout << "[MPCDebug] keyboard request #" << request
-                      << " (" << locomotionModeName(_locomotionMode) << ")"
-                      << " at t=" << time
-                      << " queued for the next scheduled MPC solve" << std::endl;
-        }
+    const unsigned long long request = _filteredUserCommand.standing_mpc_debug_log_request;
+    if (request > _lastStandingMpcDebugLogRequest) {
+        _lastStandingMpcDebugLogRequest = request;
+        queueStandingMpcDebugLog(
+            "keyboard",
+            time,
+            std::numeric_limits<double>::quiet_NaN());
+        std::cout << "[MPCDebug] keyboard request #" << request
+                  << " (" << locomotionModeName(_locomotionMode) << ")"
+                  << " at t=" << time
+                  << " queued for the next scheduled MPC solve" << std::endl;
     }
 
     if (_standingMpcDebugLogPending) {
@@ -967,7 +1012,7 @@ void MyController::maybeWriteStandingMpcDebugLog(
             _locomotionMode,
             _locomotionFSM != nullptr ? _locomotionFSM->state() : LocomotionState::StandingSettle,
             _horizonClock != nullptr ? _horizonClock->t0() : 0.0,
-            _userCommand != nullptr ? *_userCommand : UserCommand{},
+            _filteredUserCommand,
             _standingMpcDebugRequestSource,
             _standingMpcDebugRequestTime,
             _standingMpcDebugTriggerTime,
@@ -1167,6 +1212,9 @@ void MyController::runController() {
 
     const Vec13<double> x0 = buildCurrentMpcState();
     const double dt = std::max(0.0, _stateEstimate->time - _lastControlTime);
+    updateFilteredUserCommand(dt);
+    _swingFootPlanner->setStopRequested(
+        planarCommandIsZero((_userCommand != nullptr) ? *_userCommand : UserCommand{}));
     updateBodyTarget(x0, dt);
     if (_bodyTarget.initialized) {
         _swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W, _bodyTarget.euler_W[2]);

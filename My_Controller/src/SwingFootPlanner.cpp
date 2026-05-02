@@ -8,6 +8,22 @@
 
 namespace {
 constexpr double kSwingFootTargetZ = -0.005;
+
+Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
+                                    const RobotParams<double>& robotParams) {
+    return Rz(stateEstimate.psi) * robotParams.bodyComLocation;
+}
+
+Vec3<double> reducedBodyComWorld(const StateEstimate<double>& stateEstimate,
+                                 const RobotParams<double>& robotParams) {
+    return stateEstimate.torsoPos_W + reducedBodyOffsetWorld(stateEstimate, robotParams);
+}
+
+Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstimate,
+                                         const RobotParams<double>& robotParams) {
+    const Vec3<double> bodyBOffset_W = reducedBodyOffsetWorld(stateEstimate, robotParams);
+    return stateEstimate.torsoLinVel_W + stateEstimate.torsoAngVel_W.cross(bodyBOffset_W);
+}
 }  // namespace
 
 void SwingFootPlanner::reset() {
@@ -20,6 +36,8 @@ void SwingFootPlanner::reset() {
     _footprintCenterValid = false;
     _bodyPositionTargetValid = false;
     _bodyYawTargetValid = false;
+    _stopRequested = false;
+    _stopTouchdownFrozen = false;
 }
 
 void SwingFootPlanner::setBodyTargetWorld(const Vec3<double>& position_W, const double yaw_W) {
@@ -107,6 +125,43 @@ double SwingFootPlanner::bodyYawTargetWorld() const {
     return _bodyYawTargetValid ? _bodyYawTarget_W : _stateEstimate->psi;
 }
 
+Vec2<double> SwingFootPlanner::stopBrakingOffsetBodyFrame() const {
+    if (!_stopRequested || _stateEstimate == nullptr || _robotParams == nullptr) {
+        return Vec2<double>::Zero();
+    }
+
+    const auto& swing = getControllerConfig().swing;
+    const Vec3<double> comVelocity_W = reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams);
+    const Vec3<double> comVelocity_B = Rz(bodyYawTargetWorld()).transpose() * comVelocity_W;
+    Vec2<double> offset_B(comVelocity_B.x(), comVelocity_B.y());
+    if (!(offset_B.norm() > swing.stopVelocityDeadband)) {
+        return Vec2<double>::Zero();
+    }
+
+    const double comHeight = std::max(1e-6, reducedBodyComWorld(*_stateEstimate, *_robotParams).z());
+    const double gravity = std::abs(getControllerConfig().model.gravity);
+    if (!(gravity > 0.0)) {
+        return Vec2<double>::Zero();
+    }
+
+    const double omega0 = std::sqrt(gravity / comHeight);
+    if (!(omega0 > 0.0) || !std::isfinite(omega0)) {
+        return Vec2<double>::Zero();
+    }
+
+    offset_B *= swing.stopCapturePointGain / omega0;
+
+    const double maxOffset = swing.stopCapturePointMaxOffset;
+    if (maxOffset > 0.0) {
+        const double norm = offset_B.norm();
+        if (norm > maxOffset) {
+            offset_B *= maxOffset / norm;
+        }
+    }
+
+    return offset_B;
+}
+
 double SwingFootPlanner::touchdownPreviewTime() const {
     const double stanceFraction = 0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset;
     return std::max(0.0, stanceFraction * stanceTime());
@@ -114,21 +169,28 @@ double SwingFootPlanner::touchdownPreviewTime() const {
 
 Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex) const {
-    const Vec3<double> v_body_cmd(
-        _userCommand != nullptr ? _userCommand->x_dot : 0.0,
-        _userCommand != nullptr ? _userCommand->y_dot : 0.0,
-        0.0);
+    const Vec3<double> v_body_cmd = _stopRequested
+                                        ? Vec3<double>::Zero()
+                                        : Vec3<double>(_userCommand != nullptr ? _userCommand->x_dot : 0.0,
+                                                       _userCommand != nullptr ? _userCommand->y_dot : 0.0,
+                                                       0.0);
     const double previewTime = touchdownPreviewTime();
-    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const double yaw0 = bodyYawTargetWorld();
+    const double psi_dot = _stopRequested ? 0.0 : ((_userCommand != nullptr) ? _userCommand->psi_dot : 0.0);
     const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
-    const Vec3<double> step_W = Rz(translationYaw_W) * v_body_cmd * previewTime;
+    Vec3<double> step_W = Vec3<double>::Zero();
+    if (!_stopRequested) {
+        step_W = Rz(translationYaw_W) * v_body_cmd * previewTime;
+    }
     const Vec3<double> currentCenter_W =
         _bodyPositionTargetValid
             ? _bodyPositionTarget_W
             : (_footprintCenterValid ? _footprintCenter_W : currentFootTouchdownTarget(legIndex));
+    const Vec2<double> brakingOffset_B = stopBrakingOffsetBodyFrame();
     Vec3<double> target =
-        currentCenter_W + step_W + Rz(yaw0) * _nominalFootOffsets_B[legIndex];
+        currentCenter_W + step_W +
+        Rz(yaw0) * Vec3<double>(brakingOffset_B.x(), brakingOffset_B.y(), 0.0) +
+        Rz(yaw0) * _nominalFootOffsets_B[legIndex];
     target.z() = kSwingFootTargetZ;
     return target;
 }
@@ -150,6 +212,15 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
     ensureSwingTouchdownCache();
     ensureNominalFootOffsets();
 
+    const bool realtimeTouchdownUpdate =
+        getControllerConfig().swing.touchdownTargetUpdateMode ==
+        TouchdownTargetUpdateMode::Realtime;
+    const Vec2<double> stopBrakingOffset_B = stopBrakingOffsetBodyFrame();
+    if (!_stopRequested) {
+        _stopTouchdownFrozen = false;
+    } else if (stopBrakingOffset_B.isZero(0.0)) {
+        _stopTouchdownFrozen = true;
+    }
     const double time = _stateEstimate->time;
     auto computeDesiredFootPos = [&](Side side) -> Vec3<double> {
         int legIndex = -1;
@@ -176,7 +247,9 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
 
         const bool wasInStance = _wasInStance[leg];
         _wasInStance[leg] = false;
-        const bool shouldUpdateTouchdownTarget = wasInStance || !_touchdownTargetValid[leg];
+        const bool shouldUpdateTouchdownTarget =
+            !_stopTouchdownFrozen &&
+            (_stopRequested || wasInStance || !_touchdownTargetValid[leg] || realtimeTouchdownUpdate);
 
         if (shouldUpdateTouchdownTarget) {
             _touchdownTargets[leg] = touchdownTargetWorldBodyVelocityHalfStance(leg);

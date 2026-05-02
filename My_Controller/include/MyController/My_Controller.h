@@ -61,6 +61,7 @@ private:
 	void resetSwingState();
 	void applyLocomotionOutput(const LocomotionFSMOutput& output);
 	LocomotionFSMOutput syncLocomotionFSM();
+	void updateFilteredUserCommand(double dt);
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
 	bool activeContactForSide(Side side, double time) const;
 	double contactRampAlphaForSide(Side side) const;
@@ -91,6 +92,8 @@ private:
 	double _lastControlTime{0.0};
 	Vec12<double> _stanceWrenchWorld = Vec12<double>::Zero();
 	vectorAligned<LegRuntimeState> _legRuntime;
+	UserCommand _filteredUserCommand{};
+	bool _filteredUserCommandInitialized{false};
 	std::unique_ptr<HorizonClock> _horizonClock;
 	std::unique_ptr<GaitScheduler> _gaitScheduler;
 	std::unique_ptr<ContactManager> _contactManager;

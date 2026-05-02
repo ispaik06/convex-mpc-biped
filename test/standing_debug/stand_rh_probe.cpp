@@ -558,6 +558,29 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.swing.swingFootYawLeadScale =
                 swing.at("touchdown_yaw_lead_scale").get<double>();
         }
+        if (swing.contains("touchdown_target_update_mode")) {
+            const std::string mode = swing.at("touchdown_target_update_mode").get<std::string>();
+            if (mode == "fixed") {
+                out.swing.touchdownTargetUpdateMode = TouchdownTargetUpdateMode::Fixed;
+            } else if (mode == "realtime" || mode == "real_time") {
+                out.swing.touchdownTargetUpdateMode = TouchdownTargetUpdateMode::Realtime;
+            } else {
+                throw std::runtime_error(
+                    "Invalid controller_config.swing.touchdown_target_update_mode in log");
+            }
+        }
+        if (swing.contains("stop_capture_point_gain")) {
+            out.swing.stopCapturePointGain =
+                swing.at("stop_capture_point_gain").get<double>();
+        }
+        if (swing.contains("stop_capture_point_max_offset")) {
+            out.swing.stopCapturePointMaxOffset =
+                swing.at("stop_capture_point_max_offset").get<double>();
+        }
+        if (swing.contains("stop_velocity_deadband")) {
+            out.swing.stopVelocityDeadband =
+                swing.at("stop_velocity_deadband").get<double>();
+        }
         if (swing.contains("pitch_kp")) {
             out.swing.pitchKp = swing.at("pitch_kp").get<double>();
         }
@@ -569,6 +592,30 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         }
         if (swing.contains("yaw_kd")) {
             out.swing.yawKd = swing.at("yaw_kd").get<double>();
+        }
+    }
+
+    if (cfg.contains("user_command_filter") && cfg.at("user_command_filter").is_object()) {
+        const json& userCommandFilter = cfg.at("user_command_filter");
+        if (userCommandFilter.contains("x_dot_tau")) {
+            out.userCommandFilter.xDotTau = userCommandFilter.at("x_dot_tau").get<double>();
+        }
+        if (userCommandFilter.contains("y_dot_tau")) {
+            out.userCommandFilter.yDotTau = userCommandFilter.at("y_dot_tau").get<double>();
+        }
+        if (userCommandFilter.contains("psi_dot_tau")) {
+            out.userCommandFilter.psiDotTau = userCommandFilter.at("psi_dot_tau").get<double>();
+        }
+        if (userCommandFilter.contains("z_dot_tau")) {
+            out.userCommandFilter.zDotTau = userCommandFilter.at("z_dot_tau").get<double>();
+        }
+        if (userCommandFilter.contains("standing_roll_offset_tau")) {
+            out.userCommandFilter.standingRollOffsetTau =
+                userCommandFilter.at("standing_roll_offset_tau").get<double>();
+        }
+        if (userCommandFilter.contains("standing_pitch_offset_tau")) {
+            out.userCommandFilter.standingPitchOffsetTau =
+                userCommandFilter.at("standing_pitch_offset_tau").get<double>();
         }
     }
 

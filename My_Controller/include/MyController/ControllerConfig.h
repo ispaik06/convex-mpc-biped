@@ -20,6 +20,11 @@ enum class ContactWrenchModel {
     NoRollMoment,
 };
 
+enum class TouchdownTargetUpdateMode {
+    Fixed,
+    Realtime,
+};
+
 struct TimingParameters {
     double cycle{1.0};
     double swing{0.4};
@@ -58,10 +63,24 @@ struct SwingParameters {
     double minRemainingTime{1e-3};
     double bodyVelocityHalfStanceOffset{0.0};
     double swingFootYawLeadScale{1.0};
+    TouchdownTargetUpdateMode touchdownTargetUpdateMode{
+        TouchdownTargetUpdateMode::Fixed};
+    double stopCapturePointGain{1.0};
+    double stopCapturePointMaxOffset{0.20};
+    double stopVelocityDeadband{0.02};
     double pitchKp{0.0};
     double pitchKd{0.0};
     double yawKp{0.0};
     double yawKd{0.0};
+};
+
+struct UserCommandFilterParameters {
+    double xDotTau{0.0};
+    double yDotTau{0.0};
+    double psiDotTau{0.0};
+    double zDotTau{0.0};
+    double standingRollOffsetTau{0.0};
+    double standingPitchOffsetTau{0.0};
 };
 
 struct ContactManagerParameters {
@@ -109,6 +128,7 @@ struct ControllerConfig {
     ModelParameters model;
     MPCParameters mpc;
     SwingParameters swing;
+    UserCommandFilterParameters userCommandFilter;
     ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;
@@ -133,6 +153,7 @@ const DMat<double>& getL(LocomotionMode mode);
 const DMat<double>& getK(LocomotionMode mode);
 LocomotionMode requestedLocomotionMode();
 std::string contactWrenchModelName(ContactWrenchModel model);
+std::string touchdownTargetUpdateModeName(TouchdownTargetUpdateMode mode);
 ContactWrenchModel contactWrenchModelForMode(const MPCParameters& mpc, LocomotionMode mode);
 ContactWrenchModel contactWrenchModel(LocomotionMode mode);
 

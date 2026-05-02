@@ -144,6 +144,23 @@ ContactWrenchModel parseContactWrenchModel(const YAML::Node& node,
                              ". Expected full_wrench or no_roll_moment");
 }
 
+TouchdownTargetUpdateMode parseTouchdownTargetUpdateMode(const YAML::Node& node) {
+    if (!node || !node.IsScalar()) {
+        return TouchdownTargetUpdateMode::Fixed;
+    }
+
+    const std::string mode = node.as<std::string>();
+    if (mode == "fixed") {
+        return TouchdownTargetUpdateMode::Fixed;
+    }
+    if (mode == "realtime" || mode == "real_time") {
+        return TouchdownTargetUpdateMode::Realtime;
+    }
+
+    throw std::runtime_error(
+        "Invalid swing.touchdown_target_update_mode. Expected fixed or realtime");
+}
+
 ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     ControllerConfig params;
 
@@ -225,10 +242,29 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                             "touchdown_yaw_lead_scale",
                             params.swing.swingFootYawLeadScale);
     }
+    params.swing.touchdownTargetUpdateMode =
+        parseTouchdownTargetUpdateMode(swing ? swing["touchdown_target_update_mode"] : YAML::Node{});
+    readScalarIfPresent(swing, "stop_capture_point_gain", params.swing.stopCapturePointGain);
+    readScalarIfPresent(swing,
+                        "stop_capture_point_max_offset",
+                        params.swing.stopCapturePointMaxOffset);
+    readScalarIfPresent(swing, "stop_velocity_deadband", params.swing.stopVelocityDeadband);
     readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
     readScalarIfPresent(swing, "yaw_kd", params.swing.yawKd);
+
+    const YAML::Node userCommandFilter = config["user_command_filter"];
+    readScalarIfPresent(userCommandFilter, "x_dot_tau", params.userCommandFilter.xDotTau);
+    readScalarIfPresent(userCommandFilter, "y_dot_tau", params.userCommandFilter.yDotTau);
+    readScalarIfPresent(userCommandFilter, "psi_dot_tau", params.userCommandFilter.psiDotTau);
+    readScalarIfPresent(userCommandFilter, "z_dot_tau", params.userCommandFilter.zDotTau);
+    readScalarIfPresent(userCommandFilter,
+                        "standing_roll_offset_tau",
+                        params.userCommandFilter.standingRollOffsetTau);
+    readScalarIfPresent(userCommandFilter,
+                        "standing_pitch_offset_tau",
+                        params.userCommandFilter.standingPitchOffsetTau);
 
     const YAML::Node contactManager = config["contact_manager"];
     readScalarIfPresent(contactManager,
@@ -337,14 +373,40 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
     if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
         !std::isfinite(params.swing.swingFootYawLeadScale) ||
+        !std::isfinite(params.swing.stopCapturePointGain) ||
+        !std::isfinite(params.swing.stopCapturePointMaxOffset) ||
+        !std::isfinite(params.swing.stopVelocityDeadband) ||
+        !std::isfinite(params.userCommandFilter.xDotTau) ||
+        !std::isfinite(params.userCommandFilter.yDotTau) ||
+        !std::isfinite(params.userCommandFilter.psiDotTau) ||
+        !std::isfinite(params.userCommandFilter.zDotTau) ||
+        !std::isfinite(params.userCommandFilter.standingRollOffsetTau) ||
+        !std::isfinite(params.userCommandFilter.standingPitchOffsetTau) ||
         !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
         !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
         params.swing.bodyVelocityHalfStanceOffset < 0.0 ||
         params.swing.swingFootYawLeadScale < 0.0 ||
+        params.swing.stopCapturePointGain < 0.0 ||
+        params.swing.stopCapturePointMaxOffset < 0.0 ||
+        params.swing.stopVelocityDeadband < 0.0 ||
+        params.userCommandFilter.xDotTau < 0.0 ||
+        params.userCommandFilter.yDotTau < 0.0 ||
+        params.userCommandFilter.psiDotTau < 0.0 ||
+        params.userCommandFilter.zDotTau < 0.0 ||
+        params.userCommandFilter.standingRollOffsetTau < 0.0 ||
+        params.userCommandFilter.standingPitchOffsetTau < 0.0 ||
         params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0 ||
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
-            "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, and swing.yaw_kd must be finite; offsets must be non-negative and attitude gains must be non-negative");
+            "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
+            "swing.stop_capture_point_gain, swing.stop_capture_point_max_offset, "
+            "swing.stop_velocity_deadband, user_command_filter.x_dot_tau, "
+            "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
+            "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "
+            "user_command_filter.standing_pitch_offset_tau, swing.pitch_kp, swing.pitch_kd, "
+            "swing.yaw_kp, and swing.yaw_kd must be finite; offsets, time constants, and "
+            "stop-braking gains must be non-negative and attitude gains must be "
+            "non-negative");
     }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
         !std::isfinite(params.contactManager.contactForceOffThreshold) ||
@@ -500,6 +562,16 @@ std::string contactWrenchModelName(const ContactWrenchModel model) {
             return "full_wrench";
         case ContactWrenchModel::NoRollMoment:
             return "no_roll_moment";
+    }
+    return "unknown";
+}
+
+std::string touchdownTargetUpdateModeName(const TouchdownTargetUpdateMode mode) {
+    switch (mode) {
+        case TouchdownTargetUpdateMode::Fixed:
+            return "fixed";
+        case TouchdownTargetUpdateMode::Realtime:
+            return "realtime";
     }
     return "unknown";
 }

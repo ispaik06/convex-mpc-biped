@@ -40,10 +40,22 @@ swing:
   min_remaining_time: 0.001
   body_velocity_half_stance_offset: 0.0
   swing_foot_yaw_lead_scale: 1.0
+  touchdown_target_update_mode: realtime
+  stop_capture_point_gain: 1.0
+  stop_capture_point_max_offset: 0.20
+  stop_velocity_deadband: 0.02
   pitch_kp: 20.0
   pitch_kd: 2.0
   yaw_kp: 20.0
   yaw_kd: 2.0
+
+user_command_filter:
+  x_dot_tau: 0.20
+  y_dot_tau: 0.20
+  psi_dot_tau: 0.30
+  z_dot_tau: 0.20
+  standing_roll_offset_tau: 0.20
+  standing_pitch_offset_tau: 0.20
 
 logging:
   standing_mpc_debug_trigger_times: []

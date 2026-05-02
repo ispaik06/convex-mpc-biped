@@ -28,6 +28,7 @@ public:
 
     void reset();
     void setBodyTargetWorld(const Vec3<double>& position_W, double yaw_W);
+    void setStopRequested(bool stopRequested) { _stopRequested = stopRequested; }
     DesiredFootPositions desiredFootPositions();
 
 private:
@@ -37,6 +38,7 @@ private:
     double bodyYawTargetWorld() const;
     double touchdownPreviewTime() const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
+    Vec2<double> stopBrakingOffsetBodyFrame() const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex) const;
     void recordSequentialTouchdown(std::size_t legIndex, const Vec3<double>& target_W);
 
@@ -56,6 +58,8 @@ private:
     bool _bodyPositionTargetValid{false};
     double _bodyYawTarget_W{0.0};
     bool _bodyYawTargetValid{false};
+    bool _stopRequested{false};
+    bool _stopTouchdownFrozen{false};
 };
 
 #endif  // SWING_FOOT_PLANNER_H

@@ -425,11 +425,27 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["min_remaining_time"] = config.swing.minRemainingTime;
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
     swing["swing_foot_yaw_lead_scale"] = config.swing.swingFootYawLeadScale;
+    swing["touchdown_target_update_mode"] =
+        touchdownTargetUpdateModeName(config.swing.touchdownTargetUpdateMode);
+    swing["stop_capture_point_gain"] = config.swing.stopCapturePointGain;
+    swing["stop_capture_point_max_offset"] = config.swing.stopCapturePointMaxOffset;
+    swing["stop_velocity_deadband"] = config.swing.stopVelocityDeadband;
     swing["pitch_kp"] = config.swing.pitchKp;
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;
     swing["yaw_kd"] = config.swing.yawKd;
     root["swing"] = std::move(swing);
+
+    json userCommandFilter = json::object();
+    userCommandFilter["x_dot_tau"] = config.userCommandFilter.xDotTau;
+    userCommandFilter["y_dot_tau"] = config.userCommandFilter.yDotTau;
+    userCommandFilter["psi_dot_tau"] = config.userCommandFilter.psiDotTau;
+    userCommandFilter["z_dot_tau"] = config.userCommandFilter.zDotTau;
+    userCommandFilter["standing_roll_offset_tau"] =
+        config.userCommandFilter.standingRollOffsetTau;
+    userCommandFilter["standing_pitch_offset_tau"] =
+        config.userCommandFilter.standingPitchOffsetTau;
+    root["user_command_filter"] = std::move(userCommandFilter);
 
     json contactManager = json::object();
     contactManager["contact_force_on_threshold"] =

@@ -1,8 +1,12 @@
 # Swing Foot Touchdown Planner
 
 이 문서는 `SwingFootPlanner`가 swing foot touchdown target, 즉 빨간 touchdown marker 위치를 어떻게 계산하는지 설명한다.
-현재 구현은 `body_velocity_half_stance` 하나만 사용한다.
+현재 구현은 `body_velocity_half_stance` 기반 touchdown geometry를 사용하고,
+추가로 touchdown target을 `fixed` 또는 `realtime` 모드로 갱신할 수 있다.
 이전의 `legacy_com_yaw_corrected` 방식은 제거되었다.
+
+keyboard로 들어오는 연속 명령은 controller 내부 `user_command_filter`를 거친 뒤에만 사용된다.
+walking의 `x_dot / y_dot / psi_dot`뿐 아니라 standing의 `z_dot / roll / pitch`도 같은 경로를 탄다.
 
 ## 1. 목표
 
@@ -12,7 +16,8 @@
 2. 후진하면 다음 발도 계속 뒤로 짚어야 한다.
 3. 좌/우 이동하면 footprint 전체가 좌/우로 이동해야 한다.
 4. 제자리 회전하면 발 위치는 몸 중심 주변에서 회전 배치되어야 한다.
-5. 정지할 때는 양발 평균 xy가 body desired marker, 즉 `debug_body_target`의 xy와 맞아야 한다.
+5. 정지가 완료되면 양발 평균 xy가 body desired marker, 즉 `debug_body_target`의 xy와 맞아야 한다.
+6. 정지 진입 순간에는 현재 COM 속도를 보고 touchdown target을 desired marker보다 진행 방향 쪽으로 조금 더 둬서 브레이크를 건다.
 
 핵심 설계 판단은 다음과 같다.
 
@@ -211,18 +216,50 @@ footprintCenter = target_W - Rz(yaw0) * nominalFootOffset_B[leg]
 
 ## 9. User command별 동작
 
-### 9.1 정지: x_dot = 0, y_dot = 0, psi_dot = 0
+### 9.1 정지: raw command가 zero로 들어온 경우
+
+정지 진입은 `space`로 raw target이 zero가 되는 순간 시작된다.
+다만 그 뒤의 `x_dot / y_dot / psi_dot`는 controller 내부 `user_command_filter`를 거치므로,
+몸통 target과 MPC reference는 즉시 0으로 끊기지 않고 천천히 따라간다.
+즉 body desired marker도 filtered command를 따라 서서히 감속한다.
+
+이때는 단순히 `step_W = 0`으로 끝내지 않고, 현재 reduced-body COM 속도에서 capture-point 스타일의 braking offset을 계산한다.
 
 ```text
-step_W = 0
-target_W = bodyTarget_W + Rz(yaw0) * nominalFootOffset_B[leg]
+omega0 = sqrt(|g| / comHeight)
+v_com_B = Rz(yaw0)^T * v_com_W
+brakingOffset_B.xy = gain * v_com_B.xy / omega0
+brakingOffset_B.xy = clampMagnitude(brakingOffset_B.xy, maxOffset)
+
+targetCenter_W = bodyTarget_W + Rz(yaw0) * brakingOffset_B
+target_W = targetCenter_W + Rz(yaw0) * nominalFootOffset_B[leg]
 ```
+
+여기서:
+
+- `comHeight`는 reduced-body COM의 world z 높이다.
+- `gain`은 `swing.stop_capture_point_gain`이다.
+- `maxOffset`은 `swing.stop_capture_point_max_offset`이다.
+- `stop_velocity_deadband`보다 속도가 작으면 braking offset은 0으로 본다.
 
 결과:
 
-- 다음 swing foot은 body desired marker 옆의 nominal 위치로 간다.
-- 양발이 모두 새 target으로 들어오면 양발 평균 xy는 body desired marker xy와 맞는다.
-- desired marker를 발에 맞춰 움직이지 않고, 발을 desired marker 기준으로 정렬한다.
+- 몸이 아직 앞으로 가고 있으면 touchdown target이 desired marker보다 전진 방향 쪽에 놓인다.
+- 몸이 멈춰가면서 속도가 줄면 braking offset도 줄어든다.
+- 최종적으로 속도가 거의 0이 되면 touchdown target과 red marker가 다시 정렬된다.
+- stop 중에는 `targetCenter_W = bodyTarget_W + Rz(yaw0) * brakingOffset_B`를 매 tick 다시 계산한다.
+  그래서 braking offset이 줄어들수록 touchdown target이 body target(red marker) 쪽으로 수렴한다.
+- `fixed` 모드에서는 이 오프셋을 swing 시작 시점에 한 번만 샘플링한다.
+- `realtime` 모드에서는 swing 중에도 매 tick 다시 계산한다.
+
+관련 YAML 튜닝 키:
+
+```yaml
+swing:
+  stop_capture_point_gain: 1.0
+  stop_capture_point_max_offset: 0.20
+  stop_velocity_deadband: 0.02
+```
 
 ### 9.2 전진: x_dot > 0, y_dot = 0, psi_dot = 0
 
@@ -284,6 +321,7 @@ target_W = bodyTarget_W + step_W + Rz(yaw0) * offset_B[leg]
 - center 이동은 preview 구간의 중간 yaw를 기준으로 근사한다.
 - 발 좌우 배치는 body desired yaw를 기준으로 한다.
 - 따라서 몸이 회전하며 이동할 때도 발이 미래 heading에 맞춰 놓인다.
+- raw command가 zero로 들어가 stop request가 켜지면, 위의 `step_W` 대신 9.1의 braking offset이 우선한다.
 
 ## 10. Red marker와 균형
 
@@ -307,20 +345,37 @@ rightTarget_W = bodyTarget_W + Rz(yaw0) * rightOffset_B
 
 ## 11. 현재 구현에서 의도적으로 하지 않는 것
 
-현재 planner는 touchdown target을 한 번에 계산한다.
-별도의 stride length clamp, capture-point feedback, velocity feedback은 넣지 않았다.
+touchdown target 갱신 모드는 두 가지다.
 
-이유:
-
-- 지금 우선순위는 command 의미와 desired marker 정렬을 명확히 만드는 것이다.
-- 너무 많은 보정항을 넣으면 튜닝 중 어떤 항이 문제인지 분리하기 어렵다.
-- 필요한 경우 다음 단계에서 `step_W` 또는 `target_W - currentFoot_W`에 clamp를 추가하는 것이 낫다.
-
-현재 구조에서 clamp를 추가한다면 가장 자연스러운 위치는 다음 둘 중 하나다.
-
-```text
-1. step_W 크기 제한
-2. target_W와 현재 swing foot 사이의 거리 제한
+```yaml
+swing:
+  touchdown_target_update_mode: fixed     # swing 시작 시 1회 계산
+  # touchdown_target_update_mode: realtime  # swing 중 매 tick 재계산
 ```
 
-하지만 지금은 YAML 튜닝과 기본 touchdown 정책 확인을 우선한다.
+- `fixed`: swing이 시작될 때 touchdown target을 한 번 잡고, 그 swing 동안은 유지한다.
+- stop intent가 걸린 경우에는 예외적으로 braking offset이 deadband 아래로 내려갈 때까지
+  target을 계속 다시 계산해서, 최종 touchdown이 body target 쪽으로 수렴하게 한다.
+- `realtime`: swing 중에도 매 tick target을 다시 계산해서, stop braking offset과 body target 변화를 즉시 반영한다.
+  단, stop braking offset이 deadband 아래로 내려가면 target을 latch해서 더 이상 흔들리지 않게 한다.
+
+realtime 모드를 넣는 이유는 stop 시점에 특히 중요하다.
+
+- `space`로 raw target이 zero가 되면 controller의 filtered command가 그쪽으로 서서히 수렴한다.
+- stop brake용 touchdown offset은 raw zero 진입 순간부터 활성화된다.
+- MPC reference와 body target은 filtered command를 기준으로 서서히 줄어든다.
+- 실제 COM 속도는 그 순간에도 계속 변하고 있다.
+- touchdown target이 swing 시작 시점에 고정돼 있으면, stop 정보가 늦게 반영된다.
+- realtime 갱신은 이런 stale target을 줄여서 braking step을 더 빨리 반영한다.
+- stop braking offset이 deadband 아래로 떨어지면 realtime 갱신을 멈추고 target을 고정한다.
+
+현재 planner는 capture-point 스타일의 stop 브레이크를 넣고 있지만, stride length clamp나 더 정교한 stop-state hysteresis는 아직 없다.
+
+다음 단계에서 더 추가할 수 있는 것:
+
+```text
+1. stop mode에서 target offset의 최대 stride length clamp
+2. zero command 진입/이탈에 대한 hysteresis
+3. 속도 추정 노이즈를 줄이기 위한 low-pass on v_com
+4. realtime mode에서 touchdown target 변화량에 대한 rate limit
+```
