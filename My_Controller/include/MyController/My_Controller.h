@@ -1,6 +1,7 @@
 #ifndef MY_CONTROLLER_H
 #define MY_CONTROLLER_H
 
+#include <iosfwd>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "LocomotionFSM.h"
 #include "MPCFormulation.h"
 #include "RobotController.h"
+#include "Utilities/Timing.h"
 #include "SwingFootPlanner.h"
 #include "SwingFootTrajectory.h"
 
@@ -28,6 +30,7 @@ public:
 	virtual LegDynamicsRequest legDynamicsRequest() const override;
 
 	virtual void runController() override;
+	virtual void printProfilingSummary(std::ostream& out) const override;
 	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const override;
 	virtual std::vector<ControllerContactDebugLegState> contactDebugLegStates() const override;
 	virtual ControllerBodyTargetDebugState bodyTargetDebugState() const override;
@@ -82,6 +85,13 @@ private:
 	bool _initialized{false};
 	u64 _iteration{0};
 	u64 _lastMpcIteration{0};
+	profiling::TimingStats _runControllerTime;
+	profiling::TimingStats _mpcSetupTime;
+	profiling::TimingStats _gaitConstraintTime;
+	profiling::TimingStats _referenceTrajectoryTime;
+	profiling::TimingStats _mpcFormulationTime;
+	profiling::TimingStats _mpcUpdateInputTime;
+	profiling::TimingStats _mpcSolveTime;
 	bool _standingMpcDebugLogPending{false};
 	bool _standingMpcDebugLogReady{false};
 	unsigned long long _lastStandingMpcDebugLogRequest{0};
@@ -109,14 +119,15 @@ private:
 	u64 _iterationsBetweenMpc{10};
 	LocomotionMode _locomotionMode{LocomotionMode::Walking};
 	LegDynamicsRequest _legDynamicsRequest;
-		BodyTargetState _bodyTarget;
-		Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();
-		Vec3<double> _rightTouchdownTarget_W = Vec3<double>::Zero();
-		double _leftTouchdownTargetYaw_W{0.0};
-		double _rightTouchdownTargetYaw_W{0.0};
-		bool _leftTouchdownTargetInitialized{false};
-		bool _rightTouchdownTargetInitialized{false};
+	profiling::TimingStats _torqueComputeTime;
+	BodyTargetState _bodyTarget;
+	Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();
+	Vec3<double> _rightTouchdownTarget_W = Vec3<double>::Zero();
+	double _leftTouchdownTargetYaw_W{0.0};
+	double _rightTouchdownTargetYaw_W{0.0};
+	bool _leftTouchdownTargetInitialized{false};
+	bool _rightTouchdownTargetInitialized{false};
 
-	};
+};
 
 #endif  // MY_CONTROLLER_H

@@ -43,8 +43,8 @@ swing:
   body_velocity_half_stance_offset: 0.5
   swing_foot_yaw_lead_scale: 1.5
   touchdown_target_update_mode: fixed  # fixed / realtime
-  stop_capture_point_gain: 5.0
-  stop_capture_point_max_offset: 0.30
+  stop_capture_point_gain: 0.6
+  stop_capture_point_max_offset: 0.08
   stop_velocity_deadband: 0.02
   pitch_kp: 150.0
   pitch_kd: 18.0

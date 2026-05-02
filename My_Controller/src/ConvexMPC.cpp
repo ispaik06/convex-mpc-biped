@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "Utilities/Timing.h"
+
 namespace {
 template <typename T>
 void requireNonNull(const T* ptr, const char* name) {
@@ -312,6 +314,8 @@ void ConvexMPC::buildQP() {
         throw std::runtime_error("ConvexMPC::buildQP requires initialized input");
     }
 
+    profiling::ScopedTimer buildTimer(_buildQpTime);
+
     const DMat<double>& A_qp = *_input.A_qp;
     const DMat<double>& B_qp = *_input.B_qp;
     const DVec<double>& X_ref = *_input.X_ref;
@@ -323,30 +327,49 @@ void ConvexMPC::buildQP() {
     const InputWeightMat& inputWeight = inputWeightForMode(_input.locomotionMode);
     const int steps = horizonSteps();
 
-    _statePrediction.noalias() = A_qp * x0;
-    _stateError = _statePrediction;
-    _stateError -= X_ref;
-
-    for (int k = 0; k < steps; ++k) {
-        const Eigen::Index stateOffset = static_cast<Eigen::Index>(13 * k);
-
-        _weightedB.middleRows(stateOffset, 13).noalias() =
-            stateWeight * B_qp.middleRows(stateOffset, 13);
-        _weightedStateError.segment(stateOffset, 13).noalias() =
-            stateWeight * _stateError.segment(stateOffset, 13);
+    {
+        profiling::ScopedTimer timer(_stateProjectionTime);
+        _statePrediction.noalias() = A_qp * x0;
+        _stateError = _statePrediction;
+        _stateError -= X_ref;
     }
 
-    _hessianDense.noalias() = 2.0 * (B_qp.transpose() * _weightedB);
-    for (int k = 0; k < steps; ++k) {
-        const Eigen::Index inputOffset = static_cast<Eigen::Index>(12 * k);
-        _hessianDense.block(inputOffset, inputOffset, 12, 12) += 2.0 * inputWeight;
+    {
+        profiling::ScopedTimer timer(_weightedAssemblyTime);
+        for (int k = 0; k < steps; ++k) {
+            const Eigen::Index stateOffset = static_cast<Eigen::Index>(13 * k);
+
+            _weightedB.middleRows(stateOffset, 13).noalias() =
+                stateWeight * B_qp.middleRows(stateOffset, 13);
+            _weightedStateError.segment(stateOffset, 13).noalias() =
+                stateWeight * _stateError.segment(stateOffset, 13);
+        }
     }
-    _hessianDense = 0.5 * (_hessianDense + _hessianDense.transpose());
 
-    _gradientDense.noalias() = 2.0 * (B_qp.transpose() * _weightedStateError);
+    {
+        profiling::ScopedTimer timer(_hessianAssemblyTime);
+        _hessianDense.noalias() = 2.0 * (B_qp.transpose() * _weightedB);
+        for (int k = 0; k < steps; ++k) {
+            const Eigen::Index inputOffset = static_cast<Eigen::Index>(12 * k);
+            _hessianDense.block(inputOffset, inputOffset, 12, 12) += 2.0 * inputWeight;
+        }
+        _hessianDense = 0.5 * (_hessianDense + _hessianDense.transpose());
+    }
 
-    buildHessianMatrix(_hessianDense);
-    buildConstraintMatrix(C, D);
+    {
+        profiling::ScopedTimer timer(_gradientAssemblyTime);
+        _gradientDense.noalias() = 2.0 * (B_qp.transpose() * _weightedStateError);
+    }
+
+    {
+        profiling::ScopedTimer timer(_sparseHessianTime);
+        buildHessianMatrix(_hessianDense);
+    }
+    {
+        profiling::ScopedTimer timer(_sparseConstraintTime);
+        buildConstraintMatrix(C, D);
+    }
+
     const std::vector<int> currentContactSignature = contactConstraintSignature(D);
     const bool contactSignatureChanged =
         _hasContactConstraintSignature &&
@@ -359,6 +382,12 @@ void ConvexMPC::buildQP() {
     _upperBound.tail(numEq()).setZero();
 
     const bool shouldColdInitialize = !_solverInitialized || contactSignatureChanged;
+    if (contactSignatureChanged) {
+        ++_contactSignatureChangeCount;
+    }
+    if (shouldColdInitialize) {
+        ++_coldStartCount;
+    }
     const bool success = shouldColdInitialize ? initializeSolver() : updateSolverData();
     if (!success) {
         throw std::runtime_error("ConvexMPC failed to setup/update OsqpEigen solver");
@@ -379,6 +408,8 @@ void ConvexMPC::solve() {
         buildQP();
     }
 
+    profiling::ScopedTimer solveTimer(_solveTime);
+
     auto solveCurrentProblem = [this](const bool useWarmStart,
                                       const char* context) -> OsqpEigen::Status {
         if (useWarmStart && _hasPreviousSolution && !_solver.setPrimalVariable(_warmStart)) {
@@ -388,7 +419,11 @@ void ConvexMPC::solve() {
             throw std::runtime_error(oss.str());
         }
 
-        const auto exitFlag = _solver.solveProblem();
+        OsqpEigen::ErrorExitFlag exitFlag;
+        {
+            profiling::ScopedTimer timer(_osqpSolveCallTime);
+            exitFlag = _solver.solveProblem();
+        }
         if (exitFlag != OsqpEigen::ErrorExitFlag::NoError) {
             std::ostringstream oss;
             oss << "ConvexMPC OsqpEigen solveProblem failed"
@@ -400,12 +435,13 @@ void ConvexMPC::solve() {
     };
 
     const auto firstStatus = solveCurrentProblem(!_skipWarmStartForCurrentSolve, "initial");
-    if (!isSolvedStatus(firstStatus)) {
-        if (!initializeSolver()) {
-            std::ostringstream oss;
-            oss << "ConvexMPC OsqpEigen fresh retry initialize failed"
-                << " first_status=" << formatOsqpStatus(firstStatus);
-            throw std::runtime_error(oss.str());
+        if (!isSolvedStatus(firstStatus)) {
+            ++_solveRetryCount;
+            if (!initializeSolver()) {
+                std::ostringstream oss;
+                oss << "ConvexMPC OsqpEigen fresh retry initialize failed"
+                    << " first_status=" << formatOsqpStatus(firstStatus);
+                throw std::runtime_error(oss.str());
         }
 
         const auto retryStatus = solveCurrentProblem(false, "fresh_cold_retry");
@@ -428,12 +464,15 @@ void ConvexMPC::solve() {
         throw std::runtime_error("ConvexMPC received solution with unexpected dimension");
     }
 
-    _lastSolution = solution;
-    updateWarmStart();
-    _hasPreviousSolution = true;
-    _optimalWrenchHorizon = solution.cast<double>();
-    _optimalWrench = solution.segment(0, 12).cast<double>();
-    _skipWarmStartForCurrentSolve = false;
+    {
+        profiling::ScopedTimer timer(_solutionExtractTime);
+        _lastSolution = solution;
+        updateWarmStart();
+        _hasPreviousSolution = true;
+        _optimalWrenchHorizon = solution.cast<double>();
+        _optimalWrench = solution.segment(0, 12).cast<double>();
+        _skipWarmStartForCurrentSolve = false;
+    }
 }
 
 void ConvexMPC::validateInputDimensions(const ConvexMPCInputView& input) const {
@@ -458,6 +497,8 @@ void ConvexMPC::validateInputDimensions(const ConvexMPCInputView& input) const {
 }
 
 bool ConvexMPC::initializeSolver() {
+    profiling::ScopedTimer timer(_osqpInitTime);
+
     if (_solver.isInitialized()) {
         _solver.clearSolver();
     }
@@ -486,6 +527,8 @@ bool ConvexMPC::initializeSolver() {
 }
 
 bool ConvexMPC::updateSolverData() {
+    profiling::ScopedTimer timer(_osqpUpdateTime);
+
     if (!_solverInitialized) {
         return initializeSolver();
     }
@@ -531,4 +574,22 @@ void ConvexMPC::updateWarmStart() {
 
     _warmStart.head(numVars() - 12) = _lastSolution.segment(12, numVars() - 12);
     _warmStart.tail(12) = _lastSolution.tail(12);
+}
+
+void ConvexMPC::printProfilingSummary(std::ostream& out) const {
+    out << profiling::formatTimingStats("qp_build", _buildQpTime) << '\n';
+    out << "qp_cold_starts: " << _coldStartCount << '\n';
+    out << "qp_contact_signature_changes: " << _contactSignatureChangeCount << '\n';
+    out << "qp_solve_retries: " << _solveRetryCount << '\n';
+    out << profiling::formatTimingStats("qp_state_projection", _stateProjectionTime) << '\n';
+    out << profiling::formatTimingStats("qp_weighted_assembly", _weightedAssemblyTime) << '\n';
+    out << profiling::formatTimingStats("qp_hessian_assembly", _hessianAssemblyTime) << '\n';
+    out << profiling::formatTimingStats("qp_gradient_assembly", _gradientAssemblyTime) << '\n';
+    out << profiling::formatTimingStats("qp_sparse_hessian", _sparseHessianTime) << '\n';
+    out << profiling::formatTimingStats("qp_sparse_constraint", _sparseConstraintTime) << '\n';
+    out << profiling::formatTimingStats("osqp_init", _osqpInitTime) << '\n';
+    out << profiling::formatTimingStats("osqp_update", _osqpUpdateTime) << '\n';
+    out << profiling::formatTimingStats("qp_solve", _solveTime) << '\n';
+    out << profiling::formatTimingStats("osqp_solve_call", _osqpSolveCallTime) << '\n';
+    out << profiling::formatTimingStats("qp_solution_extract", _solutionExtractTime) << '\n';
 }

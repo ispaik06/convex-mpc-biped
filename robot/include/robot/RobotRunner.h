@@ -1,6 +1,7 @@
 #ifndef ROBOT_RUNNER_H
 #define ROBOT_RUNNER_H
 
+#include <iosfwd>
 #include <memory>
 
 #include "StateEstimator/StateEstimator.h"
@@ -12,6 +13,7 @@
 #include "Controllers/ControlGains.h"
 #include "Controllers/LegController.h"
 #include "LegPosInitializer.h"
+#include "Utilities/Timing.h"
 
 class RobotRunner {
 public:
@@ -29,6 +31,7 @@ public:
     bool armInitializationComplete() const;
     bool initializationComplete() const;
     const LegController<double>* legController() const;
+    void printProfilingSummary(std::ostream& out) const;
 
     virtual ~RobotRunner() = default;
 
@@ -50,6 +53,7 @@ private:
     bool _armInitializationComplete = false;
     double _timestep;
     u64 _iterations = 0;
+    profiling::TimingStats _composeCommandTime;
 };
 
 

@@ -6,6 +6,7 @@
 #include "RobotRunner.h"
 #include "InitialPoseConfig.h"
 #include "JointTrackingConfig.h"
+#include "Utilities/Timing.h"
 #include "Utilities/MatrixUtils.h"
 
 namespace {
@@ -128,7 +129,10 @@ void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& 
 
     _legController->setEnabled(true);
     _armController->setEnabled(true);
-    composeCommand(command);
+    {
+        profiling::ScopedTimer timer(_composeCommandTime);
+        composeCommand(command);
+    }
 
     finalizeStep();
 }
@@ -256,6 +260,13 @@ bool RobotRunner::armInitializationComplete() const {
 
 bool RobotRunner::initializationComplete() const {
     return _legInitializationComplete && _armInitializationComplete;
+}
+
+void RobotRunner::printProfilingSummary(std::ostream& out) const {
+    if (_robot_ctrl != nullptr) {
+        _robot_ctrl->printProfilingSummary(out);
+    }
+    out << profiling::formatTimingStats("torque_compose", _composeCommandTime) << '\n';
 }
 
 const LegController<double>* RobotRunner::legController() const {

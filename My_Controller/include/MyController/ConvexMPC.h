@@ -1,6 +1,8 @@
 #ifndef CONVEX_MPC_H
 #define CONVEX_MPC_H
 
+#include <cstdint>
+#include <iosfwd>
 #include <Eigen/SparseCore>
 #include <OsqpEigen/OsqpEigen.h>
 
@@ -9,6 +11,7 @@
 #include "ControllerConfig.h"
 #include "GaitScheduler.h"
 #include "MPCFormulation.h"
+#include "Utilities/Timing.h"
 
 struct ConvexMPCInputView {
     const DMat<double>* A_qp{nullptr};
@@ -46,6 +49,7 @@ public:
     const Vec12<double>& optimalWrench() const;
     const DVec<double>& optimalWrenchHorizon() const;
     bool hasSolution() const;
+    void printProfilingSummary(std::ostream& out) const;
 
     void buildQP();
     void solve();
@@ -92,6 +96,21 @@ private:
     DVec<double> _weightedStateError;
     Vec12<double> _optimalWrench = Vec12<double>::Zero();
     DVec<double> _optimalWrenchHorizon;
+    profiling::TimingStats _buildQpTime;
+    profiling::TimingStats _stateProjectionTime;
+    profiling::TimingStats _weightedAssemblyTime;
+    profiling::TimingStats _hessianAssemblyTime;
+    profiling::TimingStats _gradientAssemblyTime;
+    profiling::TimingStats _sparseHessianTime;
+    profiling::TimingStats _sparseConstraintTime;
+    profiling::TimingStats _osqpInitTime;
+    profiling::TimingStats _osqpUpdateTime;
+    profiling::TimingStats _solveTime;
+    profiling::TimingStats _osqpSolveCallTime;
+    profiling::TimingStats _solutionExtractTime;
+    std::uint64_t _coldStartCount{0};
+    std::uint64_t _contactSignatureChangeCount{0};
+    std::uint64_t _solveRetryCount{0};
 };
 
 #endif  // CONVEX_MPC_H

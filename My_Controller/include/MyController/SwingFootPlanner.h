@@ -28,18 +28,20 @@ public:
 
     void reset();
     void setBodyTargetWorld(const Vec3<double>& position_W, double yaw_W);
-    void setStopRequested(bool stopRequested) { _stopRequested = stopRequested; }
     DesiredFootPositions desiredFootPositions();
 
 private:
     void syncHorizonClock();
     void ensureSwingTouchdownCache();
     void ensureNominalFootOffsets();
+    Vec2<double> currentPlanarCommandBodyFrame() const;
     double bodyYawTargetWorld() const;
     double touchdownPreviewTime() const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
-    Vec2<double> stopBrakingOffsetBodyFrame() const;
-    Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex) const;
+    bool shouldApplyBrakingOffset(const Vec2<double>& currentPlanarCommand) const;
+    Vec2<double> stopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
+    Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex,
+                                                            const Vec2<double>& currentPlanarCommand) const;
     void recordSequentialTouchdown(std::size_t legIndex, const Vec3<double>& target_W);
 
     GaitScheduler* _gaitScheduler = nullptr;
@@ -58,8 +60,9 @@ private:
     bool _bodyPositionTargetValid{false};
     double _bodyYawTarget_W{0.0};
     bool _bodyYawTargetValid{false};
-    bool _stopRequested{false};
-    bool _stopTouchdownFrozen{false};
+    Vec2<double> _previousPlanarCommand_B = Vec2<double>::Zero();
+    bool _previousPlanarCommandValid{false};
+    bool _previousBrakingOffsetActive{false};
 };
 
 #endif  // SWING_FOOT_PLANNER_H

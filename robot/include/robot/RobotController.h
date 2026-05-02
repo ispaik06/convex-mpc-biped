@@ -1,6 +1,7 @@
 #ifndef ROBOT_CONTROLLER_H
 #define ROBOT_CONTROLLER_H
 
+#include <iosfwd>
 #include <vector>
 
 #include "Robot/RobotModel.h"
@@ -63,6 +64,7 @@ public:
 	virtual void initializeController() = 0;
 
 	virtual void runController() = 0;
+	virtual void printProfilingSummary(std::ostream& out) const {}
 
 	virtual void collectDebugVisualization(DebugVizState<double>& debugViz) const {}
 	virtual std::vector<ControllerContactDebugLegState> contactDebugLegStates() const { return {}; }

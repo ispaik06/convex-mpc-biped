@@ -19,6 +19,7 @@
 #include "SimulationConfig.h"
 #include "SimulationRunner.h"
 #include "Utilities/MatrixUtils.h"
+#include "Utilities/Timing.h"
 #include "ViewerSyncThrottle.h"
 #include "setupRobotParams.h"
 
@@ -189,7 +190,10 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 
 	while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
 		runRobotControl();
-		mj_step(model, data);
+		{
+			profiling::ScopedTimer timer(_mjStepTime);
+			mj_step(model, data);
+		}
 		++_iterations;
 
 		if (headlessStopTime > 0.0 && data->time - simStart >= headlessStopTime) {
@@ -211,6 +215,12 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 			std::this_thread::sleep_for(std::chrono::duration<double>(simElapsed - wallElapsed));
 		}
 	}
+
+	std::cout << '\n' << "[Profile] timing summary" << '\n';
+	if (_robotRunner != nullptr) {
+		_robotRunner->printProfilingSummary(std::cout);
+	}
+	std::cout << profiling::formatTimingStats("mj_step", _mjStepTime) << '\n';
 
 	std::cout << '\n' << "Simulated " << _iterations
 			  << " steps, sim time=" << data->time << " sec" << "\n\n";

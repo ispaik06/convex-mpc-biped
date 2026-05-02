@@ -13,6 +13,7 @@
 #include "Controllers/LegController.h"
 #include "Dynamics/OperationalSpaceDynamics.h"
 #include "StandingMpcDebugLogger.h"
+#include "Utilities/Timing.h"
 #include "Utilities/MatrixUtils.h"
 
 namespace {
@@ -29,10 +30,6 @@ double lowPassBlendAlpha(const double tau, const double dt) {
         return 1.0;
     }
     return std::clamp(-std::expm1(-dt / tau), 0.0, 1.0);
-}
-
-bool planarCommandIsZero(const UserCommand& command) {
-    return command.x_dot == 0.0 && command.y_dot == 0.0 && command.psi_dot == 0.0;
 }
 
 Vec3<double> desiredFootPositionForSide(const DesiredFootPositions& desiredFootPositions,
@@ -454,9 +451,6 @@ void MyController::initializeRuntimeObjects() {
         _legRuntime[leg].touchdownYaw_W = swingFootYawTargetWorld();
     }
 
-    _swingFootPlanner->setStopRequested(
-        planarCommandIsZero((_userCommand != nullptr) ? *_userCommand : UserCommand{}));
-
     _stanceWrenchWorld.setZero();
     _iteration = 0;
     _lastMpcIteration = 0;
@@ -860,36 +854,65 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     ContactScheduleOverride contactOverride;
     const ContactScheduleOverride* contactOverridePtr = nullptr;
     try {
-        if (contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment) {
-            _gaitScheduler->setFootLocalXAxesWorld(
-                footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
-                footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Right));
+        {
+            profiling::ScopedTimer setupTimer(_mpcSetupTime);
+
+            if (contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment) {
+                _gaitScheduler->setFootLocalXAxesWorld(
+                    footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
+                    footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Right));
+            }
+            if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
+                contactOverride = _contactManager->buildHorizonOverride();
+                contactOverridePtr = &contactOverride;
+            }
+
+            {
+                profiling::ScopedTimer timer(_gaitConstraintTime);
+                _gaitScheduler->buildConstraintMatrices(contactOverridePtr);
+            }
+
+            Vec13<double> referenceSeed = x0;
+            referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
+            referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
+
+            UserCommand referenceCommand = _filteredUserCommand;
+            if (_locomotionMode != LocomotionMode::Standing) {
+                referenceCommand.z_dot = 0.0;
+            }
+
+            {
+                profiling::ScopedTimer timer(_referenceTrajectoryTime);
+                ReferenceTrajectory(&referenceCommand,
+                                    referenceSeed,
+                                    desiredFootPositions,
+                                    _horizonClock.get())
+                    .build(_referenceTrajectoryOutput);
+            }
+
+            {
+                profiling::ScopedTimer timer(_mpcFormulationTime);
+                _mpcFormulation->build(_referenceTrajectoryOutput, _mpcFormulationOutput);
+            }
+
+            {
+                profiling::ScopedTimer timer(_mpcUpdateInputTime);
+                _convexMPC->updateInput(
+                    *_gaitScheduler,
+                    _mpcFormulationOutput,
+                    _referenceTrajectoryOutput,
+                    x0,
+                    _locomotionMode);
+            }
         }
-        if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
-            contactOverride = _contactManager->buildHorizonOverride();
-            contactOverridePtr = &contactOverride;
-        }
-        _gaitScheduler->buildConstraintMatrices(contactOverridePtr);
 
-        Vec13<double> referenceSeed = x0;
-        referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
-        referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
-
-        UserCommand referenceCommand = _filteredUserCommand;
-        if (_locomotionMode != LocomotionMode::Standing) {
-            referenceCommand.z_dot = 0.0;
-        }
-
-        ReferenceTrajectory(&referenceCommand, referenceSeed, desiredFootPositions, _horizonClock.get())
-            .build(_referenceTrajectoryOutput);
-        _mpcFormulation->build(_referenceTrajectoryOutput, _mpcFormulationOutput);
-
-        _convexMPC->updateInput(
-            *_gaitScheduler, _mpcFormulationOutput, _referenceTrajectoryOutput, x0, _locomotionMode);
-        _convexMPC->solve();
-        _stanceWrenchWorld = _convexMPC->optimalWrench();
-        if (_standingMpcDebugLogPending) {
-            _standingMpcDebugLogReady = true;
+        {
+            profiling::ScopedTimer timer(_mpcSolveTime);
+            _convexMPC->solve();
+            _stanceWrenchWorld = _convexMPC->optimalWrench();
+            if (_standingMpcDebugLogPending) {
+                _standingMpcDebugLogReady = true;
+            }
         }
 
     } catch (const std::exception& exception) {
@@ -931,6 +954,20 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
     }
 
     _lastMpcIteration = _iteration;
+}
+
+void MyController::printProfilingSummary(std::ostream& out) const {
+    out << profiling::formatTimingStats("runController", _runControllerTime) << '\n';
+    out << profiling::formatTimingStats("mpc_setup", _mpcSetupTime) << '\n';
+    out << profiling::formatTimingStats("gait_constraints", _gaitConstraintTime) << '\n';
+    out << profiling::formatTimingStats("reference_trajectory", _referenceTrajectoryTime) << '\n';
+    out << profiling::formatTimingStats("mpc_formulation", _mpcFormulationTime) << '\n';
+    out << profiling::formatTimingStats("mpc_update_input", _mpcUpdateInputTime) << '\n';
+    out << profiling::formatTimingStats("mpc_solve", _mpcSolveTime) << '\n';
+    out << profiling::formatTimingStats("torque_compute", _torqueComputeTime) << '\n';
+    if (_convexMPC != nullptr) {
+        _convexMPC->printProfilingSummary(out);
+    }
 }
 
 void MyController::queueStandingMpcDebugLog(const std::string& source,
@@ -1202,6 +1239,8 @@ void MyController::runController() {
         initializeController();
     }
 
+    profiling::ScopedTimer totalTimer(_runControllerTime);
+
     if (_stateEstimate == nullptr || _horizonClock == nullptr || _locomotionFSM == nullptr ||
         _swingFootPlanner == nullptr) {
         throw std::runtime_error("MyController::runController requires initialized runtime");
@@ -1213,8 +1252,6 @@ void MyController::runController() {
     const Vec13<double> x0 = buildCurrentMpcState();
     const double dt = std::max(0.0, _stateEstimate->time - _lastControlTime);
     updateFilteredUserCommand(dt);
-    _swingFootPlanner->setStopRequested(
-        planarCommandIsZero((_userCommand != nullptr) ? *_userCommand : UserCommand{}));
     updateBodyTarget(x0, dt);
     if (_bodyTarget.initialized) {
         _swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W, _bodyTarget.euler_W[2]);
@@ -1245,7 +1282,10 @@ void MyController::runController() {
     updateTouchdownDebugTarget(desiredFootPositions);
     updateStandingMpcDebugRequest();
     maybeUpdateMpc(x0, desiredFootPositions);
-    writeLegCommands();
+    {
+        profiling::ScopedTimer torqueTimer(_torqueComputeTime);
+        writeLegCommands();
+    }
     maybeWriteStandingMpcDebugLog(x0, desiredFootPositions);
 
     ++_iteration;

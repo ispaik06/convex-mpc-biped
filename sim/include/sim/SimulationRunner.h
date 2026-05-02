@@ -19,6 +19,7 @@
 #include "SimulationIO.h"
 #include "Types.h"
 #include "Utilities/KeyboardCommand.h"
+#include "Utilities/Timing.h"
 
 struct mjModel_;
 struct mjData_;
@@ -68,14 +69,15 @@ private:
 	MainThread _mainThread;
 	mjModel* model = nullptr;
 	mjData* data = nullptr;
-	bool _headless = true;
-	std::atomic<bool> _stopRequested = false;
-	KeyboardCommand _keyboardCommand;
-	std::unique_ptr<std::ofstream> _headlessTelemetryOut;
-	std::string _headlessTelemetryPath;
-	double _headlessTelemetryInterval{0.02};
-	double _nextHeadlessTelemetryTime{0.0};
-	bool _headlessTelemetryInitialized{false};
+    bool _headless = true;
+    std::atomic<bool> _stopRequested = false;
+    KeyboardCommand _keyboardCommand;
+    std::unique_ptr<std::ofstream> _headlessTelemetryOut;
+    std::string _headlessTelemetryPath;
+    double _headlessTelemetryInterval{0.02};
+    double _nextHeadlessTelemetryTime{0.0};
+    bool _headlessTelemetryInitialized{false};
+    profiling::TimingStats _mjStepTime;
 };
 
 #endif  // SIMULATION_RUNNER_H
