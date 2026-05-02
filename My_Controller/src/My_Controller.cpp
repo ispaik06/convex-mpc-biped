@@ -957,6 +957,10 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
 }
 
 void MyController::printProfilingSummary(std::ostream& out) const {
+    if (!profiling::enabled()) {
+        return;
+    }
+
     out << profiling::formatTimingStats("runController", _runControllerTime) << '\n';
     out << profiling::formatTimingStats("mpc_setup", _mpcSetupTime) << '\n';
     out << profiling::formatTimingStats("gait_constraints", _gaitConstraintTime) << '\n';

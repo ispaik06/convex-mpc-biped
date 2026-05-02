@@ -263,6 +263,10 @@ bool RobotRunner::initializationComplete() const {
 }
 
 void RobotRunner::printProfilingSummary(std::ostream& out) const {
+    if (!profiling::enabled()) {
+        return;
+    }
+
     if (_robot_ctrl != nullptr) {
         _robot_ctrl->printProfilingSummary(out);
     }

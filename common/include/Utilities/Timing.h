@@ -1,13 +1,64 @@
 #ifndef UTILITIES_TIMING_H
 #define UTILITIES_TIMING_H
 
+#include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 #include <string>
 
 namespace profiling {
+
+inline bool& profilingEnabledFlag() {
+    static bool enabled = false;
+    return enabled;
+}
+
+inline bool enabled() {
+    return profilingEnabledFlag();
+}
+
+inline void setEnabled(const bool enabled) {
+    profilingEnabledFlag() = enabled;
+}
+
+inline bool parseBooleanEnvValue(const char* value) {
+    if (value == nullptr) {
+        return false;
+    }
+
+    std::string normalized(value);
+    normalized.erase(
+        std::remove_if(normalized.begin(),
+                       normalized.end(),
+                       [](unsigned char ch) { return std::isspace(ch) != 0; }),
+        normalized.end());
+    std::transform(normalized.begin(),
+                   normalized.end(),
+                   normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    if (normalized.empty()) {
+        return false;
+    }
+    if (normalized == "1" || normalized == "true" || normalized == "yes" ||
+        normalized == "on") {
+        return true;
+    }
+    if (normalized == "0" || normalized == "false" || normalized == "no" ||
+        normalized == "off") {
+        return false;
+    }
+
+    return false;
+}
+
+inline void configureFromEnvironment(const char* envName = "CONVEXMPC_PROFILE_TIMING") {
+    setEnabled(parseBooleanEnvValue(std::getenv(envName)));
+}
 
 struct TimingStats {
     using clock = std::chrono::steady_clock;
@@ -44,7 +95,13 @@ struct TimingStats {
 class ScopedTimer {
 public:
     explicit ScopedTimer(TimingStats& stats)
-        : _stats(&stats), _start(TimingStats::clock::now()) {}
+        : _stats(enabled() ? &stats : nullptr) {
+        if (_stats != nullptr) {
+            _start = TimingStats::clock::now();
+        } else {
+            _active = false;
+        }
+    }
 
     ScopedTimer(const ScopedTimer&) = delete;
     ScopedTimer& operator=(const ScopedTimer&) = delete;
@@ -73,6 +130,10 @@ private:
 };
 
 inline std::string formatTimingStats(const std::string& label, const TimingStats& stats) {
+    if (!enabled()) {
+        return label + ": profiling disabled";
+    }
+
     std::ostringstream out;
     out << label << ": avg " << std::fixed << std::setprecision(3)
         << stats.averageMilliseconds() << " ms, max " << stats.maxMilliseconds() << " ms"

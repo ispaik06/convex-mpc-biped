@@ -577,6 +577,10 @@ void ConvexMPC::updateWarmStart() {
 }
 
 void ConvexMPC::printProfilingSummary(std::ostream& out) const {
+    if (!profiling::enabled()) {
+        return;
+    }
+
     out << profiling::formatTimingStats("qp_build", _buildQpTime) << '\n';
     out << "qp_cold_starts: " << _coldStartCount << '\n';
     out << "qp_contact_signature_changes: " << _contactSignatureChangeCount << '\n';

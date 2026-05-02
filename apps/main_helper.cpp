@@ -3,6 +3,7 @@
 
 #include "main_helper.h"
 #include "SimulationRunner.h"
+#include "Utilities/Timing.h"
 #include "Types.h"
 
 
@@ -15,7 +16,8 @@ void printUsage() {
 }
 
 int main_helper(int argc, char** argv, RobotController* ctrl) {
-	bool headless = false;
+    profiling::configureFromEnvironment();
+    bool headless = false;
 
 	if(argc > 3 || argc == 1) {
 		printUsage();

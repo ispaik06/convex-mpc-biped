@@ -216,11 +216,13 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 		}
 	}
 
-	std::cout << '\n' << "[Profile] timing summary" << '\n';
-	if (_robotRunner != nullptr) {
-		_robotRunner->printProfilingSummary(std::cout);
+	if (profiling::enabled()) {
+		std::cout << '\n' << "[Profile] timing summary" << '\n';
+		if (_robotRunner != nullptr) {
+			_robotRunner->printProfilingSummary(std::cout);
+		}
+		std::cout << profiling::formatTimingStats("mj_step", _mjStepTime) << '\n';
 	}
-	std::cout << profiling::formatTimingStats("mj_step", _mjStepTime) << '\n';
 
 	std::cout << '\n' << "Simulated " << _iterations
 			  << " steps, sim time=" << data->time << " sec" << "\n\n";
