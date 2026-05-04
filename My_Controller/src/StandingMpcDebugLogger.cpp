@@ -430,6 +430,10 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["stop_capture_point_gain"] = config.swing.stopCapturePointGain;
     swing["stop_capture_point_max_offset"] = config.swing.stopCapturePointMaxOffset;
     swing["stop_velocity_deadband"] = config.swing.stopVelocityDeadband;
+    swing["turn_in_place_psi_dot_deadband"] = config.swing.turnInPlacePsiDotDeadband;
+    swing["turn_in_place_support_offset_gain"] =
+        config.swing.turnInPlaceSupportOffsetGain;
+    swing["turn_in_place_support_offset_max"] = config.swing.turnInPlaceSupportOffsetMax;
     swing["pitch_kp"] = config.swing.pitchKp;
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;

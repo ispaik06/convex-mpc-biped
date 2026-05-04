@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <vector>
 
+#include "Utilities/MatrixUtils.h"
 #include "Utilities/Timing.h"
 
 namespace {
@@ -176,6 +177,18 @@ std::string formatOsqpExitFlag(const OsqpEigen::ErrorExitFlag flag) {
     oss << osqpErrorExitFlagName(flag) << "(" << static_cast<int>(flag) << ")";
     return oss.str();
 }
+
+StateWeightMat bodyYawStateCost(const StateWeightMat& stateWeight,
+                                const double psiRef) {
+    const Mat3<double> R_BW = Rz(psiRef).transpose();
+
+    Mat13d T = Mat13d::Identity();
+    T.block<3, 3>(3, 3) = R_BW;   // COM position error: world to body-yaw.
+    T.block<3, 3>(6, 6) = R_BW;   // Angular velocity error: world to body-yaw.
+    T.block<3, 3>(9, 9) = R_BW;   // COM velocity error: world to body-yaw.
+
+    return T.transpose() * stateWeight * T;
+}
 }  // namespace
 
 ConvexMPC::ConvexMPC()
@@ -338,11 +351,13 @@ void ConvexMPC::buildQP() {
         profiling::ScopedTimer timer(_weightedAssemblyTime);
         for (int k = 0; k < steps; ++k) {
             const Eigen::Index stateOffset = static_cast<Eigen::Index>(13 * k);
+            const double psiRef = X_ref[stateOffset + 2];
+            const StateWeightMat stateCost = bodyYawStateCost(stateWeight, psiRef);
 
             _weightedB.middleRows(stateOffset, 13).noalias() =
-                stateWeight * B_qp.middleRows(stateOffset, 13);
+                stateCost * B_qp.middleRows(stateOffset, 13);
             _weightedStateError.segment(stateOffset, 13).noalias() =
-                stateWeight * _stateError.segment(stateOffset, 13);
+                stateCost * _stateError.segment(stateOffset, 13);
         }
     }
 

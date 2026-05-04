@@ -476,10 +476,28 @@ void MyController::prepareController() {
     }
 
     syncLocomotionFSM();
+    if (legDynamicsRequest().standingFootJacobians &&
+        _locomotionMode != LocomotionMode::Standing) {
+        _locomotionMode = LocomotionMode::Standing;
+        _legDynamicsRequest.swingLegDynamics = false;
+        _legDynamicsRequest.standingFootJacobians = true;
+        _gaitScheduler->setLocomotionMode(_locomotionMode);
+        resetSwingState();
+    }
 }
 
 LegDynamicsRequest MyController::legDynamicsRequest() const {
     if (_initialized) {
+        if (_userCommand != nullptr) {
+            const Vec2<double> planarCommand(_userCommand->x_dot, _userCommand->y_dot);
+            if (planarCommand.norm() <= getControllerConfig().swing.stopVelocityDeadband &&
+                std::abs(_userCommand->psi_dot) > getControllerConfig().swing.turnInPlacePsiDotDeadband) {
+                LegDynamicsRequest request;
+                request.swingLegDynamics = false;
+                request.standingFootJacobians = true;
+                return request;
+            }
+        }
         return _legDynamicsRequest;
     }
 
@@ -516,7 +534,9 @@ void MyController::seedBodyTargetFromCurrentState() {
     }
 
     const Vec2<double> rollPitch = quaternionToRollPitch(_stateEstimate->torsoQuat_W);
-    _bodyTarget.position_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
+    _bodyTarget.nominalPosition_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
+    _bodyTarget.turnSupportOffset_W.setZero();
+    _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
     _bodyTarget.euler_W << rollPitch[0], rollPitch[1], _stateEstimate->psi;
     _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
     _bodyTarget.initialized = true;
@@ -609,6 +629,20 @@ void MyController::updateFilteredUserCommand(const double dt) {
             (rawCommand.standing_pitch_offset_rad - previousCommand.standing_pitch_offset_rad);
 }
 
+bool MyController::pureTurnInPlaceCommand() const {
+    if (_stateEstimate == nullptr) {
+        return false;
+    }
+
+    const auto& swing = getControllerConfig().swing;
+    const Vec2<double> planarCommand(_filteredUserCommand.x_dot, _filteredUserCommand.y_dot);
+    if (planarCommand.norm() > swing.stopVelocityDeadband) {
+        return false;
+    }
+
+    return std::abs(_filteredUserCommand.psi_dot) > swing.turnInPlacePsiDotDeadband;
+}
+
 Vec13<double> MyController::buildCurrentMpcState() const {
     if (_stateEstimate == nullptr) {
         throw std::runtime_error("MyController::buildCurrentMpcState requires state estimate");
@@ -638,12 +672,13 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     if (!_bodyTarget.initialized) {
         const auto& initialPose = getControllerConfig().initialPose;
         if (initialPose.hasBasePose) {
-            _bodyTarget.position_W = reducedBodyComWorldFromBasePose(initialPose.basePosition_W,
-                                                                     initialPose.baseEuler_W,
-                                                                     *_robotParams);
+            _bodyTarget.nominalPosition_W =
+                reducedBodyComWorldFromBasePose(initialPose.basePosition_W,
+                                                initialPose.baseEuler_W,
+                                                *_robotParams);
             _bodyTarget.euler_W = initialPose.baseEuler_W;
         } else {
-            _bodyTarget.position_W = x0.template segment<3>(3);
+            _bodyTarget.nominalPosition_W = x0.template segment<3>(3);
             _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
         }
         _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
@@ -654,20 +689,28 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         const Vec2<double> avgFootXY =
             averageFootEndEffectorXY(*_stateEstimate, *_robotParams);
         // Keep the stance footprint centered under the feet and move only in height.
-        _bodyTarget.position_W[0] = avgFootXY[0];
-        _bodyTarget.position_W[1] = avgFootXY[1];
+        _bodyTarget.nominalPosition_W[0] = avgFootXY[0];
+        _bodyTarget.nominalPosition_W[1] = avgFootXY[1];
         const double z_dot = _filteredUserCommand.z_dot;
         const double standingRollOffset = _filteredUserCommand.standing_roll_offset_rad;
         const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
+        const double psi_dot = _filteredUserCommand.psi_dot;
         _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
         _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
         if (dt > 0.0) {
-            _bodyTarget.position_W[2] += z_dot * dt;
+            _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] + psi_dot * dt);
         }
+        if (dt > 0.0) {
+            _bodyTarget.nominalPosition_W[2] += z_dot * dt;
+        }
+        _bodyTarget.turnSupportOffset_W.setZero();
+        _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
         return;
     }
 
     if (dt <= 0.0) {
+        _bodyTarget.turnSupportOffset_W = turnInPlaceSupportOffsetWorld();
+        _bodyTarget.position_W = _bodyTarget.nominalPosition_W + _bodyTarget.turnSupportOffset_W;
         return;
     }
 
@@ -676,8 +719,40 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     const double psi_dot = _filteredUserCommand.psi_dot;
     const Vec3<double> v_cmd_B(x_dot, y_dot, 0.0);
 
-    _bodyTarget.position_W += Rz(_bodyTarget.euler_W[2]) * v_cmd_B * dt;
+    _bodyTarget.nominalPosition_W += Rz(_bodyTarget.euler_W[2]) * v_cmd_B * dt;
     _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] + psi_dot * dt);
+    _bodyTarget.turnSupportOffset_W = turnInPlaceSupportOffsetWorld();
+    _bodyTarget.position_W = _bodyTarget.nominalPosition_W + _bodyTarget.turnSupportOffset_W;
+}
+
+Vec3<double> MyController::turnInPlaceSupportOffsetWorld() const {
+    if (_stateEstimate == nullptr || _robotParams == nullptr) {
+        return Vec3<double>::Zero();
+    }
+
+    const auto& swing = getControllerConfig().swing;
+    const Vec2<double> planarCommand(_filteredUserCommand.x_dot, _filteredUserCommand.y_dot);
+    if (planarCommand.norm() > swing.stopVelocityDeadband) {
+        return Vec3<double>::Zero();
+    }
+
+    const double psiDot = std::abs(_filteredUserCommand.psi_dot);
+    if (!(psiDot > swing.turnInPlacePsiDotDeadband)) {
+        return Vec3<double>::Zero();
+    }
+
+    const double previewTime =
+        std::max(0.0, (0.5 + swing.bodyVelocityHalfStanceOffset) * stanceTime());
+    double offset = swing.turnInPlaceSupportOffsetGain * psiDot * previewTime;
+    if (swing.turnInPlaceSupportOffsetMax > 0.0) {
+        offset = std::min(offset, swing.turnInPlaceSupportOffsetMax);
+    }
+    if (!(offset > 0.0)) {
+        return Vec3<double>::Zero();
+    }
+
+    // Forward-bias the desired marker only during pure turn-in-place.
+    return Rz(_bodyTarget.euler_W[2]) * Vec3<double>(offset, 0.0, 0.0);
 }
 
 bool MyController::activeContactForSide(const Side side, const double time) const {
@@ -1256,6 +1331,13 @@ void MyController::runController() {
     const Vec13<double> x0 = buildCurrentMpcState();
     const double dt = std::max(0.0, _stateEstimate->time - _lastControlTime);
     updateFilteredUserCommand(dt);
+    const bool pureTurnCommand = pureTurnInPlaceCommand();
+    if (pureTurnCommand) {
+        _locomotionMode = LocomotionMode::Standing;
+        _legDynamicsRequest = LegDynamicsRequest{};
+        _legDynamicsRequest.standingFootJacobians = true;
+        _gaitScheduler->setLocomotionMode(_locomotionMode);
+    }
     updateBodyTarget(x0, dt);
     if (_bodyTarget.initialized) {
         _swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W, _bodyTarget.euler_W[2]);

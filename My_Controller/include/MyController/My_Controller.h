@@ -40,7 +40,9 @@ private:
 	struct BodyTargetState {
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+		Vec3<double> nominalPosition_W = Vec3<double>::Zero();
 		Vec3<double> position_W = Vec3<double>::Zero();
+		Vec3<double> turnSupportOffset_W = Vec3<double>::Zero();
 		Vec3<double> euler_W = Vec3<double>::Zero();
 		Vec3<double> eulerSeed_W = Vec3<double>::Zero();
 		bool initialized{false};
@@ -65,7 +67,9 @@ private:
 	void applyLocomotionOutput(const LocomotionFSMOutput& output);
 	LocomotionFSMOutput syncLocomotionFSM();
 	void updateFilteredUserCommand(double dt);
+	bool pureTurnInPlaceCommand() const;
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
+	Vec3<double> turnInPlaceSupportOffsetWorld() const;
 	bool activeContactForSide(Side side, double time) const;
 	double contactRampAlphaForSide(Side side) const;
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);

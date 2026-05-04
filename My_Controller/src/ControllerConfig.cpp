@@ -249,6 +249,15 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         "stop_capture_point_max_offset",
                         params.swing.stopCapturePointMaxOffset);
     readScalarIfPresent(swing, "stop_velocity_deadband", params.swing.stopVelocityDeadband);
+    readScalarIfPresent(swing,
+                        "turn_in_place_psi_dot_deadband",
+                        params.swing.turnInPlacePsiDotDeadband);
+    readScalarIfPresent(swing,
+                        "turn_in_place_support_offset_gain",
+                        params.swing.turnInPlaceSupportOffsetGain);
+    readScalarIfPresent(swing,
+                        "turn_in_place_support_offset_max",
+                        params.swing.turnInPlaceSupportOffsetMax);
     readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
@@ -376,6 +385,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !std::isfinite(params.swing.stopCapturePointGain) ||
         !std::isfinite(params.swing.stopCapturePointMaxOffset) ||
         !std::isfinite(params.swing.stopVelocityDeadband) ||
+        !std::isfinite(params.swing.turnInPlacePsiDotDeadband) ||
+        !std::isfinite(params.swing.turnInPlaceSupportOffsetGain) ||
+        !std::isfinite(params.swing.turnInPlaceSupportOffsetMax) ||
         !std::isfinite(params.userCommandFilter.xDotTau) ||
         !std::isfinite(params.userCommandFilter.yDotTau) ||
         !std::isfinite(params.userCommandFilter.psiDotTau) ||
@@ -389,6 +401,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.stopCapturePointGain < 0.0 ||
         params.swing.stopCapturePointMaxOffset < 0.0 ||
         params.swing.stopVelocityDeadband < 0.0 ||
+        params.swing.turnInPlacePsiDotDeadband < 0.0 ||
+        params.swing.turnInPlaceSupportOffsetGain < 0.0 ||
+        params.swing.turnInPlaceSupportOffsetMax < 0.0 ||
         params.userCommandFilter.xDotTau < 0.0 ||
         params.userCommandFilter.yDotTau < 0.0 ||
         params.userCommandFilter.psiDotTau < 0.0 ||
@@ -400,7 +415,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
             "swing.stop_capture_point_gain, swing.stop_capture_point_max_offset, "
-            "swing.stop_velocity_deadband, user_command_filter.x_dot_tau, "
+            "swing.stop_velocity_deadband, swing.turn_in_place_psi_dot_deadband, "
+            "swing.turn_in_place_support_offset_gain, swing.turn_in_place_support_offset_max, "
+            "user_command_filter.x_dot_tau, "
             "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
             "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "
             "user_command_filter.standing_pitch_offset_tau, swing.pitch_kp, swing.pitch_kd, "

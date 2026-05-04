@@ -139,6 +139,14 @@ J = sum_k || Q_body * e_body_yaw_k ||^2 + || R * u ||^2
 `psi_ref_k`는 decision variable이 아니라 reference trajectory의 yaw를 사용한다.
 따라서 QP는 여전히 convex quadratic problem으로 남는다.
 
+현재 코드의 `stateWeight`는 sqrt-weight가 아니라 quadratic cost matrix처럼 쓰인다.
+따라서 구현에서는 다음 cost matrix를 assembly에 넣는다.
+
+```text
+Q_world_k = T_k^T * Q_body * T_k
+J_state_k = e_W_k^T * Q_world_k * e_W_k
+```
+
 평면 position error에 대해서는 다음과 같다.
 
 ```text
@@ -190,19 +198,21 @@ _weightedStateError.segment(stateOffset, 13).noalias() =
 
 ```cpp
 const Mat13d T_k = bodyYawErrorTransform(referenceTrajectory.psi[k]);
-const StateWeightMat W_k = stateWeight * T_k;
+const StateWeightMat Q_world_k = T_k.transpose() * stateWeight * T_k;
 
 _weightedB.middleRows(stateOffset, 13).noalias() =
-    W_k * B_qp.middleRows(stateOffset, 13);
+    Q_world_k * B_qp.middleRows(stateOffset, 13);
 
 _weightedStateError.segment(stateOffset, 13).noalias() =
-    W_k * _stateError.segment(stateOffset, 13);
+    Q_world_k * _stateError.segment(stateOffset, 13);
 ```
 
 이렇게 하면 objective는 다음과 같이 바뀐다.
 
 ```text
-|| stateWeight * T_k * (B_k u + A_k x0 - x_ref_k) ||^2
+(B_k u + A_k x0 - x_ref_k)^T
+  * T_k^T * stateWeight * T_k
+  * (B_k u + A_k x0 - x_ref_k)
 ```
 
 `T_k` 예시:

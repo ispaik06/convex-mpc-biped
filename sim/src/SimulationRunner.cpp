@@ -258,10 +258,10 @@ void SimulationRunner::runRobotControl() {
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
+	_userCommand = _keyboardCommand.getUserCommand();
 	_robotRunner->prepareController(_stateEstimate);
 	_keyboardCommand.setStandingControls(
 		standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest()));
-	_userCommand = _keyboardCommand.getUserCommand();
 	_legSwingDynamicsProvider->update(_stateEstimate, _robotRunner->legDynamicsRequest());
 
 	// if ((_iterations % 50) == 0) {
