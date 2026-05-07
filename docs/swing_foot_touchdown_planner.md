@@ -15,11 +15,8 @@ walking의 `x_dot / y_dot / psi_dot`뿐 아니라 standing의 `z_dot / roll / pi
 1. 전진하면 다음 발도 계속 앞으로 짚어야 한다.
 2. 후진하면 다음 발도 계속 뒤로 짚어야 한다.
 3. 좌/우 이동하면 footprint 전체가 좌/우로 이동해야 한다.
-4. 제자리 회전하면 발 위치는 몸 중심 주변에서 회전 배치되어야 한다.
-   이때 `turn_in_place_*` bias가 켜지면 desired body marker 자체를 약간 앞으로 밀어서
-   forward tip을 줄인다.
-5. 정지가 완료되면 양발 평균 xy가 body desired marker, 즉 `debug_body_target`의 xy와 맞아야 한다.
-6. 정지 진입 순간에는 현재 COM 속도를 보고 touchdown target을 desired marker보다 진행 방향 쪽으로 조금 더 둬서 브레이크를 건다.
+4. 정지가 완료되면 양발 평균 xy가 body desired marker, 즉 `debug_body_target`의 xy와 맞아야 한다.
+5. 정지 진입 순간에는 현재 COM 속도를 보고 touchdown target을 desired marker보다 진행 방향 쪽으로 조금 더 둬서 브레이크를 건다.
 
 핵심 설계 판단은 다음과 같다.
 
@@ -227,7 +224,8 @@ footprintCenter = target_W - Rz(yaw0) * nominalFootOffset_B[leg]
 
 현재 구현에서는 감속/정지용 capture-point braking offset을 touchdown 식에 다시 더한다.
 단, `space`가 들어와도 steady walking 중에는 touchdown target이 그대로 유지되고,
-filtered planar command가 줄어들거나 거의 0이 될 때만 braking offset을 더한다.
+filtered planar command가 줄어들거나 거의 0이 될 때만 braking offset을 캡처한다.
+캡처된 offset은 현재 swing target을 바꾸지 않고, 다음 touchdown target 계산부터 적용된다.
 
 관련 YAML 키 `stop_capture_point_gain`, `stop_capture_point_max_offset`, `stop_velocity_deadband`는 braking offset 계산에 사용된다.
 
@@ -323,13 +321,10 @@ swing:
 ```
 
 - 현재는 braking offset을 매 tick 다시 계산하지 않는다.
-- turn-in-place bias도 매 tick 누적하지 않는다. filtered `psi_dot`가 deadband를 넘는 동안만
-  `turn_in_place_support_offset_gain`과 `turn_in_place_support_offset_max`로 제한된 forward bias를
-  desired body marker에 더한다.
 - `fixed`: swing이 시작될 때 touchdown target을 한 번 잡고, 평상시에는 그 swing 동안 유지한다.
-- command가 줄어들거나 stop 상태로 들어가는 순간에만 braking offset을 포함해 target을 다시 잡는다.
+- command가 줄어들거나 stop 상태로 들어가는 순간에만 braking offset을 캡처하고,
+  이미 진행 중인 swing target은 건드리지 않는다.
 - 현재 touchdown target 계산은 fixed 방식만 사용한다.
 
 - `space`로 raw target이 zero가 되더라도, command가 실제로 줄어드는 구간이 아니면 braking offset은 켜지지 않는다.
-- touchdown target은 steady walking 중에는 유지되다가, command가 감속/정지로 들어갈 때만 braking offset을 포함해 다시 계산된다.
-- pure turn-in-place일 때는 `turn_in_place_psi_dot_deadband`를 넘는 `psi_dot`만으로 turn bias가 켜진다.
+- touchdown target은 steady walking 중에는 유지되다가, command가 감속/정지로 들어갈 때 캡처한 offset이 다음 target부터 반영된다.

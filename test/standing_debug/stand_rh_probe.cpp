@@ -120,11 +120,23 @@ std::string locomotionModeName(const LocomotionMode mode) {
 }
 
 std::string shortLocomotionPrefix(const LocomotionMode mode) {
-    return mode == LocomotionMode::Walking ? "walk" : "stand";
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walk";
+        case LocomotionMode::Standing:
+            return "stand";
+    }
+    return "unknown";
 }
 
 std::string debugDirectoryNameForMode(const LocomotionMode mode) {
-    return mode == LocomotionMode::Walking ? "walking_mpc" : "standing_mpc";
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking_mpc";
+        case LocomotionMode::Standing:
+            return "standing_mpc";
+    }
+    return "standing_mpc";
 }
 
 std::vector<std::filesystem::path> mpcDebugLogDirectories() {
@@ -938,7 +950,8 @@ LocomotionMode locomotionModeFromLog(const json& log, const LocomotionMode fallb
         log.at("metadata").is_object() &&
         log.at("metadata").contains("locomotion_mode") &&
         log.at("metadata").at("locomotion_mode").is_string()) {
-        return locomotionModeFromString(log.at("metadata").at("locomotion_mode").get<std::string>());
+        const std::string value = log.at("metadata").at("locomotion_mode").get<std::string>();
+        return locomotionModeFromString(value);
     }
     if (log.contains("metadata") &&
         log.at("metadata").is_object() &&

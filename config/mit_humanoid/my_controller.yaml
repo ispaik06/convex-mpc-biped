@@ -46,10 +46,6 @@ swing:
   stop_capture_point_gain: 0.2
   stop_capture_point_max_offset: 0.08
   stop_velocity_deadband: 0.02
-  # Pure turn-in-place only: small forward bias on the desired body marker.
-  turn_in_place_psi_dot_deadband: 0.05
-  turn_in_place_support_offset_gain: 0.4
-  turn_in_place_support_offset_max: 0.08
   pitch_kp: 150.0
   pitch_kd: 18.0
   yaw_kp: 155.0

@@ -39,6 +39,7 @@ private:
     double touchdownPreviewTime() const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
     bool shouldApplyBrakingOffset(const Vec2<double>& currentPlanarCommand) const;
+    Vec2<double> computeStopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
     Vec2<double> stopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex,
                                                             const Vec2<double>& currentPlanarCommand) const;
@@ -60,6 +61,8 @@ private:
     bool _bodyPositionTargetValid{false};
     double _bodyYawTarget_W{0.0};
     bool _bodyYawTargetValid{false};
+    Vec2<double> _latchedBrakingOffset_B = Vec2<double>::Zero();
+    bool _latchedBrakingOffsetValid{false};
     Vec2<double> _previousPlanarCommand_B = Vec2<double>::Zero();
     bool _previousPlanarCommandValid{false};
     bool _previousBrakingOffsetActive{false};

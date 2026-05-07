@@ -68,9 +68,6 @@ struct SwingParameters {
     double stopCapturePointGain{1.0};
     double stopCapturePointMaxOffset{0.20};
     double stopVelocityDeadband{0.02};
-    double turnInPlacePsiDotDeadband{0.05};
-    double turnInPlaceSupportOffsetGain{0.0};
-    double turnInPlaceSupportOffsetMax{0.0};
     double pitchKp{0.0};
     double pitchKd{0.0};
     double yawKp{0.0};
