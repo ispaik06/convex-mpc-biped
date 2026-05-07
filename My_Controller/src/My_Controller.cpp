@@ -25,6 +25,42 @@ double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
+double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPosition_W,
+                                           const Vec3<double>& touchdownTarget_W,
+                                           const Vec2<double>& filteredPlanarCommand_B,
+                                           const Side side,
+                                           const double fallbackYaw_W) {
+    constexpr double kDiagonalCommandDeadband = 1e-3;
+    constexpr double kFilteredLateralSpeedThreshold = 0.2;
+    constexpr double kHalfPi = 1.570796326794896619231321691639751442;
+    if (std::abs(filteredPlanarCommand_B.y()) < kFilteredLateralSpeedThreshold) {
+        return wrapAngle(fallbackYaw_W);
+    }
+
+    if (std::abs(filteredPlanarCommand_B.x()) <= kDiagonalCommandDeadband) {
+        return wrapAngle(fallbackYaw_W);
+    }
+
+    const bool sideMatchesLateralDirection =
+        (filteredPlanarCommand_B.y() > 0.0 && side == Side::Left) ||
+        (filteredPlanarCommand_B.y() < 0.0 && side == Side::Right);
+    if (!sideMatchesLateralDirection) {
+        return wrapAngle(fallbackYaw_W);
+    }
+
+    const Vec2<double> stepXY_W =
+        (touchdownTarget_W - currentFootPosition_W).template head<2>();
+    if (stepXY_W.squaredNorm() <= 1e-8) {
+        return wrapAngle(fallbackYaw_W);
+    }
+
+    double yaw_W = std::atan2(stepXY_W.y(), stepXY_W.x());
+    if (filteredPlanarCommand_B.x() < 0.0) {
+        yaw_W += (side == Side::Right) ? kHalfPi : -kHalfPi;
+    }
+    return wrapAngle(yaw_W);
+}
+
 double lowPassBlendAlpha(const double tau, const double dt) {
     if (!(tau > 0.0) || !(dt > 0.0)) {
         return 1.0;
@@ -760,6 +796,9 @@ void MyController::updateSwingTrajectories(
 
         const Vec3<double>& currentFootPosition = _stateEstimate->legs[leg].footPos_W;
         const Vec3<double> touchdownTarget = desiredFootPositionForSide(desiredFootPositions, side);
+        const Vec2<double> filteredPlanarCommand_B(_filteredUserCommand.x_dot,
+                                                   _filteredUserCommand.y_dot);
+        const double fallbackYaw_W = swingFootYawTargetWorld();
         const bool searchMode =
             _contactManager != nullptr && _contactManager->searchModeActive(side);
         if (searchMode) {
@@ -767,6 +806,12 @@ void MyController::updateSwingTrajectories(
                 std::max(getControllerConfig().contactManager.groundSearchTrackingTime,
                          minRemainingTime);
             if (!runtime.wasSearchMode || !runtime.swingTrajectory.active()) {
+                runtime.touchdownYaw_W = swingFootYawFromDiagonalStepHeading(
+                    currentFootPosition,
+                    touchdownTarget,
+                    filteredPlanarCommand_B,
+                    side,
+                    fallbackYaw_W);
                 runtime.swingTrajectory.reset(
                     currentFootPosition,
                     touchdownTarget,
@@ -787,7 +832,12 @@ void MyController::updateSwingTrajectories(
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
-            runtime.touchdownYaw_W = swingFootYawTargetWorld();
+            runtime.touchdownYaw_W = swingFootYawFromDiagonalStepHeading(
+                currentFootPosition,
+                touchdownTarget,
+                filteredPlanarCommand_B,
+                side,
+                fallbackYaw_W);
             runtime.swingTrajectory.reset(currentFootPosition,
                                           touchdownTarget,
                                           _swingHeight,
@@ -830,7 +880,7 @@ double MyController::swingFootYawTargetWorld() const {
     }
 
     const double psi_dot = _filteredUserCommand.psi_dot;
-    const double baseYaw_W = _bodyTarget.initialized ? _bodyTarget.euler_W[2] : _stateEstimate->psi;
+    const double baseYaw_W = _stateEstimate->psi;
     const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
     const double previewTime =
         std::max(0.0, (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) *

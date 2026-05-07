@@ -109,25 +109,42 @@ previewTime = (0.5 + 0.5) * stanceTime = 1.0 * stanceTime
 
 ## 5. Swing Foot Yaw
 
-스윙 중 발 자체의 yaw target은 다음처럼 잡는다.
+스윙 중 발 자체의 yaw target은 기본적으로 현재 로봇 torso yaw를 기준으로
+앞방향 `+x`를 보게 하고, filtered `y_dot`의 절댓값이 `0.2 m/s` 이상이고
+그 발이 lateral 방향으로 가야 하는 쪽과 일치할 때만
+스윙 시작 시점의 발 위치에서 touchdown target까지의 world-frame 방향을 쓴다.
+그 외에는 `swing_foot_yaw_lead_scale * psi_dot * previewTime`를 더한
+body-yaw 기반 target을 그대로 쓴다.
 
 ```text
-yaw0 = 현재 SRB desired yaw
-swingFootYawTarget = yaw0 + swing_foot_yaw_lead_scale * psi_dot * previewTime
+yaw0 = current torso yaw
+if |filtered_y_dot| >= 0.2 and filtered_x_dot != 0 and side matches sign(filtered_y_dot):
+    swingFootYawTarget = atan2(touchdownTarget.y - footStart.y,
+                                touchdownTarget.x - footStart.x)
+    if filtered_x_dot < 0:
+        if side == right:
+            swingFootYawTarget += pi / 2
+        else:
+            swingFootYawTarget -= pi / 2
+else:
+    swingFootYawTarget = yaw0 + swing_foot_yaw_lead_scale * psi_dot * previewTime
 ```
 
-여기서 `psi_dot`은 user command의 yaw rate다. 실제 구현에서는 이 lead 항에
-`swing_foot_yaw_lead_scale`를 곱한다.
+이 규칙의 의도는 다음과 같다.
 
-예를 들어 scale이 `1.5`면, 같은 `psi_dot`에 대해 swing foot yaw를 50% 더 앞서게 잡는다.
+- 전진/후진/한쪽 축만 쓰는 이동에서는 기존 yaw lead만 사용한다.
+- 대각선 이동일 때만, 그 대각선 방향의 발에 한해서 touchdown 방향 yaw를 쓴다.
+- 그중에서도 `x_dot < 0`이면 오른발은 `+90도`, 왼발은 `-90도`를 더해 보정한다.
+- `|filtered y_dot| < 0.2 m/s`이면 이 diagonal 분기는 꺼진다.
+- yaw는 swing 시작 시 한 번만 정해지고, swing 중에는 바뀌지 않는다.
 
 이 yaw는 두 군데에 쓰인다.
 
 1. swing foot attitude PD의 yaw target
 2. debug visualization의 swing foot yaw marker
 
-따라서 제자리 회전 중에는 발 자체가 더 강하게 desired yaw를 따라간다.
-이 값은 touchdown 위치를 직접 바꾸지 않는다.
+따라서 일반적인 swing에서는 발 앞쪽이 로봇의 전방을 보게 되고,
+touchdown 위치 자체는 바꾸지 않는다.
 
 ## 6. Translation yaw와 0.5의 의미
 
@@ -275,7 +292,8 @@ target_W = bodyTarget_W + turnBias_W + Rz(yaw0) * offset_B[leg]
 
 - desired body marker는 turn bias 만큼 body frame 전방으로 이동한다.
 - 발 위치는 그 biased marker 주변에서 회전 배치된다.
-- swing foot yaw target은 별도의 `swing_foot_yaw_lead_scale`를 사용해서 더 강하게 desired yaw를 따라간다.
+- swing foot yaw target은 기본적으로 body yaw와 yaw lead를 따르고,
+  대각선 이동에서만 해당 발에 step-heading을 쓴다.
 
 ### 9.6 이동하면서 회전: x_dot/y_dot != 0, psi_dot != 0
 

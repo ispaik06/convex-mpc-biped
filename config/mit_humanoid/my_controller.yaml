@@ -75,7 +75,7 @@ contact_manager:
   enable_late_contact_handling: false
 
 logging:
-  standing_mpc_debug_trigger_times: [14.0]
+  standing_mpc_debug_trigger_times: []
 
 startup:
   # If requested_locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
