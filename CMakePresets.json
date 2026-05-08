@@ -10,17 +10,18 @@
       "name": "base",
       "hidden": true,
       "generator": "Unix Makefiles",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_CXX_STANDARD": "17",
         "CMAKE_CXX_STANDARD_REQUIRED": "ON",
-        "CMAKE_PREFIX_PATH": "$env{CMAKE_PREFIX_PATH};$env{HOME}/.local/mujoco;$env{HOME}/.local/osqp;$env{HOME}/.local/osqp-eigen;$env{HOME}/.local/yaml-cpp"
+        "mujoco_DIR": "$env{HOME}/.local/mujoco/lib/cmake/mujoco"
       }
     },
     {
       "name": "dev",
       "inherits": "base",
       "displayName": "Development",
-      "description": "RelWithDebInfo build with local dependency prefixes appended to CMAKE_PREFIX_PATH",
+      "description": "RelWithDebInfo build using vcpkg manifest mode and a separately installed MuJoCo SDK",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
@@ -30,7 +31,7 @@
       "name": "debug",
       "inherits": "base",
       "displayName": "Debug",
-      "description": "Debug build with local dependency prefixes appended to CMAKE_PREFIX_PATH",
+      "description": "Debug build using vcpkg manifest mode and a separately installed MuJoCo SDK",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"

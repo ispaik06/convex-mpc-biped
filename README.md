@@ -100,14 +100,11 @@ Standing debug logs record a serialized `controller_config` snapshot plus the ru
 
 Dependencies:
 
-- CMake 3.16+
+- CMake 3.21+
 - C++17 compiler
-- Eigen3
-- MuJoCo
-- GLFW3
-- OSQP
-- OsqpEigen
-- yaml-cpp
+- vcpkg
+- MuJoCo SDK installed separately
+- vcpkg packages: `eigen3`, `glfw3`, `nlohmann-json`, `osqp`, `osqp-eigen`, `yaml-cpp`
 
 Recommended build:
 
@@ -116,14 +113,11 @@ cmake --preset dev
 cmake --build --preset dev -j
 ```
 
-If you install dependencies elsewhere, pass `CMAKE_PREFIX_PATH` or package-specific `*_DIR` values:
+Make sure `VCPKG_ROOT` is exported before configuring; the preset uses it to load the vcpkg toolchain and will install the manifest dependencies automatically.
 
-```bash
-cmake -S . -B build \
-  -DCMAKE_PREFIX_PATH="/path/to/mujoco;/path/to/osqp;/path/to/osqp-eigen;/path/to/yaml-cpp"
+This repository uses vcpkg manifest mode for every dependency except MuJoCo. The preset expects `VCPKG_ROOT` to point at your vcpkg checkout and `mujoco_DIR` to point at the MuJoCo CMake package directory, which is `~/.local/mujoco/lib/cmake/mujoco` in the current local setup.
 
-cmake --build build -j
-```
+If your MuJoCo SDK lives somewhere else, override `mujoco_DIR` when configuring.
 
 ## Run
 

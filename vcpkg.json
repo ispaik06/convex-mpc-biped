@@ -1,0 +1,13 @@
+{
+  "name": "convexmpc",
+  "version-string": "0.1.0",
+  "builtin-baseline": "4bc07e3eb00c5a9539a5a7a83415150a9260f8db",
+  "dependencies": [
+    "eigen3",
+    "glfw3",
+    "nlohmann-json",
+    "osqp",
+    "osqp-eigen",
+    "yaml-cpp"
+  ]
+}

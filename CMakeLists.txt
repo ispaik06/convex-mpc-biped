@@ -17,6 +17,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Eigen3 REQUIRED NO_MODULE)
 find_package(mujoco CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 add_subdirectory(common)
 add_subdirectory(robot)
