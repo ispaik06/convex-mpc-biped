@@ -112,7 +112,8 @@ H1/G1 walking:
 - stopping/capture offset
 - MPC planar position tracking cost의 forward/lateral 의미
 - MPC planar velocity tracking cost의 forward/lateral 의미
-- 가능하면 roll/pitch 또는 angular velocity의 horizontal-axis cost 의미
+- torso roll/pitch tilt cost는 body attitude error로 해석
+- angular velocity의 horizontal-axis cost 의미
 
 여기서 body-yaw frame은 full body frame이 아니라 yaw만 반영한 frame이다.
 roll/pitch까지 포함한 body frame을 쓰면 지면 기준 vertical과 tilt가 섞여서 reduced-body MPC에서는 오히려 해석이 복잡해진다.
@@ -168,12 +169,13 @@ e_omega_W = omega_pred_W - omega_ref_W
 e_omega_B = Rz(psi_ref)^T * e_omega_W
 ```
 
-orientation error는 현재 state가 Euler `[roll, pitch, yaw]`이므로 엄밀한 SO(3) error는 아니다.
-그래도 작은 roll/pitch 조건에서는 아래 근사가 실용적이다.
+orientation error는 현재 state가 Euler `[roll, pitch, yaw]`이므로, roll/pitch는 yaw로 다시 돌리지 않고
+그대로 body attitude error로 둔다. yaw는 heading scalar로 취급한다.
 
 ```text
 e_rpy_W = rpy_pred - rpy_ref
-e_rp_B_xy = Rz(psi_ref)^T * [e_roll, e_pitch, 0]
+e_roll = roll_pred - roll_ref
+e_pitch = pitch_pred - pitch_ref
 e_yaw = wrapToPi(yaw_pred - yaw_ref)
 ```
 
@@ -220,8 +222,8 @@ _weightedStateError.segment(stateOffset, 13).noalias() =
 ```text
 T_k = Identity(13)
 
-T_k[0:2, 0:2] or T_k[0:3, 0:3]:
-  roll/pitch error를 body-yaw frame 의미로 회전할지 결정
+T_k[0:3, 0:3]:
+  identity. roll/pitch/yaw error는 raw Euler difference로 둔다.
 
 T_k[3:6, 3:6]:
   Rz(psi_ref_k)^T
@@ -237,7 +239,7 @@ T_k[12, 12]:
 ```
 
 처음 구현은 position, velocity, angular velocity block만 회전시키는 것이 안전하다.
-roll/pitch block은 Euler angle convention 때문에 별도 검증 후 넣는 편이 좋다.
+orientation block은 Euler angle convention 때문에 yaw로 재회전하지 않고 그대로 두는 편이 안전하다.
 
 추천 1차 구현:
 
@@ -311,8 +313,7 @@ C_foot * [F_F, M_F] <= bound
 1. `ConvexMPC`에 step별 body-yaw error transform을 추가한다.
 2. position, velocity, angular velocity error에만 먼저 적용한다.
 3. 기존 isotropic test를 원래 anisotropic weight로 되돌려 yaw 회전 안정성을 비교한다.
-4. 필요하면 roll/pitch error transform을 추가한다.
-5. 그래도 회전 중 발 wrench가 이상하면 contact wrench constraint를 foot frame 기준으로 바꾼다.
+4. 그래도 회전 중 발 wrench가 이상하면 contact wrench constraint를 foot frame 기준으로 바꾼다.
 
 ## 8. 정리
 
@@ -322,7 +323,8 @@ C_foot * [F_F, M_F] <= bound
 - foot target도 최종 output은 world position으로 유지한다.
 - user command와 foot offset은 body-yaw frame으로 유지한다.
 - MPC dynamics는 world frame으로 유지한다.
-- MPC state cost만 reference yaw 기준 body-yaw frame에서 평가한다.
+- MPC state cost는 position / velocity / angular velocity block만 reference yaw 기준 body-yaw frame에서 평가하고,
+  roll/pitch/yaw는 raw Euler error로 둔다.
 - contact wrench constraint는 cost 수정 후에도 문제가 남으면 foot frame 기준으로 재검토한다.
 
 이 접근이 전체 formulation을 body frame으로 바꾸는 것보다 변경 범위가 작고,
