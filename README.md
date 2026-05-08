@@ -116,7 +116,7 @@ flowchart LR
 
 | Robot | Status | Notes |
 | --- | --- | --- |
-| MIT Humanoid | Primary validation target | Best documented path and default example configuration |
+| MIT Humanoid | Primary validation target | Best documented path and default example configuration; the MIT MJCF and URDF are not distributed in this public repository |
 | Unitree G1 | Supported | Uses robot-specific config in `config/unitree_robots/g1/` |
 | Unitree H1 | Supported | Uses robot-specific config in `config/unitree_robots/h1/` |
 
@@ -217,4 +217,5 @@ The existing examples are:
 
 - `StateEstimator` is still cheater-state based.
 - Headless runs continue until interrupted.
+- The MIT Humanoid MJCF and URDF are intentionally not shared in this public repository.
 - Yaw control during in-place turning is still not robust enough and needs follow-up improvement.
