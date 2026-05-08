@@ -86,6 +86,9 @@ KeyboardGaitSwingRunner::~KeyboardGaitSwingRunner() {
 void KeyboardGaitSwingRunner::init() {
     setActiveRobotType(_robotType);
     const auto& controllerConfig = getControllerConfig(_robotType);
+    _keyboardCommand.setWalkingLimits(controllerConfig.userCommandFilter.xDotMax,
+                                      controllerConfig.userCommandFilter.yDotMax,
+                                      controllerConfig.userCommandFilter.psiDotMax);
     const auto& runtimeConfig = getRobotRuntimeConfig(_robotType);
     const std::string xmlPath = controllerConfig.gaitSwingHoldTest.xmlPath.empty()
                                     ? runtimeConfig.modelXmlPath
@@ -475,18 +478,19 @@ void KeyboardGaitSwingRunner::advancePlanarBasePose(const double dt) {
 
     const double step = std::max(0.0, dt);
     const Mat3<double> baseRotation_W = Rz(_planarBaseYaw) * _planarRotationNoYaw;
+    const UserCommand clampedCommand = clampUserCommand(_userCommand);
     const Vec3<double> bodyLinearCommand(
-        _userCommand.x_dot,
-        _userCommand.y_dot,
+        clampedCommand.x_dot,
+        clampedCommand.y_dot,
         0.0);
     Vec3<double> worldLinearVelocity = baseRotation_W * bodyLinearCommand;
     worldLinearVelocity.z() = 0.0;
-    const Vec3<double> worldAngularVelocity(0.0, 0.0, _userCommand.psi_dot);
+    const Vec3<double> worldAngularVelocity(0.0, 0.0, clampedCommand.psi_dot);
     const Vec3<double> bodyAngularVelocity = baseRotation_W.transpose() * worldAngularVelocity;
 
     _planarBasePosition_W += worldLinearVelocity * step;
     _planarBasePosition_W.z() = _planarBaseZ;
-    _planarBaseYaw = wrapAngle(_planarBaseYaw + _userCommand.psi_dot * step);
+    _planarBaseYaw = wrapAngle(_planarBaseYaw + clampedCommand.psi_dot * step);
 
     applyPlanarBasePose(worldLinearVelocity, bodyAngularVelocity);
 }

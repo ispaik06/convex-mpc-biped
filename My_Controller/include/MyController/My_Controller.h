@@ -72,6 +72,7 @@ private:
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
 	void updateTouchdownDebugTarget(const DesiredFootPositions& desiredFootPositions);
 	double swingFootYawTargetWorld() const;
+	double swingFootYawTargetWorld(Side side) const;
 	void maybeUpdateMpc(const Vec13<double>& x0,
 		                   const DesiredFootPositions& desiredFootPositions);
 	void writeLegCommands();

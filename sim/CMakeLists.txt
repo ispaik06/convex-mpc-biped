@@ -18,6 +18,7 @@ target_include_directories(sim PUBLIC
 
 target_include_directories(sim PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${PROJECT_SOURCE_DIR}/My_Controller/include/MyController
 )
 
 target_link_libraries(sim

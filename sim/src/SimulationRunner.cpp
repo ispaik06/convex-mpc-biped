@@ -14,6 +14,7 @@
 
 #include <mujoco/mujoco.h>
 
+#include "ControllerConfig.h"
 #include "MujocoCheaterStateReader.h"
 #include "RobotConfig.h"
 #include "SimulationConfig.h"
@@ -108,6 +109,10 @@ void applyMarkerColor(mjModel* model, const int bodyId, const DebugVizMarker<dou
 
 void SimulationRunner::init() {
 	setActiveRobotType(_robot);
+	const auto& controllerConfig = getControllerConfig(_robot);
+	_keyboardCommand.setWalkingLimits(controllerConfig.userCommandFilter.xDotMax,
+	                                  controllerConfig.userCommandFilter.yDotMax,
+	                                  controllerConfig.userCommandFilter.psiDotMax);
 	const auto& runtimeConfig = getRobotRuntimeConfig(_robot);
 	_modelPath = resolveProjectPath(runtimeConfig.modelXmlPath);
 	_footEndEffectorSource = runtimeConfig.footEndEffectorSource;

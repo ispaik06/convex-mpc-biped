@@ -82,6 +82,9 @@ nominalFootOffset_B[leg].z = 0
 오른발 offset_B = [0, -0.08, 0]
 ```
 
+현재 구현은 이 값을 첫 touchdown 시점에 런타임으로 추정하지만, `swing.nominal_foot_offsets_B`를 YAML에 넣으면
+그 값을 그대로 사용하고 런타임 추정은 건너뛴다.
+
 ## 4. Preview time
 
 touchdown target은 지금 발 위치가 아니라 "landing 시점에 몸이 어디에 있을지"를 보고 잡는다.
@@ -137,6 +140,10 @@ else:
 - 그중에서도 `x_dot < 0`이면 오른발은 `+90도`, 왼발은 `-90도`를 더해 보정한다.
 - `|filtered y_dot| < 0.2 m/s`이면 이 diagonal 분기는 꺼진다.
 - yaw는 swing 시작 시 한 번만 정해지고, swing 중에는 바뀌지 않는다.
+- 여기에 더해 `psi_dot` 기반 bias를 붙인다.
+  - `x_dot >= 0`이면 `psi_dot > 0`일 때 왼발에 `+` bias, `psi_dot < 0`일 때 오른발에 `-` bias를 더한다.
+  - `x_dot < 0`이면 위 부호를 반대로 뒤집는다.
+  - bias 크기는 `min(20 deg, 100 * |psi_dot| deg)`로 제한된다.
 
 이 yaw는 두 군데에 쓰인다.
 
@@ -245,6 +252,8 @@ filtered planar command가 줄어들거나 거의 0이 될 때만 braking offset
 캡처된 offset은 현재 swing target을 바꾸지 않고, 다음 touchdown target 계산부터 적용된다.
 
 관련 YAML 키 `stop_capture_point_gain`, `stop_capture_point_max_offset`, `stop_velocity_deadband`는 braking offset 계산에 사용된다.
+만약 이 braking offset을 고정값으로 바꾸고 싶으면 `swing.stop_braking_offset_B`로 body-frame offset을 직접 넣을 수 있다.
+이 키가 있으면 capture-point 계산 대신 YAML 값이 사용된다.
 
 ### 9.2 전진: x_dot > 0, y_dot = 0, psi_dot = 0
 

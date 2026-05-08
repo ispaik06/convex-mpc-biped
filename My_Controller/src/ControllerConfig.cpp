@@ -43,6 +43,18 @@ bool isPositiveFinite(const double value) {
     return value > 0.0 && std::isfinite(value);
 }
 
+bool isNonNegativeFiniteOrPositiveInfinity(const double value) {
+    return (std::isfinite(value) && value >= 0.0) ||
+           (std::isinf(value) && value > 0.0);
+}
+
+double clampWithOptionalLimit(const double value, const double maxAbs) {
+    if (!std::isfinite(maxAbs)) {
+        return value;
+    }
+    return std::clamp(value, -maxAbs, maxAbs);
+}
+
 template <typename Derived>
 void fillDiagonal(Eigen::MatrixBase<Derived>& matrix,
                   const YAML::Node& diagonalNode,
@@ -87,6 +99,19 @@ Vec3<double> readVec3(const YAML::Node& node, const char* keyName) {
     }
 
     return Vec3<double>(node[0].as<double>(), node[1].as<double>(), node[2].as<double>());
+}
+
+std::vector<Vec3<double>> readVec3Vector(const YAML::Node& node, const char* keyName) {
+    if (!node || !node.IsSequence()) {
+        throw std::runtime_error(std::string("Expected YAML sequence for key ") + keyName);
+    }
+
+    std::vector<Vec3<double>> values;
+    values.reserve(node.size());
+    for (std::size_t idx = 0; idx < node.size(); ++idx) {
+        values.push_back(readVec3(node[idx], keyName));
+    }
+    return values;
 }
 
 LocomotionMode parseLocomotionMode(const YAML::Node& node, const char* keyName) {
@@ -242,6 +267,15 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                             "touchdown_yaw_lead_scale",
                             params.swing.swingFootYawLeadScale);
     }
+    if (swing && swing["nominal_foot_offsets_B"]) {
+        params.swing.nominalFootOffsets_B =
+            readVec3Vector(swing["nominal_foot_offsets_B"], "swing.nominal_foot_offsets_B");
+    }
+    if (swing && swing["stop_braking_offset_B"]) {
+        params.swing.hasStopBrakingOffset = true;
+        params.swing.stopBrakingOffset_B =
+            readVec3(swing["stop_braking_offset_B"], "swing.stop_braking_offset_B");
+    }
     params.swing.touchdownTargetUpdateMode =
         parseTouchdownTargetUpdateMode(swing ? swing["touchdown_target_update_mode"] : YAML::Node{});
     readScalarIfPresent(swing, "stop_capture_point_gain", params.swing.stopCapturePointGain);
@@ -265,6 +299,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(userCommandFilter,
                         "standing_pitch_offset_tau",
                         params.userCommandFilter.standingPitchOffsetTau);
+    readScalarIfPresent(userCommandFilter, "x_dot_max", params.userCommandFilter.xDotMax);
+    readScalarIfPresent(userCommandFilter, "y_dot_max", params.userCommandFilter.yDotMax);
+    readScalarIfPresent(userCommandFilter, "psi_dot_max", params.userCommandFilter.psiDotMax);
 
     const YAML::Node contactManager = config["contact_manager"];
     readScalarIfPresent(contactManager,
@@ -373,6 +410,11 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
     if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
         !std::isfinite(params.swing.swingFootYawLeadScale) ||
+        (!params.swing.nominalFootOffsets_B.empty() &&
+         !std::all_of(params.swing.nominalFootOffsets_B.begin(),
+                      params.swing.nominalFootOffsets_B.end(),
+                      [](const Vec3<double>& offset) { return offset.allFinite(); })) ||
+        (params.swing.hasStopBrakingOffset && !params.swing.stopBrakingOffset_B.allFinite()) ||
         !std::isfinite(params.swing.stopCapturePointGain) ||
         !std::isfinite(params.swing.stopCapturePointMaxOffset) ||
         !std::isfinite(params.swing.stopVelocityDeadband) ||
@@ -382,6 +424,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !std::isfinite(params.userCommandFilter.zDotTau) ||
         !std::isfinite(params.userCommandFilter.standingRollOffsetTau) ||
         !std::isfinite(params.userCommandFilter.standingPitchOffsetTau) ||
+        !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.xDotMax) ||
+        !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.yDotMax) ||
+        !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.psiDotMax) ||
         !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
         !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
         params.swing.bodyVelocityHalfStanceOffset < 0.0 ||
@@ -399,13 +444,16 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
+            "swing.nominal_foot_offsets_B, swing.stop_braking_offset_B, "
             "swing.stop_capture_point_gain, swing.stop_capture_point_max_offset, "
             "swing.stop_velocity_deadband, "
             "user_command_filter.x_dot_tau, "
             "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
             "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "
-            "user_command_filter.standing_pitch_offset_tau, swing.pitch_kp, swing.pitch_kd, "
-            "swing.yaw_kp, and swing.yaw_kd must be finite; offsets, time constants, and "
+            "user_command_filter.standing_pitch_offset_tau must be finite; "
+            "user_command_filter.x_dot_max, user_command_filter.y_dot_max, and "
+            "user_command_filter.psi_dot_max must be finite or positive infinity; "
+            "offsets, time constants, and "
             "stop-braking gains must be non-negative and attitude gains must be "
             "non-negative");
     }
@@ -484,6 +532,15 @@ int horizonSteps() {
 
 double dtMpc() {
     return horizonTime() / static_cast<double>(horizonSteps());
+}
+
+UserCommand clampUserCommand(const UserCommand& command) {
+    const auto& filter = getControllerConfig().userCommandFilter;
+    UserCommand clamped = command;
+    clamped.x_dot = clampWithOptionalLimit(clamped.x_dot, filter.xDotMax);
+    clamped.y_dot = clampWithOptionalLimit(clamped.y_dot, filter.yDotMax);
+    clamped.psi_dot = clampWithOptionalLimit(clamped.psi_dot, filter.psiDotMax);
+    return clamped;
 }
 
 namespace {

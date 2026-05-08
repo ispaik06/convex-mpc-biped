@@ -25,40 +25,63 @@ double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
+double swingFootYawPsiOffset(const Side side,
+                             const double x_dot,
+                             const double psi_dot) {
+    constexpr double kPsiYawGainDegPerRad = 100.0;
+    constexpr double kPsiYawMaxOffsetDeg = 20.0;
+    constexpr double kDegToRad = 3.141592653589793238462643383279502884 / 180.0;
+
+    const double direction = (x_dot >= 0.0) ? 1.0 : -1.0;
+    const double offsetMagDeg =
+        std::clamp(kPsiYawGainDegPerRad * std::abs(psi_dot), 0.0, kPsiYawMaxOffsetDeg);
+    // Keep the sign rule explicit: left-foot bias for +psi_dot, right-foot bias for -psi_dot.
+    if (psi_dot > 0.0 && side == Side::Left) {
+        return direction * offsetMagDeg * kDegToRad;
+    }
+    if (psi_dot < 0.0 && side == Side::Right) {
+        return -direction * offsetMagDeg * kDegToRad;
+    }
+    return 0.0;
+}
+
 double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPosition_W,
                                            const Vec3<double>& touchdownTarget_W,
                                            const Vec2<double>& filteredPlanarCommand_B,
+                                           const double psi_dot,
                                            const Side side,
                                            const double fallbackYaw_W) {
     constexpr double kDiagonalCommandDeadband = 1e-3;
     constexpr double kFilteredLateralSpeedThreshold = 0.2;
     constexpr double kHalfPi = 1.570796326794896619231321691639751442;
+    const double psiBias_W =
+        swingFootYawPsiOffset(side, filteredPlanarCommand_B.x(), psi_dot);
     if (std::abs(filteredPlanarCommand_B.y()) < kFilteredLateralSpeedThreshold) {
-        return wrapAngle(fallbackYaw_W);
+        return wrapAngle(fallbackYaw_W + psiBias_W);
     }
 
     if (std::abs(filteredPlanarCommand_B.x()) <= kDiagonalCommandDeadband) {
-        return wrapAngle(fallbackYaw_W);
+        return wrapAngle(fallbackYaw_W + psiBias_W);
     }
 
     const bool sideMatchesLateralDirection =
         (filteredPlanarCommand_B.y() > 0.0 && side == Side::Left) ||
         (filteredPlanarCommand_B.y() < 0.0 && side == Side::Right);
     if (!sideMatchesLateralDirection) {
-        return wrapAngle(fallbackYaw_W);
+        return wrapAngle(fallbackYaw_W + psiBias_W);
     }
 
     const Vec2<double> stepXY_W =
         (touchdownTarget_W - currentFootPosition_W).template head<2>();
     if (stepXY_W.squaredNorm() <= 1e-8) {
-        return wrapAngle(fallbackYaw_W);
+        return wrapAngle(fallbackYaw_W + psiBias_W);
     }
 
     double yaw_W = std::atan2(stepXY_W.y(), stepXY_W.x());
     if (filteredPlanarCommand_B.x() < 0.0) {
         yaw_W += (side == Side::Right) ? kHalfPi : -kHalfPi;
     }
-    return wrapAngle(yaw_W);
+    return wrapAngle(yaw_W + psiBias_W);
 }
 
 double lowPassBlendAlpha(const double tau, const double dt) {
@@ -484,7 +507,8 @@ void MyController::initializeRuntimeObjects() {
         _legRuntime[leg].wasInStance =
             _gaitScheduler->c(_robotParams->legs[leg].side, _stateEstimate->time);
         _legRuntime[leg].wasSearchMode = false;
-        _legRuntime[leg].touchdownYaw_W = swingFootYawTargetWorld();
+        _legRuntime[leg].touchdownYaw_W =
+            swingFootYawTargetWorld(_robotParams->legs[leg].side);
     }
 
     _stanceWrenchWorld.setZero();
@@ -613,7 +637,8 @@ LocomotionFSMOutput MyController::syncLocomotionFSM() {
 }
 
 void MyController::updateFilteredUserCommand(const double dt) {
-    const UserCommand rawCommand = (_userCommand != nullptr) ? *_userCommand : UserCommand{};
+    const UserCommand rawCommand =
+        clampUserCommand((_userCommand != nullptr) ? *_userCommand : UserCommand{});
     if (!_filteredUserCommandInitialized) {
         _filteredUserCommand = rawCommand;
         _filteredUserCommandInitialized = true;
@@ -644,6 +669,8 @@ void MyController::updateFilteredUserCommand(const double dt) {
         previousCommand.standing_pitch_offset_rad +
         lowPassBlendAlpha(filter.standingPitchOffsetTau, dt) *
             (rawCommand.standing_pitch_offset_rad - previousCommand.standing_pitch_offset_rad);
+
+    _filteredUserCommand = clampUserCommand(_filteredUserCommand);
 }
 
 Vec13<double> MyController::buildCurrentMpcState() const {
@@ -799,6 +826,7 @@ void MyController::updateSwingTrajectories(
         const Vec2<double> filteredPlanarCommand_B(_filteredUserCommand.x_dot,
                                                    _filteredUserCommand.y_dot);
         const double fallbackYaw_W = swingFootYawTargetWorld();
+        const double psi_dot = _filteredUserCommand.psi_dot;
         const bool searchMode =
             _contactManager != nullptr && _contactManager->searchModeActive(side);
         if (searchMode) {
@@ -810,6 +838,7 @@ void MyController::updateSwingTrajectories(
                     currentFootPosition,
                     touchdownTarget,
                     filteredPlanarCommand_B,
+                    psi_dot,
                     side,
                     fallbackYaw_W);
                 runtime.swingTrajectory.reset(
@@ -836,6 +865,7 @@ void MyController::updateSwingTrajectories(
                 currentFootPosition,
                 touchdownTarget,
                 filteredPlanarCommand_B,
+                psi_dot,
                 side,
                 fallbackYaw_W);
             runtime.swingTrajectory.reset(currentFootPosition,
@@ -861,7 +891,7 @@ void MyController::updateTouchdownDebugTarget(const DesiredFootPositions& desire
     if (leftLegIndex < _legRuntime.size()) {
         _leftTouchdownTargetYaw_W = _legRuntime[leftLegIndex].touchdownYaw_W;
     } else {
-        _leftTouchdownTargetYaw_W = swingFootYawTargetWorld();
+        _leftTouchdownTargetYaw_W = swingFootYawTargetWorld(Side::Left);
     }
     _leftTouchdownTargetInitialized = true;
 
@@ -869,7 +899,7 @@ void MyController::updateTouchdownDebugTarget(const DesiredFootPositions& desire
     if (rightLegIndex < _legRuntime.size()) {
         _rightTouchdownTargetYaw_W = _legRuntime[rightLegIndex].touchdownYaw_W;
     } else {
-        _rightTouchdownTargetYaw_W = swingFootYawTargetWorld();
+        _rightTouchdownTargetYaw_W = swingFootYawTargetWorld(Side::Right);
     }
     _rightTouchdownTargetInitialized = true;
 }
@@ -886,6 +916,12 @@ double MyController::swingFootYawTargetWorld() const {
         std::max(0.0, (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) *
                           stanceTime());
     return wrapAngle(baseYaw_W + leadScale * psi_dot * previewTime);
+}
+
+double MyController::swingFootYawTargetWorld(const Side side) const {
+    return wrapAngle(
+        swingFootYawTargetWorld() +
+        swingFootYawPsiOffset(side, _filteredUserCommand.x_dot, _filteredUserCommand.psi_dot));
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,

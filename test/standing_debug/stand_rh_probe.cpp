@@ -271,6 +271,21 @@ std::vector<double> readJsonVector(const json& value, const std::string& name) {
     return out;
 }
 
+Vec3<double> vec3FromJson(const json& value, const std::string& name);
+
+std::vector<Vec3<double>> readVec3VectorFromJson(const json& value, const std::string& name) {
+    if (!value.is_array()) {
+        throw std::runtime_error(name + " is not a JSON array");
+    }
+
+    std::vector<Vec3<double>> out;
+    out.reserve(value.size());
+    for (std::size_t i = 0; i < value.size(); ++i) {
+        out.push_back(vec3FromJson(value.at(i), name + "[" + std::to_string(i) + "]"));
+    }
+    return out;
+}
+
 DMat<double> readJsonMatrix(const json& value, const std::string& name) {
     if (!value.is_object() || !value.contains("rows") ||
         !value.contains("cols") || !value.contains("data")) {
@@ -381,6 +396,7 @@ ContactWrenchModel contactWrenchModelFromString(const std::string& value) {
 }
 
 Vec3<double> vec3FromJson(const json& value, const std::string& name);
+std::vector<Vec3<double>> readVec3VectorFromJson(const json& value, const std::string& name);
 
 std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
     if (!log.contains("controller_config") || !log.at("controller_config").is_object()) {
@@ -570,6 +586,17 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.swing.swingFootYawLeadScale =
                 swing.at("touchdown_yaw_lead_scale").get<double>();
         }
+        if (swing.contains("nominal_foot_offsets_B")) {
+            out.swing.nominalFootOffsets_B =
+                readVec3VectorFromJson(swing.at("nominal_foot_offsets_B"),
+                                       "controller_config.swing.nominal_foot_offsets_B");
+        }
+        if (swing.contains("stop_braking_offset_B")) {
+            out.swing.hasStopBrakingOffset = true;
+            out.swing.stopBrakingOffset_B =
+                vec3FromJson(swing.at("stop_braking_offset_B"),
+                             "controller_config.swing.stop_braking_offset_B");
+        }
         if (swing.contains("touchdown_target_update_mode")) {
             const std::string mode = swing.at("touchdown_target_update_mode").get<std::string>();
             if (mode == "fixed") {
@@ -628,6 +655,16 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (userCommandFilter.contains("standing_pitch_offset_tau")) {
             out.userCommandFilter.standingPitchOffsetTau =
                 userCommandFilter.at("standing_pitch_offset_tau").get<double>();
+        }
+        if (userCommandFilter.contains("x_dot_max") && userCommandFilter.at("x_dot_max").is_number()) {
+            out.userCommandFilter.xDotMax = userCommandFilter.at("x_dot_max").get<double>();
+        }
+        if (userCommandFilter.contains("y_dot_max") && userCommandFilter.at("y_dot_max").is_number()) {
+            out.userCommandFilter.yDotMax = userCommandFilter.at("y_dot_max").get<double>();
+        }
+        if (userCommandFilter.contains("psi_dot_max") &&
+            userCommandFilter.at("psi_dot_max").is_number()) {
+            out.userCommandFilter.psiDotMax = userCommandFilter.at("psi_dot_max").get<double>();
         }
     }
 

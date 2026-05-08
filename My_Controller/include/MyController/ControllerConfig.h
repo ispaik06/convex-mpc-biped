@@ -1,6 +1,7 @@
 #ifndef CONTROLLER_CONFIG_H
 #define CONTROLLER_CONFIG_H
 
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,9 @@ struct SwingParameters {
     double minRemainingTime{1e-3};
     double bodyVelocityHalfStanceOffset{0.0};
     double swingFootYawLeadScale{1.0};
+    std::vector<Vec3<double>> nominalFootOffsets_B;
+    bool hasStopBrakingOffset{false};
+    Vec3<double> stopBrakingOffset_B = Vec3<double>::Zero();
     TouchdownTargetUpdateMode touchdownTargetUpdateMode{
         TouchdownTargetUpdateMode::Fixed};
     double stopCapturePointGain{1.0};
@@ -81,6 +85,9 @@ struct UserCommandFilterParameters {
     double zDotTau{0.0};
     double standingRollOffsetTau{0.0};
     double standingPitchOffsetTau{0.0};
+    double xDotMax{std::numeric_limits<double>::infinity()};
+    double yDotMax{std::numeric_limits<double>::infinity()};
+    double psiDotMax{std::numeric_limits<double>::infinity()};
 };
 
 struct ContactManagerParameters {
@@ -140,6 +147,7 @@ const ControllerConfig& getControllerConfig();
 const ControllerConfig& getControllerConfig(RobotType robotType);
 void setControllerConfigOverride(const ControllerConfig* config);
 void clearControllerConfigOverride();
+UserCommand clampUserCommand(const UserCommand& command);
 double cycleTime();
 double swingTime();
 double stanceTime();

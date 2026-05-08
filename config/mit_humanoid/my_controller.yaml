@@ -42,13 +42,19 @@ swing:
   min_remaining_time: 0.001
   body_velocity_half_stance_offset: 0.2
   swing_foot_yaw_lead_scale: 1.0
+  nominal_foot_offsets_B:
+    - [0.0, 0.075999602, 0.0] # [0.0, 0.075999602, 0.0]
+    - [0.0, -0.075999602, 0.0]
+  # Optional fixed override for the stop-braking offset added at touchdown.
+  # Uncomment to replace the capture-point braking heuristic with a constant body-frame offset.
+  # stop_braking_offset_B: [0.0, 0.0, 0.0]
   touchdown_target_update_mode: fixed  # fixed / realtime
   stop_capture_point_gain: 0.2
   stop_capture_point_max_offset: 0.08
   stop_velocity_deadband: 0.02
   pitch_kp: 150.0
   pitch_kd: 18.0
-  yaw_kp: 155.0
+  yaw_kp: 165.0
   yaw_kd: 18.0
 
 user_command_filter:
@@ -58,6 +64,9 @@ user_command_filter:
   z_dot_tau: 0.70
   standing_roll_offset_tau: 0.70
   standing_pitch_offset_tau: 0.70
+  x_dot_max: 0.3
+  y_dot_max: 0.3
+  psi_dot_max: 0.2
 
 contact_manager:
   contact_force_on_threshold: 10.0

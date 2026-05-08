@@ -36,6 +36,13 @@ std::string formatDegrees(const double radians, const int precision) {
     return formatScalar(radians * kRadToDeg, precision);
 }
 
+double clampWithOptionalLimit(const double value, const double maxAbs) {
+    if (!std::isfinite(maxAbs)) {
+        return value;
+    }
+    return std::clamp(value, -maxAbs, maxAbs);
+}
+
 void sanitizeCommand(UserCommand& command) {
     command.x_dot = zeroTinyValue(command.x_dot);
     command.y_dot = zeroTinyValue(command.y_dot);
@@ -75,6 +82,41 @@ void printActiveControls(const bool standingControls) {
 
     std::cout << "[KeyboardCommand] walking controls active: w/s x_dot, a/d y_dot, "
               << "q/e psi_dot, Shift+L log, space reset\n";
+}
+
+void logLimitReached(const char* axisName,
+                     const bool upperBound,
+                     const double limit,
+                     const bool standingControls,
+                     const char* units) {
+    std::cout << "[KeyboardCommand] " << (standingControls ? "standing" : "walking")
+              << " command " << axisName << (upperBound ? " max reached" : " min reached")
+              << " at " << formatScalar(upperBound ? limit : -limit, 3) << ' ' << units << '\n';
+}
+
+bool applyLimitedDelta(double& value,
+                       const double delta,
+                       const double limit,
+                       const char* axisName,
+                       const char* units,
+                       const bool standingControls) {
+    const double previous = value;
+    const double proposed = previous + delta;
+    value = zeroTinyValue(clampWithOptionalLimit(proposed, limit));
+
+    if (!std::isfinite(limit)) {
+        return false;
+    }
+
+    const bool hitUpper = delta > 0.0 && previous < limit && proposed >= limit;
+    const bool hitLower = delta < 0.0 && previous > -limit && proposed <= -limit;
+    if (hitUpper) {
+        logLimitReached(axisName, true, limit, standingControls, units);
+    } else if (hitLower) {
+        logLimitReached(axisName, false, limit, standingControls, units);
+    }
+
+    return hitUpper || hitLower;
 }
 
 bool configureTerminalRawMode(bool& terminalConfigured) {
@@ -148,6 +190,15 @@ void KeyboardCommand::stop() {
 
     restoreTerminal(_terminalConfigured);
     std::cout << '\n';
+}
+
+void KeyboardCommand::setWalkingLimits(const double xDotLimit,
+                                       const double yDotLimit,
+                                       const double psiDotLimit) {
+    std::lock_guard<std::mutex> lock(_commandMutex);
+    _xLimit = xDotLimit;
+    _yLimit = yDotLimit;
+    _yawLimit = psiDotLimit;
 }
 
 UserCommand KeyboardCommand::getUserCommand() const {
@@ -228,8 +279,12 @@ void KeyboardCommand::applyVerticalKey(bool increase) {
     std::lock_guard<std::mutex> lock(_commandMutex);
 
     const double delta = increase ? _verticalStep : -_verticalStep;
-    _userCommand.z_dot =
-        std::clamp(_userCommand.z_dot + delta, -_verticalLimit, _verticalLimit);
+    applyLimitedDelta(_userCommand.z_dot,
+                      delta,
+                      _verticalLimit,
+                      "z_dot",
+                      "m/s",
+                      true);
     sanitizeCommand(_userCommand);
     printCommand(_userCommand, true);
 }
@@ -309,34 +364,52 @@ void KeyboardCommand::applyKey(char key) {
 
     switch (lowerKey) {
         case 'w':
-            _userCommand.x_dot = std::clamp(_userCommand.x_dot + _linearStep,
-                                            -_linearLimit,
-                                            _linearLimit);
+            applyLimitedDelta(_userCommand.x_dot,
+                              _linearStep,
+                              _xLimit,
+                              "x_dot",
+                              "m/s",
+                              false);
             break;
         case 's':
-            _userCommand.x_dot = std::clamp(_userCommand.x_dot - _linearStep,
-                                            -_linearLimit,
-                                            _linearLimit);
+            applyLimitedDelta(_userCommand.x_dot,
+                              -_linearStep,
+                              _xLimit,
+                              "x_dot",
+                              "m/s",
+                              false);
             break;
         case 'a':
-            _userCommand.y_dot = std::clamp(_userCommand.y_dot + _linearStep,
-                                            -_linearLimit,
-                                            _linearLimit);
+            applyLimitedDelta(_userCommand.y_dot,
+                              _linearStep,
+                              _yLimit,
+                              "y_dot",
+                              "m/s",
+                              false);
             break;
         case 'd':
-            _userCommand.y_dot = std::clamp(_userCommand.y_dot - _linearStep,
-                                            -_linearLimit,
-                                            _linearLimit);
+            applyLimitedDelta(_userCommand.y_dot,
+                              -_linearStep,
+                              _yLimit,
+                              "y_dot",
+                              "m/s",
+                              false);
             break;
         case 'q':
-            _userCommand.psi_dot = std::clamp(_userCommand.psi_dot + _yawStep,
-                                              -_yawLimit,
-                                              _yawLimit);
+            applyLimitedDelta(_userCommand.psi_dot,
+                              _yawStep,
+                              _yawLimit,
+                              "psi_dot",
+                              "rad/s",
+                              false);
             break;
         case 'e':
-            _userCommand.psi_dot = std::clamp(_userCommand.psi_dot - _yawStep,
-                                              -_yawLimit,
-                                              _yawLimit);
+            applyLimitedDelta(_userCommand.psi_dot,
+                              -_yawStep,
+                              _yawLimit,
+                              "psi_dot",
+                              "rad/s",
+                              false);
             break;
         default:
             return;

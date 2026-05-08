@@ -34,6 +34,24 @@ const char* sideName(const Side side) {
     }
 }
 
+double swingFootYawPsiOffset(const Side side, const double x_dot, const double psi_dot) {
+    constexpr double kPsiYawGainDegPerRad = 100.0;
+    constexpr double kPsiYawMaxOffsetDeg = 20.0;
+    constexpr double kDegToRad = 3.141592653589793238462643383279502884 / 180.0;
+
+    const double direction = (x_dot >= 0.0) ? 1.0 : -1.0;
+    const double offsetMagDeg =
+        std::clamp(kPsiYawGainDegPerRad * std::abs(psi_dot), 0.0, kPsiYawMaxOffsetDeg);
+    double offsetDeg = 0.0;
+    // Keep the sign rule explicit: left-foot bias for +psi_dot, right-foot bias for -psi_dot.
+    if (psi_dot > 0.0 && side == Side::Left) {
+        offsetDeg = direction * offsetMagDeg;
+    } else if (psi_dot < 0.0 && side == Side::Right) {
+        offsetDeg = -direction * offsetMagDeg;
+    }
+    return offsetDeg * kDegToRad;
+}
+
 double remainingSwingTime(const GaitScheduler& gaitScheduler, const Side side, const double time) {
     return std::clamp(cycleTime() * (1.0 - gaitScheduler.p(side, time)), 0.0, swingTime());
 }
@@ -108,17 +126,22 @@ Quat<double> yawQuaternion(const double yaw) {
 }
 
 double swingFootYawTargetWorld(const StateEstimate<double>* stateEstimate,
-                               const UserCommand* userCommand) {
+                               const UserCommand* userCommand,
+                               const Side side) {
     if (stateEstimate == nullptr) {
         throw std::runtime_error("Swing yaw target requires state estimate");
     }
 
-    const double psi_dot = (userCommand != nullptr) ? userCommand->psi_dot : 0.0;
+    const UserCommand clampedCommand =
+        clampUserCommand((userCommand != nullptr) ? *userCommand : UserCommand{});
+    const double x_dot = clampedCommand.x_dot;
+    const double psi_dot = clampedCommand.psi_dot;
     const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
     const double previewTime =
         (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) * stanceTime();
     const double yaw = stateEstimate->psi + leadScale * psi_dot * previewTime;
-    return std::atan2(std::sin(yaw), std::cos(yaw));
+    const double biasedYaw = yaw + swingFootYawPsiOffset(side, x_dot, psi_dot);
+    return std::atan2(std::sin(biasedYaw), std::cos(biasedYaw));
 }
 }  // namespace
 
@@ -202,7 +225,8 @@ void GaitSwingHoldController::initializeRuntime() {
         _legRuntime[leg].holdQ = _stateEstimate->legs[leg].q;
         _legRuntime[leg].swingTrajectory.deactivate();
         _legRuntime[leg].wasInStance = true;
-        _legRuntime[leg].touchdownYaw_W = swingFootYawTargetWorld(_stateEstimate, _userCommand);
+        _legRuntime[leg].touchdownYaw_W =
+            swingFootYawTargetWorld(_stateEstimate, _userCommand, _robotParams->legs[leg].side);
     }
 
     _tracePath = std::string(PROJECT_ROOT_DIR) + "/build/gait_swing_hold_trace.csv";
@@ -267,10 +291,9 @@ Vec3<double> GaitSwingHoldController::touchdownTargetWorld(const std::size_t leg
 
     const double psi = _stateEstimate->psi;
     const Mat3<double> R_WB = Rz(psi);
-    const Vec3<double> u_des_B = Vec3<double>{
-        _userCommand != nullptr ? _userCommand->x_dot : 0.0,
-        _userCommand != nullptr ? _userCommand->y_dot : 0.0,
-        0.0};
+    const UserCommand clampedCommand =
+        clampUserCommand((_userCommand != nullptr) ? *_userCommand : UserCommand{});
+    const Vec3<double> u_des_B = Vec3<double>{clampedCommand.x_dot, clampedCommand.y_dot, 0.0};
     const auto& footNow = _stateEstimate->legs[legIndex].footPos_W;
     const double stanceFraction = 0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset;
     Vec3<double> target = footNow + R_WB * u_des_B * (stanceFraction * stanceTime());
@@ -422,7 +445,8 @@ void GaitSwingHoldController::runController() {
             if (leg == static_cast<std::size_t>(_leftLegIndex)) {
                 ++_traceSegmentId;
             }
-            runtime.touchdownYaw_W = swingFootYawTargetWorld(_stateEstimate, _userCommand);
+            runtime.touchdownYaw_W =
+                swingFootYawTargetWorld(_stateEstimate, _userCommand, legParams.side);
             runtime.touchdownTarget_W = touchdownTargetWorld(leg);
             if (leg == static_cast<std::size_t>(_leftLegIndex)) {
                 _touchdownTarget_W = runtime.touchdownTarget_W;

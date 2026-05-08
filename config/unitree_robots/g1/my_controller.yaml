@@ -56,6 +56,9 @@ user_command_filter:
   z_dot_tau: 0.20
   standing_roll_offset_tau: 0.20
   standing_pitch_offset_tau: 0.20
+  x_dot_max: 1.0
+  y_dot_max: 1.0
+  psi_dot_max: 1.5
 
 logging:
   standing_mpc_debug_trigger_times: []

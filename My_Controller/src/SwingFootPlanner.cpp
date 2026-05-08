@@ -110,6 +110,18 @@ void SwingFootPlanner::ensureNominalFootOffsets() {
         _footprintCenterValid = true;
     }
 
+    const auto& swing = getControllerConfig().swing;
+    if (!swing.nominalFootOffsets_B.empty()) {
+        if (swing.nominalFootOffsets_B.size() != _robotParams->legs.size()) {
+            throw std::runtime_error(
+                "swing.nominal_foot_offsets_B must contain one 3-vector per leg");
+        }
+
+        _nominalFootOffsets_B = swing.nominalFootOffsets_B;
+        std::fill(_nominalFootOffsetValid.begin(), _nominalFootOffsetValid.end(), true);
+        return;
+    }
+
     const Mat3<double> R_BW = Rz(bodyYawTargetWorld()).transpose();
     for (std::size_t leg = 0; leg < _robotParams->legs.size(); ++leg) {
         Vec3<double> offset_B = R_BW * (_stateEstimate->legs[leg].footPos_W - footCenter_W);
@@ -167,6 +179,10 @@ Vec2<double> SwingFootPlanner::computeStopBrakingOffsetBodyFrame(
     }
 
     const auto& swing = getControllerConfig().swing;
+    if (swing.hasStopBrakingOffset) {
+        return Vec2<double>(swing.stopBrakingOffset_B.x(), swing.stopBrakingOffset_B.y());
+    }
+
     const Vec3<double> comVelocity_W = reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams);
     const Vec3<double> comVelocity_B = Rz(bodyYawTargetWorld()).transpose() * comVelocity_W;
     Vec2<double> offset_B(comVelocity_B.x(), comVelocity_B.y());

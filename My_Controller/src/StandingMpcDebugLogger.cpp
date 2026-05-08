@@ -141,6 +141,14 @@ json vectorToJson(const Eigen::MatrixBase<Derived>& vector) {
     return out;
 }
 
+json vec3VectorToJson(const std::vector<Vec3<double>>& vectors) {
+    json out = json::array();
+    for (const Vec3<double>& value : vectors) {
+        out.push_back(vectorToJson(value));
+    }
+    return out;
+}
+
 template <typename Derived>
 json matrixToFlatJson(const Eigen::MatrixBase<Derived>& matrix) {
     json data = json::array();
@@ -425,6 +433,12 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["min_remaining_time"] = config.swing.minRemainingTime;
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
     swing["swing_foot_yaw_lead_scale"] = config.swing.swingFootYawLeadScale;
+    if (!config.swing.nominalFootOffsets_B.empty()) {
+        swing["nominal_foot_offsets_B"] = vec3VectorToJson(config.swing.nominalFootOffsets_B);
+    }
+    if (config.swing.hasStopBrakingOffset) {
+        swing["stop_braking_offset_B"] = vectorToJson(config.swing.stopBrakingOffset_B);
+    }
     swing["touchdown_target_update_mode"] =
         touchdownTargetUpdateModeName(config.swing.touchdownTargetUpdateMode);
     swing["stop_capture_point_gain"] = config.swing.stopCapturePointGain;
@@ -445,6 +459,15 @@ json controllerConfigJson(const ControllerConfig& config,
         config.userCommandFilter.standingRollOffsetTau;
     userCommandFilter["standing_pitch_offset_tau"] =
         config.userCommandFilter.standingPitchOffsetTau;
+    if (std::isfinite(config.userCommandFilter.xDotMax)) {
+        userCommandFilter["x_dot_max"] = config.userCommandFilter.xDotMax;
+    }
+    if (std::isfinite(config.userCommandFilter.yDotMax)) {
+        userCommandFilter["y_dot_max"] = config.userCommandFilter.yDotMax;
+    }
+    if (std::isfinite(config.userCommandFilter.psiDotMax)) {
+        userCommandFilter["psi_dot_max"] = config.userCommandFilter.psiDotMax;
+    }
     root["user_command_filter"] = std::move(userCommandFilter);
 
     json contactManager = json::object();
