@@ -98,26 +98,62 @@ Standing debug logs record a serialized `controller_config` snapshot plus the ru
 
 ## Build
 
-Dependencies:
+This repository uses vcpkg manifest mode for every dependency except MuJoCo.
+
+What you need:
 
 - CMake 3.21+
-- C++17 compiler
-- vcpkg
+- A C++17 compiler
+- `vcpkg` checked out locally
 - MuJoCo SDK installed separately
-- vcpkg packages: `eigen3`, `glfw3`, `nlohmann-json`, `osqp`, `osqp-eigen`, `yaml-cpp`
 
-Recommended build:
+Expected local layout:
+
+- `~/.local/vcpkg`
+- `~/.local/mujoco`
+
+One-time setup on macOS with `zsh`:
+
+```bash
+mkdir -p ~/.local
+cd ~/.local
+git clone https://github.com/microsoft/vcpkg.git
+cd ~/.local/vcpkg
+./bootstrap-vcpkg.sh
+echo 'export VCPKG_ROOT="$HOME/.local/vcpkg"' >> ~/.zshrc
+echo 'export PATH="$VCPKG_ROOT:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+For this repository, the cleanest MuJoCo setup is to build the official MuJoCo source tree once and install it into `~/.local/mujoco`. That gives you a normal CMake package layout, including `mujocoConfig.cmake`, which this project expects.
+
+```bash
+cd /path/to/any/workdir
+git clone https://github.com/google-deepmind/mujoco.git
+cd mujoco
+git checkout 3.7.0
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local/mujoco"
+cmake --build build -j
+cmake --install build
+```
+
+The MuJoCo tag is pinned here for reproducibility, not because this repository requires that exact version. If you use a different MuJoCo release, keep the installed headers and library from the same MuJoCo installation and verify that the build still passes.
+
+After that, confirm that `~/.local/mujoco/lib/cmake/mujoco/mujocoConfig.cmake` exists.
+
+If you only want to run MuJoCo's sample app and do not care about this repository, the official macOS DMG release is also fine. For this repo, the installed prefix above is the least ambiguous option.
+The cloned MuJoCo source tree and its build directory can be deleted after `cmake --install` finishes; only the installed prefix under `~/.local/mujoco` is needed for this project.
+
+Build from the repository root:
 
 ```bash
 cmake --preset dev
 cmake --build --preset dev -j
 ```
 
-Make sure `VCPKG_ROOT` is exported before configuring; the preset uses it to load the vcpkg toolchain and will install the manifest dependencies automatically.
+On the first configure, vcpkg will install the manifest dependencies declared in `vcpkg.json` into `build/vcpkg_installed`.
 
-This repository uses vcpkg manifest mode for every dependency except MuJoCo. The preset expects `VCPKG_ROOT` to point at your vcpkg checkout and `mujoco_DIR` to point at the MuJoCo CMake package directory, which is `~/.local/mujoco/lib/cmake/mujoco` in the current local setup.
-
-If your MuJoCo SDK lives somewhere else, override `mujoco_DIR` when configuring.
+If your MuJoCo SDK lives somewhere else, update `mujoco_DIR` in `CMakePresets.json` to point at that SDK's `lib/cmake/mujoco` directory before configuring.
 
 ## Run
 
