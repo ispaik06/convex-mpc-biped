@@ -1,6 +1,6 @@
-# ConvexMPC
+# convex-mpc-biped
 
-ConvexMPC is a MuJoCo-based humanoid locomotion controller. `sim/`, `robot/`, and `common/` handle model loading, state estimation, auxiliary dynamics, and low-level torque synthesis. `My_Controller/` builds gait timing, touchdown targets, a reduced-body SRB MPC, and swing-foot tracking. MIT Humanoid is the primary validated path; Unitree G1 and H1 are supported in code.
+convex-mpc-biped is a MuJoCo-based humanoid locomotion controller. `sim/`, `robot/`, and `common/` handle model loading, state estimation, auxiliary dynamics, and low-level torque synthesis. `My_Controller/` builds gait timing, touchdown targets, a reduced-body SRB MPC, and swing-foot tracking. MIT Humanoid is the primary validated path; Unitree G1 and H1 are supported in code.
 
 ## Overview
 

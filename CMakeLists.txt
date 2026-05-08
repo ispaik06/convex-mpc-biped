@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ConvexMPC LANGUAGES C CXX)
+project(convex_mpc_biped LANGUAGES C CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
