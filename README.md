@@ -1,134 +1,51 @@
 # convex-mpc-biped
 
-convex-mpc-biped is a MuJoCo-based humanoid locomotion controller. `sim/`, `robot/`, and `common/` handle model loading, state estimation, auxiliary dynamics, and low-level torque synthesis. `My_Controller/` builds gait timing, touchdown targets, a reduced-body SRB MPC, and swing-foot tracking. MIT Humanoid is the primary validated path; Unitree G1 and H1 are supported in code.
+A reusable humanoid locomotion stack for MuJoCo, built around convex MPC. It tracks reduced-body motion targets, plans swing-foot touchdowns, and turns contact plans into actuator torques for walking, standing balance, and in-place turning.
 
-## Overview
+The controller is organized so new humanoid robots can be added without rewriting the core pipeline. Each robot contributes a MuJoCo model, a robot-specific spec, and a small YAML tuning layer; the locomotion stack stays shared.
 
-```mermaid
-flowchart TD
-    A["apps/main.cpp"] --> B["apps/main_helper.cpp"]
-    B --> C["sim/SimulationRunner"]
-    C --> D["sim/setupRobotParams"]
-    C --> E["sim/MujocoCheaterStateReader"]
-    E --> F["common/StateEstimator"]
-    F --> G["sim/LegSwingDynamicsProvider"]
-    G --> H["robot/RobotRunner"]
-    H --> I["My_Controller/MyController"]
-    I --> J["LocomotionFSM / SwingFootPlanner"]
-    I --> K["ReferenceTrajectory"]
-    I --> L["MPCFormulation"]
-    I --> M["ConvexMPC (OSQP)"]
-    I --> N["SwingFootTrajectory"]
-    H --> O["common/LegController / ArmController"]
-    O --> P["MuJoCo actuator ctrl"]
+## Quick start
+
+1. Install the requirements below.
+2. Set up MuJoCo and `vcpkg`.
+3. Build from the repository root.
+4. Launch the main binary with a robot selector and viewer flag.
+
+```bash
+cmake --preset dev
+cmake --build --preset dev -j
+./build/apps/main m y
 ```
 
-## Frame Conventions
+## Requirements
 
-- `W`: simulation world frame.
-- `T`: robot MJCF root floating body frame, i.e. the base body used as the robot pose reference.
-  - For MIT humanoid this is the `torso` body.
-  - For Unitree G1 this is the `pelvis` body.
-- `B`: yaw-aligned reduced-body COM frame.
-
-The code suffixes vectors and matrices with their frame, for example `R_WT`, `R_WB`, `p_W`, and `p_B`, so the reference frame stays explicit.
-
-`B` is a bookkeeping frame for the centroidal controller. It is used to express the reduced-body COM offset and inertia, not to define a full 6D rigid-body pose. The controller currently uses a mixed reduced-body state:
-
-- orientation: torso roll/pitch/yaw
-- position: reduced-body COM position in world, `p_com_W`
-- angular velocity: torso angular velocity as the reduced-body rate estimate
-- linear velocity: reduced-body COM velocity
-- gravity: scalar `g`
-
-In other words, the current MPC state mixes quantities from `T` and `B`: orientation and angular velocity are read from the floating base body `T`, while position and linear velocity are taken from the reduced-body COM model `B`. Because the upper body is held close to a rigid lump by the internal PD loops, treating it as a rigid body is a reasonable approximation for the current controller.
-
-If `initial_pose.base_position_W` and `initial_pose.base_rpy_W` are provided in `my_controller.yaml`, the first `_bodyTarget` seed is computed from that floating-base pose and converted to the reduced-body COM target once at initialization. The same `initial_pose` block also controls the leg/arm initial pose interpolation durations via `leg_initialization_time` and `arm_initialization_time` in seconds.
-
-This is a reduced-body SRB state, not a torso-origin MPC state. The reduced-body COM and inertia are recomputed from the current robot pose, so the model is posture-dependent.
-
-## Repository Layout
-
-- `apps/`: entry point and CLI selection of robot type.
-- `common/`: shared data structures, estimator, controllers, and math utilities.
-- `robot/`: controller orchestration and torque aggregation.
-- `sim/`: MuJoCo runner, robot bindings, cheater-state reader, and leg-dynamics helper. The standing-only path skips unnecessary per-leg auxiliary models.
-- `My_Controller/`: gait scheduler, reference trajectory, MPC formulation, QP solve, swing-foot trajectory, and debug logging.
-- `models/`: MIT Humanoid and Unitree robot XML, URDF, and assets.
-- `test/`: swing-hold tests, standing debug probes, and trajectory prototypes.
-
-## Control Loop
-
-1. `SimulationRunner` loads the MuJoCo model and robot bindings.
-2. `MujocoCheaterStateReader` fills `CheaterState`.
-3. `StateEstimator` builds `StateEstimate`.
-4. `LegSwingDynamicsProvider` computes the swing-foot data needed by the current mode.
-5. `RobotRunner` handles initial pose interpolation and torque aggregation.
-6. `MyController` updates gait phase, touchdown targets, reference trajectories, and MPC.
-7. `ConvexMPC` solves the stance-wrench QP.
-8. `LegController` and `ArmController` synthesize the final actuator torques.
-9. `SimulationRunner` writes `data->ctrl` and advances MuJoCo.
-
-## MPC Model
-
-The MPC uses a 13-state, 12-input reduced-body model:
-
-- state: `[roll, pitch, yaw, com_x, com_y, com_z, omega_x, omega_y, omega_z, vx, vy, vz, g]`
-- input: `[F_left(3), F_right(3), M_left(3), M_right(3)]`
-
-The MPC optimizes stance wrenches. Swing-foot tracking is handled separately by the Cartesian leg controller.
-
-## Configuration
-
-`config/my_controller.yaml` controls:
-
-- `timing`: cycle, swing, stance, horizon length, horizon steps
-- `model`: gravity and MuJoCo model paths
-- `mpc`: friction, contact wrench model, state/input weights, and solve cadence
-- `swing`: swing gains and end-effector source
-- `logging`: gait status and standing MPC debug triggers
-
-`config/simulation.yaml` controls simulation runtime settings:
-
-- `physics_timestep_sec`: MuJoCo simulation timestep
-- `physics_integrator`: MuJoCo integrator mode (`euler`, `rk4`, `implicit`, `implicitfast`)
-- `viewer_sync_hz`: how often physics state is pushed into the MuJoCo viewer
-
-Standing debug logs record a serialized `controller_config` snapshot plus the runtime model/state needed for replay. The MPC weights are stored as YAML-style diagonal arrays, and `robot_type` is recorded for plot/report labels. Probe behavior is documented in `test/standing_debug/README.md`.
-
-## Build
-
-This repository uses vcpkg manifest mode for every dependency except MuJoCo.
-
-What you need:
-
-- CMake 3.21+
+- CMake 3.16 or newer
 - A C++17 compiler
-- `vcpkg` checked out locally
-- MuJoCo SDK installed separately
+- `vcpkg`
+- MuJoCo installed separately
 
-Expected local layout:
+Recommended local layout:
 
 - `~/.local/vcpkg`
 - `~/.local/mujoco`
 
-One-time setup on macOS with `zsh`:
+Example macOS setup:
 
 ```bash
 mkdir -p ~/.local
 cd ~/.local
 git clone https://github.com/microsoft/vcpkg.git
-cd ~/.local/vcpkg
+cd vcpkg
 ./bootstrap-vcpkg.sh
 echo 'export VCPKG_ROOT="$HOME/.local/vcpkg"' >> ~/.zshrc
 echo 'export PATH="$VCPKG_ROOT:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-For this repository, the cleanest MuJoCo setup is to build the official MuJoCo source tree once and install it into `~/.local/mujoco`. That gives you a normal CMake package layout, including `mujocoConfig.cmake`, which this project expects.
+Install MuJoCo into `~/.local/mujoco`:
 
 ```bash
-cd /path/to/any/workdir
+cd /path/to/workdir
 git clone https://github.com/google-deepmind/mujoco.git
 cd mujoco
 git checkout 3.7.0
@@ -137,61 +54,167 @@ cmake --build build -j
 cmake --install build
 ```
 
-The MuJoCo tag is pinned here for reproducibility, not because this repository requires that exact version. If you use a different MuJoCo release, keep the installed headers and library from the same MuJoCo installation and verify that the build still passes.
-
-After that, confirm that `~/.local/mujoco/lib/cmake/mujoco/mujocoConfig.cmake` exists.
-
-If you only want to run MuJoCo's sample app and do not care about this repository, the official macOS DMG release is also fine. For this repo, the installed prefix above is the least ambiguous option.
-The cloned MuJoCo source tree and its build directory can be deleted after `cmake --install` finishes; only the installed prefix under `~/.local/mujoco` is needed for this project.
-
-Build from the repository root:
+Then configure and build:
 
 ```bash
 cmake --preset dev
 cmake --build --preset dev -j
 ```
 
-On the first configure, vcpkg will install the manifest dependencies declared in `vcpkg.json` into `build/vcpkg_installed`.
+If MuJoCo lives somewhere else, point `mujoco_DIR` in `CMakePresets.json` at that installation's `lib/cmake/mujoco` directory before configuring.
 
-If your MuJoCo SDK lives somewhere else, update `mujoco_DIR` in `CMakePresets.json` to point at that SDK's `lib/cmake/mujoco` directory before configuring.
+## Overview
 
-## Run
+```mermaid
+flowchart LR
+    subgraph Config[Configuration]
+        RobotYAML[Robot YAML\nconfig/<robot>/my_controller.yaml]
+        SimYAML[Simulation YAML\nconfig/simulation.yaml]
+        Spec[RobotMujocoSpec\nrobot-specific mapping]
+    end
 
-Main simulation:
+    subgraph Runtime[Runtime]
+        Main[apps/main]
+        Sim[SimulationRunner]
+        Est[StateEstimator]
+        Ctrl[My_Controller]
+        Filter[Command filter\nand gait scheduling]
+        Swing[SwingFootPlanner]
+        Ref[ReferenceTrajectory]
+        MPC[Convex MPC]
+        Out[LegController / ArmController]
+        MJ[MuJoCo actuators]
+    end
 
-```bash
-./build/apps/main m y
-./build/apps/main m n
-./build/apps/main g y
-./build/apps/main h n
+    RobotYAML --> Main
+    SimYAML --> Sim
+    Spec --> Sim
+    Main --> Sim --> Est --> Ctrl
+    Ctrl --> Filter
+    Ctrl --> Keys[Keyboard input]
+    Keys --> Ctrl
+    Filter --> Swing --> MPC
+    Filter --> Ref --> MPC
+    Est --> MPC
+    MPC --> Out --> MJ
 ```
 
-`m` selects MIT Humanoid, `g` selects Unitree G1, and `h` selects Unitree H1. `y` opens the viewer and `n` runs headless.
+## Repository layout
 
-Keyboard commands:
+| Path | Purpose |
+| --- | --- |
+| `apps/` | Entry points and robot selection |
+| `common/` | Shared data structures, estimator, math utilities, and keyboard input |
+| `robot/` | Controller orchestration and torque aggregation |
+| `sim/` | MuJoCo runner, robot bindings, and cheater-state reader |
+| `My_Controller/` | Gait scheduler, touchdown planning, reference generation, MPC, and swing-foot tracking |
+| `config/` | Robot-specific and simulation YAML configuration |
+| `docs/` | Technical notes about frames, swing planning, and controller conventions |
+| `test/` | Manual experiments and standing debug tools |
 
-- `w / s`: forward/backward velocity
-- `a / d`: lateral velocity
-- `q / e`: yaw rate
+## Supported robots
+
+| Robot | Status | Notes |
+| --- | --- | --- |
+| MIT Humanoid | Primary validation target | Best documented path and default example configuration |
+| Unitree G1 | Supported | Uses robot-specific config in `config/unitree_robots/g1/` |
+| Unitree H1 | Supported | Uses robot-specific config in `config/unitree_robots/h1/` |
+
+## Usage
+
+The main executable takes two arguments:
+
+```bash
+./build/apps/main <robot> <viewer>
+```
+
+Robot selection:
+
+- `m`: MIT Humanoid
+- `g`: Unitree G1
+- `h`: Unitree H1
+
+Viewer selection:
+
+- `y`: open the MuJoCo viewer
+- `n`: run headless
+
+## Control modes
+
+The walking or standing mode is selected in YAML, not from the keyboard.
+
+Set `requested_locomotion_mode` in `config/<robot>/my_controller.yaml`:
+
+- `walking`
+- `standing`
+
+Example:
+
+```yaml
+requested_locomotion_mode: walking
+```
+
+Change the YAML and restart the app to switch modes. The controller reads this value at startup and selects the matching keymap.
+
+## Keyboard controls
+
+### Walking mode
+
+- `w / s`: forward / backward velocity
+- `a / d`: left / right velocity
+- `q / e`: yaw rate left / right
 - `space`: clear the command
 
-Gait swing hold tests:
+### Standing mode
 
-```bash
-./build/test/gait_swing_hold/main_gait_swing_hold_test m y
-./build/test/gait_swing_hold/main_gait_swing_hold_test m n
-```
+- `up / down`: up / down velocity
+- `i / k`: pitch forward / backward
+- `j / l`: roll left / right
+- `space`: clear the command
 
-The first test family isolates gait-scheduled swing/hold behavior for both legs. The standing debug tools are documented in `test/standing_debug/README.md`.
+### Notes
 
-## Test Utilities
+- Keyboard commands are filtered before they reach the controller.
+- Mode-specific commands are ignored when the other mode is active.
+- The active walking limits for `x_dot`, `y_dot`, and `psi_dot` come from `user_command_filter` in YAML.
 
-- `test/gait_swing_hold/`: manual gait swing/hold experiments.
-- `test/gait_swing_hold_keyboard/`: keyboard-driven gait swing/hold experiments.
-- `test/standing_debug/`: standing MPC log replay, contact probes, and receding-horizon probes.
-- `test/SwingTrajectory/`: MATLAB trajectory prototype files.
+## Configuration
 
-## Current Notes
+The main robot configuration lives in `config/<robot>/my_controller.yaml`.
 
-- `StateEstimator` is still cheater-only.
-- Headless runs currently keep stepping until interrupted.
+Key fields:
+
+- `requested_locomotion_mode`: startup mode, `walking` or `standing`
+- `timing`: cycle, swing, stance, horizon length, and horizon steps
+- `model`: MuJoCo model path and foot end-effector source
+- `mpc`: contact model, weights, and solve cadence
+- `swing`: touchdown planner gains, nominal offsets, and braking offset
+- `user_command_filter`: command smoothing and max command limits
+- `startup`: initial settle timing
+- `logging`: standing MPC debug trigger times
+
+The simulation-wide settings live in `config/simulation.yaml`.
+
+## Adding a robot
+
+The controller is intentionally structured to support new humanoid robots with a small integration surface.
+
+To add a robot, prepare:
+
+1. A robot YAML under `config/<robot>/` with the robot XML path, end-effector source, and tuning.
+2. A `RobotMujocoSpec` implementation under `sim/src/models/` that maps bodies, foot links, contact sites, joints, and arms.
+3. Robot assets in `models/` for the MuJoCo XML, URDF, meshes, and any related files.
+4. Any robot-specific controller tuning in `config/<robot>/my_controller.yaml`.
+5. If needed, runtime updates to register the new `RobotType` and its config path in `Types.h`, `robot/src/RobotConfig.cpp`, and `sim/src/models/RobotMujocoSpec.cpp`.
+
+The existing examples are:
+
+- `sim/src/models/MitHumanoidSpec.cpp`
+- `sim/src/models/UnitreeG1Spec.cpp`
+- `sim/src/models/UnitreeH1Spec.cpp`
+
+## Notes
+
+- `StateEstimator` is still cheater-state based.
+- Headless runs continue until interrupted.
+- Yaw control during in-place turning is still not robust enough and needs follow-up improvement.

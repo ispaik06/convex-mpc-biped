@@ -230,7 +230,7 @@ void fillReducedBodyMassProperties(const mjModel* model,
             continue;
         }
 
-        // 기구학 트리를 거슬러 올라가며 기본(q=0) 상태에서의 Base 대비 상대 변환(Transform) 계산
+        // Walk up the kinematic tree and compute the transform relative to the base at q = 0.
         Vec3<T> offsetBody = Vec3<T>::Zero();
         Mat3<T> rotBody = Mat3<T>::Identity();
         int curr = bodyId;

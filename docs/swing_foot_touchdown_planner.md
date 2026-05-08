@@ -1,357 +1,282 @@
 # Swing Foot Touchdown Planner
 
-이 문서는 `SwingFootPlanner`가 swing foot touchdown target, 즉 빨간 touchdown marker 위치를 어떻게 계산하는지 설명한다.
-현재 구현은 `body_velocity_half_stance` 기반 touchdown geometry를 사용하고,
-추가로 touchdown target을 `fixed` 또는 `realtime` 모드로 갱신할 수 있다.
-이전의 `legacy_com_yaw_corrected` 방식은 제거되었다.
+This note explains how `SwingFootPlanner` computes the red touchdown marker used by swing feet. The planner is body-yaw aware, can operate in `fixed` or `realtime` target-update mode, and no longer uses the old `legacy_com_yaw_corrected` path.
 
-keyboard로 들어오는 연속 명령은 controller 내부 `user_command_filter`를 거친 뒤에만 사용된다.
-walking의 `x_dot / y_dot / psi_dot`뿐 아니라 standing의 `z_dot / roll / pitch`도 같은 경로를 탄다.
+Keyboard commands enter the controller through `user_command_filter` before they reach the planner. The same filter applies to walking `x_dot / y_dot / psi_dot` and standing `z_dot / roll / pitch`.
 
-## 1. 목표
+## 1. What the Planner Must Do
 
-보행 중 touchdown target은 다음 조건을 만족해야 한다.
+Touchdown targets should satisfy these constraints:
 
-1. 전진하면 다음 발도 계속 앞으로 짚어야 한다.
-2. 후진하면 다음 발도 계속 뒤로 짚어야 한다.
-3. 좌/우 이동하면 footprint 전체가 좌/우로 이동해야 한다.
-4. 정지가 완료되면 양발 평균 xy가 body desired marker, 즉 `debug_body_target`의 xy와 맞아야 한다.
-5. 정지 진입 순간에는 현재 COM 속도를 보고 touchdown target을 desired marker보다 진행 방향 쪽으로 조금 더 둬서 브레이크를 건다.
+1. Forward motion should keep placing the next foot forward.
+2. Backward motion should keep placing the next foot backward.
+3. Lateral motion should shift the whole footprint left or right.
+4. Once the robot stops, the average of both feet should converge to the desired body marker, `debug_body_target`.
+5. When the robot is transitioning into a stop, touchdown should move slightly farther in the direction of travel so the robot brakes instead of coasting past the target.
 
-핵심 설계 판단은 다음과 같다.
+The key design choice is:
 
 ```text
-desired body marker를 발에 끌어맞추지 않고,
-발 touchdown target을 desired body marker에 맞춘다.
+Do not pull the desired body marker toward the feet.
+Instead, move the swing-foot touchdown target toward the desired body marker.
 ```
 
-이유는 MPC의 reduced-body reference가 `_bodyTarget`에서 만들어지기 때문이다.
-정지 시 desired body marker가 앞에 있는데 발만 뒤에 남으면, MPC는 COM을 marker로 보내려 하고 support polygon은 뒤에 남아서 넘어지기 쉽다.
-따라서 정지 시에는 다음 swing foot을 marker 기준 footprint 위치로 보내고, 한두 step 뒤 양발 평균이 marker xy와 맞게 만드는 편이 자연스럽다.
+That matters because the reduced-body MPC reference is built from `_bodyTarget`. If the desired body marker is already ahead of the feet and the feet remain behind, the MPC keeps moving the COM toward the marker while the support polygon lags behind. That is an easy way to lose balance during stopping.
 
-## 2. 사용하는 좌표계
+## 2. Coordinate Frames
 
-World frame `W`:
+### World frame `W`
 
-- 시뮬레이션/world 기준 좌표계.
-- 최종 touchdown target은 world position `target_W`로 나온다.
+- Simulation/world coordinates.
+- The final touchdown target is always returned as a world position `target_W`.
 
-Body yaw frame `B`:
+### Body-yaw frame `B`
 
-- roll/pitch는 무시하고 yaw만 body heading에 맞춘 frame.
-- user command `[x_dot, y_dot]`는 이 frame 기준 명령이다.
-- 발 좌우 offset도 이 frame에서 기억한다.
+- A bookkeeping frame that ignores roll and pitch and keeps only yaw aligned to the robot heading.
+- User commands `[x_dot, y_dot]` are interpreted in this frame.
+- Nominal foot offsets are stored in this frame.
 
-현재 코드에서 body yaw는 실제 state yaw가 아니라 SRB desired yaw를 우선 사용한다.
+The current code uses the desired body yaw from the SRB reference when possible, not a full floating-base pose. In practice, touchdown position and swing-foot yaw are computed around the desired body marker that the MPC is trying to track.
 
-```cpp
-_swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W,
-                                      _bodyTarget.euler_W[2]);
-```
+## 3. Nominal Foot Offsets
 
-즉 touchdown 위치와 foot yaw는 가능한 한 MPC가 따라가려는 desired body marker 기준으로 계산된다.
+When the planner is reset, the first call to `desiredFootPositions()` captures the current left and right foot positions and stores their body-yaw-frame offsets as `_nominalFootOffsets_B[leg]`.
 
-## 3. 처음 저장하는 nominal foot offset
-
-planner가 reset된 뒤 처음 호출되면 현재 양발 평균을 계산한다.
+The procedure is:
 
 ```text
 footCenter_W = (leftFoot_W + rightFoot_W) / 2
+offset_B[leg] = Rz(yaw_des)^T * (footPos_W - footCenter_W)
+offset_B[leg].x = 0
+offset_B[leg].z = 0
 ```
 
-각 발에 대해서 현재 발 위치가 이 center에서 얼마나 떨어져 있는지를 body yaw frame으로 변환한다.
+This means the planner remembers only the left/right spacing between the feet. The forward/backward component is deliberately discarded so the feet can keep a clean stance line while moving forward or backward.
+
+Example:
 
 ```text
-nominalFootOffset_B[leg] = Rz(yaw_des)^T * (foot_W[leg] - footCenter_W)
+left  offset_B = [0, +0.08, 0]
+right offset_B = [0, -0.08, 0]
 ```
 
-그 다음 x와 z는 0으로 만든다.
+If `swing.nominal_foot_offsets_B` is present in YAML, that value is used directly and the runtime estimate is skipped.
+
+## 4. Preview Time
+
+The touchdown target is not computed from the current foot position alone. It is computed from where the body is expected to be when the next foot lands.
+
+The preview horizon is:
 
 ```text
-nominalFootOffset_B[leg].x = 0
-nominalFootOffset_B[leg].z = 0
+previewTime = (0.5 + bodyVelocityHalfStanceOffset) * stanceTime()
 ```
 
-그래서 offset은 사실상 "왼발은 center에서 y가 얼마", "오른발은 center에서 y가 얼마"만 기억한다.
-이렇게 해야 전진/후진 시에는 양발이 같은 전후 위치 라인으로 정렬될 수 있고, 좌우 간격은 보존된다.
+The intuition is simple:
 
-예:
+- `0.5 * stanceTime` means "place the foot roughly halfway through the next stance interval."
+- `bodyVelocityHalfStanceOffset` is a tuning knob.
+  - `0` means plain half-stance preview.
+  - Positive values look farther into the future and place the foot farther ahead.
+  - Negative values look less far ahead and place the foot closer.
 
-```text
-왼발 offset_B  = [0, +0.08, 0]
-오른발 offset_B = [0, -0.08, 0]
-```
-
-현재 구현은 이 값을 첫 touchdown 시점에 런타임으로 추정하지만, `swing.nominal_foot_offsets_B`를 YAML에 넣으면
-그 값을 그대로 사용하고 런타임 추정은 건너뛴다.
-
-## 4. Preview time
-
-touchdown target은 지금 발 위치가 아니라 "landing 시점에 몸이 어디에 있을지"를 보고 잡는다.
-그 시간 간격을 preview time이라고 부른다.
-
-```text
-previewTime = (0.5 + body_velocity_half_stance_offset) * stanceTime
-```
-
-기본적인 직관은 다음과 같다.
-
-- `0.5 * stanceTime`: 다음 stance 구간의 중간 정도를 기준으로 발을 놓는다.
-- `body_velocity_half_stance_offset`: 튜닝용 offset이다.
-  - 0이면 half-stance preview.
-  - 양수면 더 먼 미래를 보고 더 앞에 둔다.
-  - 음수면 더 가까운 미래를 보고 덜 멀리 둔다.
-
-현재 YAML에서 이 값이 0.5라면:
-
-```text
-previewTime = (0.5 + 0.5) * stanceTime = 1.0 * stanceTime
-```
-
-즉 touchdown target은 한 stance time 뒤의 desired footprint center를 보게 된다.
+If `bodyVelocityHalfStanceOffset = 0.5`, the planner is looking one full stance interval ahead.
 
 ## 5. Swing Foot Yaw
 
-스윙 중 발 자체의 yaw target은 기본적으로 현재 로봇 torso yaw를 기준으로
-앞방향 `+x`를 보게 하고, filtered `y_dot`의 절댓값이 `0.2 m/s` 이상이고
-그 발이 lateral 방향으로 가야 하는 쪽과 일치할 때만
-스윙 시작 시점의 발 위치에서 touchdown target까지의 world-frame 방향을 쓴다.
-그 외에는 `swing_foot_yaw_lead_scale * psi_dot * previewTime`를 더한
-body-yaw 기반 target을 그대로 쓴다.
+The swing-foot yaw target is usually the torso yaw plus a yaw-lead term:
 
 ```text
-yaw0 = current torso yaw
-if |filtered_y_dot| >= 0.2 and filtered_x_dot != 0 and side matches sign(filtered_y_dot):
-    swingFootYawTarget = atan2(touchdownTarget.y - footStart.y,
-                                touchdownTarget.x - footStart.x)
-    if filtered_x_dot < 0:
-        if side == right:
-            swingFootYawTarget += pi / 2
-        else:
-            swingFootYawTarget -= pi / 2
-else:
-    swingFootYawTarget = yaw0 + swing_foot_yaw_lead_scale * psi_dot * previewTime
+yaw_target = yaw0 + swing_foot_yaw_lead_scale * psi_dot * previewTime
 ```
 
-이 규칙의 의도는 다음과 같다.
+There is one extra heuristic for diagonal stepping. If the filtered lateral command is large enough, the planner uses the world direction from the current foot position to the touchdown target as the base yaw. That path is only enabled when:
 
-- 전진/후진/한쪽 축만 쓰는 이동에서는 기존 yaw lead만 사용한다.
-- 대각선 이동일 때만, 그 대각선 방향의 발에 한해서 touchdown 방향 yaw를 쓴다.
-- 그중에서도 `x_dot < 0`이면 오른발은 `+90도`, 왼발은 `-90도`를 더해 보정한다.
-- `|filtered y_dot| < 0.2 m/s`이면 이 diagonal 분기는 꺼진다.
-- yaw는 swing 시작 시 한 번만 정해지고, swing 중에는 바뀌지 않는다.
-- 여기에 더해 `psi_dot` 기반 bias를 붙인다.
-  - `x_dot >= 0`이면 `psi_dot > 0`일 때 왼발에 `+` bias, `psi_dot < 0`일 때 오른발에 `-` bias를 더한다.
-  - `x_dot < 0`이면 위 부호를 반대로 뒤집는다.
-  - bias 크기는 `min(20 deg, 100 * |psi_dot| deg)`로 제한된다.
+- `|filtered_y_dot| >= 0.2 m/s`
+- `filtered_x_dot != 0`
+- the swing leg matches the lateral direction
 
-이 yaw는 두 군데에 쓰인다.
+If `filtered_x_dot < 0`, the yaw is rotated by `+90 deg` for the right foot and `-90 deg` for the left foot.
 
-1. swing foot attitude PD의 yaw target
-2. debug visualization의 swing foot yaw marker
+There is also a `psi_dot` bias:
 
-따라서 일반적인 swing에서는 발 앞쪽이 로봇의 전방을 보게 되고,
-touchdown 위치 자체는 바꾸지 않는다.
+- If `x_dot >= 0` and `psi_dot > 0`, the left foot gets a positive bias.
+- If `x_dot >= 0` and `psi_dot < 0`, the right foot gets a negative bias.
+- If `x_dot < 0`, the signs are flipped.
 
-## 6. Translation yaw와 0.5의 의미
+The bias magnitude is:
 
-translation step은 다음 식으로 계산한다.
+```text
+min(20 deg, 100 * |psi_dot| deg)
+```
+
+This is intentionally a small correction. It adjusts the swing-foot heading, not the touchdown position.
+
+## 6. Translation Yaw
+
+Touchdown position uses a small yaw-averaging approximation:
 
 ```text
 translationYaw = yaw0 + 0.5 * psi_dot * previewTime
 step_W = Rz(translationYaw) * [x_dot, y_dot, 0] * previewTime
 ```
 
-왜 `0.5`가 들어가나?
+Why the `0.5`?
 
-preview 구간 동안 body yaw가 `yaw0`에서 `yaw0 + psi_dot * previewTime`까지 계속 변한다고 생각하면,
-속도 명령 `[x_dot, y_dot]`를 world로 바꿀 때 yaw도 시간에 따라 변한다.
-
-정확히는 다음 적분이다.
+During the preview window, the body yaw changes from `yaw0` to `yaw0 + psi_dot * previewTime`. Using the midpoint yaw is a simple approximation to the full integral:
 
 ```text
 step_W = integral from 0 to T of Rz(yaw0 + psi_dot * t) * v_cmd_B dt
 ```
 
-하지만 매번 삼각함수 적분을 쓰면 복잡하고, 짧은 preview 구간에서는 중간 yaw를 쓰는 근사가 충분히 직관적이다.
+For short preview intervals, the midpoint approximation is easier to reason about and is usually sufficient.
+
+## 7. Final Touchdown Target
+
+The core touchdown equation is:
 
 ```text
-중간 yaw = yaw0 + psi_dot * T / 2
+target_W = currentCenter_W
+         + step_W
+         + Rz(yaw0) * brakingOffset_B
+         + Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
-그래서 `translationYaw`에 `0.5`가 붙는다.
-이것은 "preview 시간 동안 몸이 회전하는 중간 방향으로 이동량을 world에 투영한다"는 뜻이다.
+Where:
 
-특히 `psi_dot = 0`이면:
+- `currentCenter_W` is usually `_bodyTarget.position_W`.
+- `step_W` is the previewed displacement from the command.
+- `brakingOffset_B` is the optional stop/braking offset in body-yaw coordinates.
+- `nominalFootOffsets_B[leg]` preserves the left/right stance spacing.
+
+If the body target has not been seeded yet, the planner falls back to the last known footprint center.
+
+## 8. Stop / Braking Offset
+
+When the robot is slowing down, the planner can add an extra body-frame offset that helps the next touchdown brake the motion.
+
+The logic is:
+
+1. Watch the filtered planar command.
+2. If command magnitude is dropping toward zero, capture a braking offset.
+3. Reuse that offset for the next touchdown calculation.
+
+Relevant YAML keys:
+
+- `stop_capture_point_gain`
+- `stop_capture_point_max_offset`
+- `stop_velocity_deadband`
+
+If you want to bypass the capture-point calculation and force a fixed value, set `swing.stop_braking_offset_B` in YAML. When that key is present, the planner uses the configured value instead of the capture-point estimate.
+
+## 9. Why the Planner Reconstructs the Footprint Center
+
+The planner does not use the previous foot target directly as the next foot's initial point.
+
+Example:
 
 ```text
-translationYaw = yaw0
+left touchdown  = [x=0.10, y=+0.08]
+next right p_init = left touchdown
+right touchdown = [x=0.20, y=+0.08]
 ```
 
-그래서 일반적인 직선 이동 식과 완전히 같아진다.
+That would collapse the stance geometry because the right foot would walk onto the left foot's lateral line.
 
-## 7. 최종 touchdown target 식
-
-현재 구현의 핵심 식은 다음과 같다.
+Instead, the planner reconstructs the footprint center:
 
 ```text
-currentCenter_W = bodyTarget_W
-futureCenter_W = currentCenter_W + step_W
-target_W = futureCenter_W + Rz(yaw0) * nominalFootOffset_B[leg]
-target_W.z = kSwingFootTargetZ
+center = touchdown - Rz(yaw_des) * nominalFootOffsets_B[leg]
 ```
 
-코드로는 다음 구조다.
+Once the center is known, the next foot target is computed from that center plus the opposite foot offset. This keeps the left/right spacing stable across steps.
 
-```cpp
-const double previewTime = touchdownPreviewTime();
-const double yaw0 = bodyYawTargetWorld();
-const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
-const Vec3<double> step_W = Rz(translationYaw_W) * v_body_cmd * previewTime;
+## 10. Behavior by User Command
 
-Vec3<double> target =
-    currentCenter_W + step_W + Rz(yaw0) * _nominalFootOffsets_B[legIndex];
-```
+### 10.1 Zero command / stopping
 
-`currentCenter_W`는 보통 `_bodyTarget.position_W`다.
-만약 body target이 아직 planner에 들어오지 않았다면 내부에 저장된 마지막 footprint center를 fallback으로 쓴다.
+When `space` clears the raw keyboard command, the filtered command decays gradually. The body marker and MPC reference do not snap to zero instantly.
 
-## 8. 왜 previous foot target을 그대로 쓰지 않는가
+The planner may then add a braking offset. That offset is only latched when the filtered planar command is actually dropping or is already near zero. It is not recomputed every tick.
 
-이전 방식처럼 "직전 touchdown target을 다음 발의 p_init으로 그대로 사용"하면 이런 문제가 생긴다.
-
-```text
-왼발 touchdown  = [x=0.10, y=+0.08]
-다음 오른발 p_init = 왼발 touchdown
-오른발 touchdown = [x=0.20, y=+0.08]
-```
-
-오른발이 왼발 라인으로 들어오면서 좌우 발 간격이 깨진다.
-
-그래서 현재 구현은 "발 위치 자체"를 다음 기준으로 쓰지 않고, 다음처럼 center를 복원한다.
-
-```text
-footprintCenter = target_W - Rz(yaw0) * nominalFootOffset_B[leg]
-```
-
-그러면 왼발 target으로부터도 center를 알 수 있고, 오른발 target으로부터도 같은 center를 알 수 있다.
-다음 발은 이 center와 자기 offset으로 계산되므로 좌우 간격이 유지된다.
-
-## 9. User command별 동작
-
-### 9.1 정지: raw command가 zero로 들어온 경우
-
-정지 진입은 `space`로 raw target이 zero가 되는 순간 시작된다.
-다만 그 뒤의 `x_dot / y_dot / psi_dot`는 controller 내부 `user_command_filter`를 거치므로,
-몸통 target과 MPC reference는 즉시 0으로 끊기지 않고 천천히 따라간다.
-즉 body desired marker도 filtered command를 따라 서서히 감속한다.
-
-현재 구현에서는 감속/정지용 capture-point braking offset을 touchdown 식에 다시 더한다.
-단, `space`가 들어와도 steady walking 중에는 touchdown target이 그대로 유지되고,
-filtered planar command가 줄어들거나 거의 0이 될 때만 braking offset을 캡처한다.
-캡처된 offset은 현재 swing target을 바꾸지 않고, 다음 touchdown target 계산부터 적용된다.
-
-관련 YAML 키 `stop_capture_point_gain`, `stop_capture_point_max_offset`, `stop_velocity_deadband`는 braking offset 계산에 사용된다.
-만약 이 braking offset을 고정값으로 바꾸고 싶으면 `swing.stop_braking_offset_B`로 body-frame offset을 직접 넣을 수 있다.
-이 키가 있으면 capture-point 계산 대신 YAML 값이 사용된다.
-
-### 9.2 전진: x_dot > 0, y_dot = 0, psi_dot = 0
+### 10.2 Forward motion: `x_dot > 0`, `y_dot = 0`, `psi_dot = 0`
 
 ```text
 step_W = Rz(yaw0) * [x_dot, 0, 0] * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0) * offset_B[leg]
+target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
-결과:
+Result:
 
-- future footprint center가 body heading 앞쪽으로 이동한다.
-- 왼발/오른발은 같은 future center 주변의 좌우 offset 위치로 간다.
+- The future footprint center moves forward.
+- Left and right feet stay on opposite sides of that center.
 
-### 9.3 후진: x_dot < 0, y_dot = 0, psi_dot = 0
+### 10.3 Backward motion: `x_dot < 0`, `y_dot = 0`, `psi_dot = 0`
 
 ```text
-step_W = Rz(yaw0) * [negative, 0, 0] * previewTime
+step_W = Rz(yaw0) * [x_dot, 0, 0] * previewTime
+target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
-결과:
+Result:
 
-- future footprint center가 body heading 뒤쪽으로 이동한다.
-- 발은 뒤쪽 target으로 잡힌다.
+- The future footprint center moves backward.
+- The swing foot target moves behind the current support line.
 
-### 9.4 좌/우 이동: y_dot != 0
+### 10.4 Lateral motion: `y_dot != 0`
 
 ```text
 step_W = Rz(yaw0) * [0, y_dot, 0] * previewTime
+target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
-결과:
+Result:
 
-- `y_dot > 0`이면 body left 방향으로 footprint center가 이동한다.
-- `y_dot < 0`이면 body right 방향으로 footprint center가 이동한다.
-- 각 발의 nominal left/right offset은 여전히 유지된다.
+- Positive `y_dot` moves the footprint center toward the body-left side.
+- Negative `y_dot` moves it toward the body-right side.
+- Nominal left/right spacing is preserved.
 
-### 9.5 제자리 회전: x_dot = 0, y_dot = 0, psi_dot != 0
+### 10.5 In-place turning: `x_dot = 0`, `y_dot = 0`, `psi_dot != 0`
 
 ```text
 turnBias_W = Rz(yaw0) * [d_turn, 0, 0]
-target_W = bodyTarget_W + turnBias_W + Rz(yaw0) * offset_B[leg]
+target_W = bodyTarget_W + turnBias_W + Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
-결과:
+Result:
 
-- desired body marker는 turn bias 만큼 body frame 전방으로 이동한다.
-- 발 위치는 그 biased marker 주변에서 회전 배치된다.
-- swing foot yaw target은 기본적으로 body yaw와 yaw lead를 따르고,
-  대각선 이동에서만 해당 발에 step-heading을 쓴다.
+- The desired body marker moves slightly forward by the turn bias.
+- The feet rotate around that biased marker.
+- Swing-foot yaw still follows body yaw and yaw lead unless the diagonal-step heuristic activates.
 
-### 9.6 이동하면서 회전: x_dot/y_dot != 0, psi_dot != 0
+### 10.6 Moving while turning: `x_dot / y_dot != 0`, `psi_dot != 0`
 
 ```text
-step_W = Rz(yaw0 + 0.5 * psi_dot * previewTime) * v_cmd_B * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0) * offset_B[leg]
+step_W = Rz(yaw0 + 0.5 * psi_dot * previewTime) * [x_dot, y_dot, 0] * previewTime
+target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
-결과:
+Result:
 
-- center 이동은 preview 구간의 중간 yaw를 기준으로 근사한다.
-- 발 좌우 배치는 body desired yaw를 기준으로 한다.
-- 따라서 몸이 회전하며 이동할 때도 발이 미래 heading에 맞춰 놓인다.
-- raw command가 zero로 들어가면 filtered command가 줄어드는 동안 braking offset이 켜지고, command가 다시 steady해지면 꺼진다.
+- The translation is approximated using the midpoint yaw over the preview interval.
+- Left/right stance spacing is still defined in the body-yaw frame.
+- The swing target therefore follows the future heading instead of the instantaneous one.
+- When the raw command drops to zero, the braking offset turns on during the decay and turns off again once the command stabilizes.
 
-## 10. Red marker와 균형
+## 11. What This Planner Deliberately Does Not Do
 
-`debug_body_target`은 reduced-body COM desired marker다.
-MPC reference는 이 marker를 기반으로 만들어진다.
+- It does not recompute the braking offset on every tick.
+- It does not keep changing the touchdown target after a swing has already started.
+- In `fixed` mode, the touchdown target is latched once for the swing and then held.
+- In `realtime` mode, the target may be refreshed, but the current implementation still treats the touchdown geometry as a step-local decision.
+- A zero keyboard command does not automatically trigger braking unless the filtered command actually decreases.
 
-정지 시 target 식이 다음처럼 되므로:
+## 12. Summary
 
-```text
-leftTarget_W  = bodyTarget_W + Rz(yaw0) * leftOffset_B
-rightTarget_W = bodyTarget_W + Rz(yaw0) * rightOffset_B
-```
+- Touchdown targets are world-frame positions.
+- Nominal left/right spacing lives in the body-yaw frame.
+- Previewing uses the expected future body position, not the current foot position alone.
+- Swing-foot yaw is body-yaw aware, with a diagonal-step heuristic and a signed `psi_dot` bias.
+- Stopping adds a braking offset so the feet help bring the body marker back over the support footprint.
 
-그리고 offset이 초기 양발 평균 기준으로 저장되어 있다면:
-
-```text
-(leftTarget_W.xy + rightTarget_W.xy) / 2 ~= bodyTarget_W.xy
-```
-
-즉 정지 후 support footprint center가 desired body marker 아래로 들어오게 된다.
-
-## 11. 현재 구현에서 의도적으로 하지 않는 것
-
-touchdown target 갱신 모드는 두 가지다.
-
-```yaml
-swing:
-  touchdown_target_update_mode: fixed     # swing 시작 시 1회 계산
-```
-
-- 현재는 braking offset을 매 tick 다시 계산하지 않는다.
-- `fixed`: swing이 시작될 때 touchdown target을 한 번 잡고, 평상시에는 그 swing 동안 유지한다.
-- command가 줄어들거나 stop 상태로 들어가는 순간에만 braking offset을 캡처하고,
-  이미 진행 중인 swing target은 건드리지 않는다.
-- 현재 touchdown target 계산은 fixed 방식만 사용한다.
-
-- `space`로 raw target이 zero가 되더라도, command가 실제로 줄어드는 구간이 아니면 braking offset은 켜지지 않는다.
-- touchdown target은 steady walking 중에는 유지되다가, command가 감속/정지로 들어갈 때 캡처한 offset이 다음 target부터 반영된다.
+This is the smallest frame convention that keeps the planner readable and consistent with the rest of the controller.
