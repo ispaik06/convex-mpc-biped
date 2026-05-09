@@ -114,12 +114,12 @@ flowchart LR
 ```
 
 > [!IMPORTANT]
-> The cadence below reflects the current checked-in defaults. Exact values come from each
+> The control frequencies below reflect the current checked-in defaults. Exact values come from each
 > robot's `config/<robot>/my_controller.yaml` and from `config/simulation.yaml`.
 
-### Runtime Cadence
+### Control Frequencies
 
-| Layer | Cadence | Notes |
+| Layer | Rate | Notes |
 | --- | --- | --- |
 | Physics integration | `0.002 s` / 500 Hz | MuJoCo step from `config/simulation.yaml` |
 | Controller tick | 500 Hz | `SimulationRunner -> RobotRunner -> MyController::runController()` runs every simulation step |
@@ -179,7 +179,7 @@ Viewer selection:
 - `y`: open the MuJoCo viewer
 - `n`: run headless
 
-## Control modes
+## Locomotion modes
 
 > [!WARNING]
 > `requested_locomotion_mode` is read at startup. Edit `config/<robot>/my_controller.yaml`
@@ -227,7 +227,7 @@ Key fields:
 - `requested_locomotion_mode`: startup mode, `walking` or `standing`
 - `timing`: cycle, swing, stance, horizon length, and horizon steps
 - `model`: MuJoCo model path and foot end-effector source
-- `mpc`: contact model, weights, and solve cadence
+- `mpc`: contact model, weights, and solve rate
 - `swing`: touchdown planner gains, nominal offsets, and braking offset
 - `user_command_filter`: command smoothing and max command limits
 - `startup`: initial settle timing
