@@ -1,8 +1,22 @@
 # convex-mpc-biped
 
-A reusable humanoid locomotion stack for MuJoCo, built around convex MPC. It tracks reduced-body motion targets, plans swing-foot touchdowns, and turns contact plans into actuator torques for walking, standing balance, and in-place turning.
+A MuJoCo humanoid locomotion stack centered on a **Convex Model Predictive Controller (MPC)**. The control pipeline combines **Single Rigid Body (SRB)** modeling, **contact-wrench optimization**, heuristic **swing-foot planning** with additional touchdown rules, and explicit **early/late contact** handling to generate actuator torques for walking, standing balance, and in-place turning.
 
-The controller is organized so new humanoid robots can be added without rewriting the core pipeline. Each robot contributes a MuJoCo model, a robot-specific spec, and a small YAML tuning layer; the locomotion stack stays shared.
+The same controller can be retargeted across robots through robot-specific MuJoCo models, kinematic/contact mappings, and YAML tuning, while the shared locomotion pipeline remains the same.
+
+- **SRB-based Model Predictive Control**
+- **Contact-wrench optimization** for feasible stance forces and moments
+- **Heuristic swing-foot planning** with Raibert-style placement and touchdown heuristics
+- **Early/late contact handling** for touchdown, liftoff, and recovery
+- **Shared controller pipeline** across robots, with **viewer** and **headless** execution modes
+
+<p align="center">
+  <img src="docs/assets/readme/20260509.gif" alt="Humanoid walking demo" width="77%">
+</p>
+
+> [!TIP]
+> Start with **Quick start** if you want the build path. Jump to **Debugging Probes**
+> when you want logs, replay plots, and contact checks.
 
 ## Quick start
 
@@ -99,6 +113,32 @@ flowchart LR
     MPC --> Out --> MJ
 ```
 
+> [!IMPORTANT]
+> The cadence below reflects the current checked-in defaults. Exact values come from each
+> robot's `config/<robot>/my_controller.yaml` and from `config/simulation.yaml`.
+
+### Runtime Cadence
+
+| Layer | Cadence | Notes |
+| --- | --- | --- |
+| Physics integration | `0.002 s` / 500 Hz | MuJoCo step from `config/simulation.yaml` |
+| Controller tick | 500 Hz | `SimulationRunner -> RobotRunner -> MyController::runController()` runs every simulation step |
+| Contact manager | 500 Hz | Updates contact overrides and recovery state on each tick |
+| Swing-foot planner | 500 Hz | Advances swing trajectories on each tick |
+| MPC solve | 50 Hz | Rebuilds the QP every `iterations_between_solve = 10` physics steps |
+| Reference trajectory | 50 Hz | Rebuilt whenever MPC is solved |
+
+<details>
+<summary><strong>Current robot timing defaults</strong></summary>
+
+| Robot | Cycle | Swing | Stance | Horizon | Steps | `dt_mpc` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MIT Humanoid | `0.5 s` | `0.15 s` | `0.35 s` | `0.5 s` | `25` | `20 ms` |
+| Unitree G1 | `1.0 s` | `0.4 s` | `0.6 s` | `0.5 s` | `20` | `25 ms` |
+| Unitree H1 | `1.0 s` | `0.4 s` | `0.6 s` | `0.5 s` | `20` | `25 ms` |
+
+</details>
+
 ## Repository layout
 
 | Path | Purpose |
@@ -141,7 +181,9 @@ Viewer selection:
 
 ## Control modes
 
-The walking or standing mode is selected in YAML, not from the keyboard.
+> [!WARNING]
+> `requested_locomotion_mode` is read at startup. Edit `config/<robot>/my_controller.yaml`
+> and restart the app to switch between `walking` and `standing`.
 
 Set `requested_locomotion_mode` in `config/<robot>/my_controller.yaml`:
 
@@ -153,8 +195,6 @@ Example:
 ```yaml
 requested_locomotion_mode: walking
 ```
-
-Change the YAML and restart the app to switch modes. The controller reads this value at startup and selects the matching keymap.
 
 ## Keyboard controls
 
@@ -193,7 +233,92 @@ Key fields:
 - `startup`: initial settle timing
 - `logging`: standing MPC debug trigger times
 
+> [!NOTE]
+> The config files are intentionally small and robot-specific. The shared controller code
+> reads them at startup and keeps the runtime behavior in sync with the **YAML snapshot**
+> that is also written into each MPC debug log.
+
 The simulation-wide settings live in `config/simulation.yaml`.
+
+## Debugging Workflow
+
+The post-processing wrapper reads one MPC debug JSON and generates four diagnostics:
+one single-solve SRB replay plus three probes for contact consistency, wrench
+projection, and receding-horizon behavior.
+
+Capture a log while the app is running:
+
+- Press `Shift+L` once the robot is in the desired state.
+- Or set `logging.standing_mpc_debug_trigger_times` in `config/<robot>/my_controller.yaml`
+  to queue standing-mode logs at specific simulation times.
+- Logs are written under `logs/debug/standing_mpc/` or `logs/debug/walking_mpc/`.
+
+> [!WARNING]
+> `Shift+L` queues a log for the next scheduled MPC solve, so the JSON is captured after
+> the controller reaches that solve boundary.
+
+Run the wrapper to generate the full set:
+
+```bash
+./scripts/run_mpc_debug.sh --standing -n 80
+./scripts/run_mpc_debug.sh --walking -n 80
+./scripts/run_mpc_debug.sh --all-latest -n 80
+./scripts/run_mpc_debug.sh -l logs/debug/walking_mpc/walking_mpc_debug_20260501_140727.json -n 80
+```
+
+Each pass writes a **report**, a **CSV** where relevant, and the corresponding plot
+artifacts under `logs/debug/{standing_mpc,walking_mpc}/...`.
+
+### SRB reconstruction
+
+This is a single-solve replay, not a fresh MPC solve. The script reads the logged
+`x0`, `A_qp`, `B_qp`, and wrench horizon from the JSON, reconstructs the predicted
+state horizon from that MPC solution, and plots the reconstruction against the
+stored prediction. Use it to verify that the captured solve is internally
+self-consistent.
+
+<p align="center">
+  <img src="docs/assets/readme/srb_reconstruct_20260501_140733.png" alt="SRB reconstruction plot" width="75%">
+</p>
+
+### Contact probe
+
+This probe restores the logged MuJoCo state (`full_qpos`, `full_qvel`), applies the
+recorded `full_tau_command`, runs `mj_forward`, and measures the realized contact
+wrench about the same reference point used in the log. The plot compares the QP
+desired wrench with the wrench MuJoCo actually realizes.
+
+<p align="center">
+  <img src="docs/assets/readme/walk_contact_probe_20260501_140735.png" alt="Contact probe plot" width="75%">
+</p>
+
+### Wrench reconstruction
+
+This analysis forms the leg-jacobian map `A` and projects the QP wrench through its
+pseudoinverse, `w_rec = A^+ (A w_qp)`. The result is the row-space projection of the
+desired wrench, so in the common two-5-DoF-leg case it shows which of the 6-D wrench
+components fall outside the row space of the available leg Jacobians. If the log does
+not contain `wrench_to_tau_jacobian`, the script rebuilds it from MuJoCo foot Jacobians.
+
+<p align="center">
+  <img src="docs/assets/readme/walk_wrench_reconstruction_20260501_140737.png" alt="Wrench reconstruction plot" width="75%">
+</p>
+
+### Receding horizon
+
+This is the closed-loop replay path. At every rollout step it rebuilds the reference
+trajectory, gait constraints, SRB formulation, and QP, then advances from the first
+state of the new solve. The output plots are `states.png`, `wrench.png`, and
+`metrics.png`, which show state tracking, first-wrench evolution, and stability
+metrics over time.
+
+<p align="center">
+  <img src="docs/assets/readme/walk_rh_20260501_140742_states.png" alt="Receding horizon states plot" width="75%">
+</p>
+
+> [!TIP]
+> If you only need the latest log, `./scripts/run_mpc_debug.sh --all-latest -n 80`
+> runs the full set in one shot.
 
 ## Adding a robot
 
@@ -215,7 +340,10 @@ The existing examples are:
 
 ## Notes
 
-- `StateEstimator` is still cheater-state based.
-- Headless runs continue until interrupted.
-- The MIT Humanoid MJCF and URDF are intentionally not shared in this public repository.
+- **StateEstimator** is still cheater-state based.
+- **Headless** runs continue until interrupted.
+- **The MIT Humanoid MJCF and URDF are intentionally not shared in this public repository.**
+- The Unitree G1 and H1 parameters in `config/unitree_robots/{g1,h1}/my_controller.yaml` are
+  present, but they are **not fully tuned or validated** yet; treat them as starting points
+  rather than final gains.
 - Yaw control during in-place turning is still not robust enough and needs follow-up improvement.
