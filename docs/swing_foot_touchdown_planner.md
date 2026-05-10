@@ -239,15 +239,21 @@ Result:
 ### 10.5 In-place turning: `x_dot = 0`, `y_dot = 0`, `psi_dot != 0`
 
 ```text
-turnBias_W = Rz(yaw0) * [d_turn, 0, 0]
-target_W = bodyTarget_W + turnBias_W + Rz(yaw0) * nominalFootOffsets_B[leg]
+v_body_cmd = [x_dot, y_dot, 0] = [0, 0, 0]
+step_W = Rz(yaw0 + 0.5 * psi_dot * previewTime) * v_body_cmd * previewTime = 0
+target_W = currentCenter_W + step_W +
+           Rz(yaw0) * brakingOffset_B +
+           Rz(yaw0) * nominalFootOffsets_B[leg]
 ```
 
 Result:
 
-- The desired body marker moves slightly forward by the turn bias.
-- The feet rotate around that biased marker.
-- Swing-foot yaw still follows body yaw and yaw lead unless the diagonal-step heuristic activates.
+- Pure turning does not add a separate translational turn bias in the touchdown position.
+- The touchdown target remains anchored to the current body / footprint center plus the
+  braking and nominal foot offsets.
+- Turning-specific heading adjustment happens later in
+  `My_Controller::swingFootYawFromDiagonalStepHeading()`, where `psiBias_W` is added to the
+  swing-foot yaw.
 
 ### 10.6 Moving while turning: `x_dot / y_dot != 0`, `psi_dot != 0`
 
