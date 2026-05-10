@@ -439,11 +439,10 @@ json controllerConfigJson(const ControllerConfig& config,
     if (config.swing.hasStopBrakingOffset) {
         swing["stop_braking_offset_B"] = vectorToJson(config.swing.stopBrakingOffset_B);
     }
-    swing["touchdown_target_update_mode"] =
-        touchdownTargetUpdateModeName(config.swing.touchdownTargetUpdateMode);
     swing["stop_capture_point_gain"] = config.swing.stopCapturePointGain;
     swing["stop_capture_point_max_offset"] = config.swing.stopCapturePointMaxOffset;
     swing["stop_velocity_deadband"] = config.swing.stopVelocityDeadband;
+    swing["stop_braking_latch_clear_ticks"] = config.swing.stopBrakingLatchClearTicks;
     swing["pitch_kp"] = config.swing.pitchKp;
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;

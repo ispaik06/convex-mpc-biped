@@ -169,23 +169,6 @@ ContactWrenchModel parseContactWrenchModel(const YAML::Node& node,
                              ". Expected full_wrench or no_roll_moment");
 }
 
-TouchdownTargetUpdateMode parseTouchdownTargetUpdateMode(const YAML::Node& node) {
-    if (!node || !node.IsScalar()) {
-        return TouchdownTargetUpdateMode::Fixed;
-    }
-
-    const std::string mode = node.as<std::string>();
-    if (mode == "fixed") {
-        return TouchdownTargetUpdateMode::Fixed;
-    }
-    if (mode == "realtime" || mode == "real_time") {
-        return TouchdownTargetUpdateMode::Realtime;
-    }
-
-    throw std::runtime_error(
-        "Invalid swing.touchdown_target_update_mode. Expected fixed or realtime");
-}
-
 ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     ControllerConfig params;
 
@@ -276,13 +259,14 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.stopBrakingOffset_B =
             readVec3(swing["stop_braking_offset_B"], "swing.stop_braking_offset_B");
     }
-    params.swing.touchdownTargetUpdateMode =
-        parseTouchdownTargetUpdateMode(swing ? swing["touchdown_target_update_mode"] : YAML::Node{});
     readScalarIfPresent(swing, "stop_capture_point_gain", params.swing.stopCapturePointGain);
     readScalarIfPresent(swing,
                         "stop_capture_point_max_offset",
                         params.swing.stopCapturePointMaxOffset);
     readScalarIfPresent(swing, "stop_velocity_deadband", params.swing.stopVelocityDeadband);
+    readScalarIfPresent(swing,
+                        "stop_braking_latch_clear_ticks",
+                        params.swing.stopBrakingLatchClearTicks);
     readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
@@ -434,6 +418,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.stopCapturePointGain < 0.0 ||
         params.swing.stopCapturePointMaxOffset < 0.0 ||
         params.swing.stopVelocityDeadband < 0.0 ||
+        params.swing.stopBrakingLatchClearTicks <= 0 ||
         params.userCommandFilter.xDotTau < 0.0 ||
         params.userCommandFilter.yDotTau < 0.0 ||
         params.userCommandFilter.psiDotTau < 0.0 ||
@@ -446,15 +431,15 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
             "swing.nominal_foot_offsets_B, swing.stop_braking_offset_B, "
             "swing.stop_capture_point_gain, swing.stop_capture_point_max_offset, "
-            "swing.stop_velocity_deadband, "
+            "swing.stop_velocity_deadband, swing.stop_braking_latch_clear_ticks, "
             "user_command_filter.x_dot_tau, "
             "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
             "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "
             "user_command_filter.standing_pitch_offset_tau must be finite; "
             "user_command_filter.x_dot_max, user_command_filter.y_dot_max, and "
             "user_command_filter.psi_dot_max must be finite or positive infinity; "
-            "offsets, time constants, and "
-            "stop-braking gains must be non-negative and attitude gains must be "
+            "offsets, time constants, and stop-braking gains must be non-negative; "
+            "stop_braking_latch_clear_ticks must be positive; attitude gains must be "
             "non-negative");
     }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
@@ -620,16 +605,6 @@ std::string contactWrenchModelName(const ContactWrenchModel model) {
             return "full_wrench";
         case ContactWrenchModel::NoRollMoment:
             return "no_roll_moment";
-    }
-    return "unknown";
-}
-
-std::string touchdownTargetUpdateModeName(const TouchdownTargetUpdateMode mode) {
-    switch (mode) {
-        case TouchdownTargetUpdateMode::Fixed:
-            return "fixed";
-        case TouchdownTargetUpdateMode::Realtime:
-            return "realtime";
     }
     return "unknown";
 }

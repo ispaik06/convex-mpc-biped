@@ -38,6 +38,7 @@ void SwingFootPlanner::reset() {
     _bodyYawTargetValid = false;
     _latchedBrakingOffset_B.setZero();
     _latchedBrakingOffsetValid = false;
+    _brakingOffsetDeadbandHoldTicks = 0;
     _previousPlanarCommand_B.setZero();
     _previousPlanarCommandValid = false;
     _previousBrakingOffsetActive = false;
@@ -224,7 +225,8 @@ Vec2<double> SwingFootPlanner::stopBrakingOffsetBodyFrame(
 
 Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex,
-    const Vec2<double>& currentPlanarCommand) const {
+    const Vec2<double>& currentPlanarCommand,
+    double* touchdownYaw_W_out) const {
     const Vec3<double> v_body_cmd(currentPlanarCommand.x(),
                                   currentPlanarCommand.y(),
                                   0.0);
@@ -232,6 +234,16 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const double yaw0 = bodyYawTargetWorld();
     const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
+    // Use the remaining swing time to estimate the yaw at the eventual touchdown instant.
+    const double remainingSwingTime =
+        std::clamp(cycleTime() * (1.0 - _gaitScheduler->p(_robotParams->legs[legIndex].side,
+                                                          _stateEstimate->time)),
+                   0.0,
+                   swingTime());
+    const double touchdownYaw_W = yaw0 + psi_dot * remainingSwingTime;
+    if (touchdownYaw_W_out != nullptr) {
+        *touchdownYaw_W_out = touchdownYaw_W;
+    }
     const Vec3<double> step_W = Rz(translationYaw_W) * v_body_cmd * previewTime;
     const Vec3<double> currentCenter_W =
         (_bodyPositionTargetValid
@@ -242,14 +254,16 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     Vec3<double> target =
         currentCenter_W + step_W +
         Rz(yaw0) * Vec3<double>(brakingOffset_B.x(), brakingOffset_B.y(), 0.0) +
-        Rz(yaw0) * _nominalFootOffsets_B[legIndex];
+        Rz(touchdownYaw_W) * _nominalFootOffsets_B[legIndex];
     target.z() = kSwingFootTargetZ;
     return target;
 }
 
 void SwingFootPlanner::recordSequentialTouchdown(const std::size_t legIndex,
-                                                 const Vec3<double>& target_W) {
-    _footprintCenter_W = target_W - Rz(bodyYawTargetWorld()) * _nominalFootOffsets_B[legIndex];
+                                                 const Vec3<double>& target_W,
+                                                 const double touchdownYaw_W) {
+    _footprintCenter_W =
+        target_W - Rz(touchdownYaw_W) * _nominalFootOffsets_B[legIndex];
     _footprintCenter_W.z() = target_W.z();
     _footprintCenterValid = true;
 }
@@ -266,13 +280,29 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
 
     const Vec2<double> currentPlanarCommand = currentPlanarCommandBodyFrame();
     const bool brakingOffsetActive = shouldApplyBrakingOffset(currentPlanarCommand);
-    if (brakingOffsetActive && !_previousBrakingOffsetActive) {
-        _latchedBrakingOffset_B = computeStopBrakingOffsetBodyFrame(currentPlanarCommand);
-        _latchedBrakingOffsetValid = _latchedBrakingOffset_B.norm() > 0.0;
-    } else if (_latchedBrakingOffsetValid && !brakingOffsetActive &&
-               currentPlanarCommand.norm() > getControllerConfig().swing.stopVelocityDeadband) {
-        _latchedBrakingOffsetValid = false;
-        _latchedBrakingOffset_B.setZero();
+    const auto& swing = getControllerConfig().swing;
+    const double currentNorm = currentPlanarCommand.norm();
+    if (brakingOffsetActive) {
+        _brakingOffsetDeadbandHoldTicks = 0;
+        if (!_previousBrakingOffsetActive || !_latchedBrakingOffsetValid) {
+            _latchedBrakingOffset_B = computeStopBrakingOffsetBodyFrame(currentPlanarCommand);
+            _latchedBrakingOffsetValid = _latchedBrakingOffset_B.norm() > 0.0;
+        }
+    } else if (currentNorm <= swing.stopVelocityDeadband) {
+        if (_latchedBrakingOffsetValid) {
+            ++_brakingOffsetDeadbandHoldTicks;
+            if (_brakingOffsetDeadbandHoldTicks >= swing.stopBrakingLatchClearTicks) {
+                _latchedBrakingOffsetValid = false;
+                _latchedBrakingOffset_B.setZero();
+                _brakingOffsetDeadbandHoldTicks = 0;
+            }
+        }
+    } else {
+        _brakingOffsetDeadbandHoldTicks = 0;
+        if (_latchedBrakingOffsetValid) {
+            _latchedBrakingOffsetValid = false;
+            _latchedBrakingOffset_B.setZero();
+        }
     }
     const double time = _stateEstimate->time;
     auto computeDesiredFootPos = [&](Side side) -> Vec3<double> {
@@ -303,9 +333,10 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
         const bool shouldUpdateTouchdownTarget = wasInStance || !_touchdownTargetValid[leg];
 
         if (shouldUpdateTouchdownTarget) {
-            _touchdownTargets[leg] =
-                touchdownTargetWorldBodyVelocityHalfStance(leg, currentPlanarCommand);
-            recordSequentialTouchdown(leg, _touchdownTargets[leg]);
+            double touchdownYaw_W = 0.0;
+            _touchdownTargets[leg] = touchdownTargetWorldBodyVelocityHalfStance(
+                leg, currentPlanarCommand, &touchdownYaw_W);
+            recordSequentialTouchdown(leg, _touchdownTargets[leg], touchdownYaw_W);
             _touchdownTargetValid[leg] = true;
         }
 

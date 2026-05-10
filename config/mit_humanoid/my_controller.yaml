@@ -14,7 +14,7 @@ model:
   gravity: -9.81
 
 mpc:
-  friction_coefficient: 0.8
+  friction_coefficient: 1.0
   foot_half_length: 0.065
   foot_half_width: 0.01
   torsional_friction_scale: 0.0657
@@ -24,7 +24,7 @@ mpc:
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [5000,  3000,  100,   100000,  209300,  35900,     10,     10,     10,     700,    700,    100,   1 ]
+    state_weight_diag: [5000,  8000,  100,   400000,  209300,  30900,     10,     10,     10,     700,    700,    100,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
     input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
@@ -48,11 +48,11 @@ swing:
   # Optional fixed override for the stop-braking offset added at touchdown.
   # Uncomment to replace the capture-point braking heuristic with a constant body-frame offset.
   # stop_braking_offset_B: [0.0, 0.0, 0.0]
-  touchdown_target_update_mode: fixed  # fixed / realtime
   stop_capture_point_gain: 0.2
   stop_capture_point_max_offset: 0.08
   stop_velocity_deadband: 0.02
-  pitch_kp: 150.0
+  stop_braking_latch_clear_ticks: 5
+  pitch_kp: 300.0
   pitch_kd: 18.0
   yaw_kp: 165.0
   yaw_kd: 18.0
@@ -66,7 +66,7 @@ user_command_filter:
   standing_pitch_offset_tau: 0.70
   x_dot_max: 0.3
   y_dot_max: 0.3
-  psi_dot_max: 0.2
+  psi_dot_max: 0.5
 
 contact_manager:
   contact_force_on_threshold: 10.0
@@ -81,7 +81,7 @@ contact_manager:
   ground_search_tracking_time: 0.08
   stance_contact_loss_foot_height: 0.060
   enable_early_contact_handling: true
-  enable_late_contact_handling: false
+  enable_late_contact_handling: true
 
 logging:
   standing_mpc_debug_trigger_times: []

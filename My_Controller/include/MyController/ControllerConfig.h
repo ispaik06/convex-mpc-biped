@@ -21,11 +21,6 @@ enum class ContactWrenchModel {
     NoRollMoment,
 };
 
-enum class TouchdownTargetUpdateMode {
-    Fixed,
-    Realtime,
-};
-
 struct TimingParameters {
     double cycle{1.0};
     double swing{0.4};
@@ -67,11 +62,10 @@ struct SwingParameters {
     std::vector<Vec3<double>> nominalFootOffsets_B;
     bool hasStopBrakingOffset{false};
     Vec3<double> stopBrakingOffset_B = Vec3<double>::Zero();
-    TouchdownTargetUpdateMode touchdownTargetUpdateMode{
-        TouchdownTargetUpdateMode::Fixed};
     double stopCapturePointGain{1.0};
     double stopCapturePointMaxOffset{0.20};
     double stopVelocityDeadband{0.02};
+    int stopBrakingLatchClearTicks{5};
     double pitchKp{0.0};
     double pitchKd{0.0};
     double yawKp{0.0};
@@ -161,7 +155,6 @@ const DMat<double>& getL(LocomotionMode mode);
 const DMat<double>& getK(LocomotionMode mode);
 LocomotionMode requestedLocomotionMode();
 std::string contactWrenchModelName(ContactWrenchModel model);
-std::string touchdownTargetUpdateModeName(TouchdownTargetUpdateMode mode);
 ContactWrenchModel contactWrenchModelForMode(const MPCParameters& mpc, LocomotionMode mode);
 ContactWrenchModel contactWrenchModel(LocomotionMode mode);
 

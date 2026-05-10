@@ -597,17 +597,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
                 vec3FromJson(swing.at("stop_braking_offset_B"),
                              "controller_config.swing.stop_braking_offset_B");
         }
-        if (swing.contains("touchdown_target_update_mode")) {
-            const std::string mode = swing.at("touchdown_target_update_mode").get<std::string>();
-            if (mode == "fixed") {
-                out.swing.touchdownTargetUpdateMode = TouchdownTargetUpdateMode::Fixed;
-            } else if (mode == "realtime" || mode == "real_time") {
-                out.swing.touchdownTargetUpdateMode = TouchdownTargetUpdateMode::Realtime;
-            } else {
-                throw std::runtime_error(
-                    "Invalid controller_config.swing.touchdown_target_update_mode in log");
-            }
-        }
         if (swing.contains("stop_capture_point_gain")) {
             out.swing.stopCapturePointGain =
                 swing.at("stop_capture_point_gain").get<double>();
@@ -619,6 +608,10 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (swing.contains("stop_velocity_deadband")) {
             out.swing.stopVelocityDeadband =
                 swing.at("stop_velocity_deadband").get<double>();
+        }
+        if (swing.contains("stop_braking_latch_clear_ticks")) {
+            out.swing.stopBrakingLatchClearTicks =
+                swing.at("stop_braking_latch_clear_ticks").get<int>();
         }
         if (swing.contains("pitch_kp")) {
             out.swing.pitchKp = swing.at("pitch_kp").get<double>();

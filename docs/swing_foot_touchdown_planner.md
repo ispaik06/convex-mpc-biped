@@ -1,11 +1,13 @@
 # Swing Foot Touchdown Planner
 
-This note explains how `SwingFootPlanner` computes the red touchdown marker used by swing feet. The planner is body-yaw aware, can operate in `fixed` or `realtime` target-update mode, and no longer uses the old `legacy_com_yaw_corrected` path.
+This note explains how `SwingFootPlanner` computes the red touchdown marker used by swing feet. The planner is body-yaw aware, latches a touchdown target once per swing, and no longer uses the old `legacy_com_yaw_corrected` path.
 
 Keyboard commands enter the controller through `user_command_filter` before they reach the planner. The same filter applies to walking `x_dot / y_dot / psi_dot` and standing `z_dot / roll / pitch`.
 
 > [!IMPORTANT]
 > The planner keeps **touchdown position** in world coordinates, **nominal spacing** in the body-yaw frame, and **swing-foot yaw** as a separate heading problem.
+>
+> The nominal foot offset is rotated using the estimated yaw at touchdown.
 
 ## 1. What the Planner Must Do
 
@@ -159,7 +161,7 @@ $$
 \begin{aligned}
 p_{\text{td}}^W &= p_{\text{center}}^W + \Delta p_W \\
                 &\quad + R_z(\psi_0) p_{\text{brake}}^B \\
-                &\quad + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+                &\quad + R_z(\psi_0 + \dot{\psi} T_{\text{td}}) p_{\text{nom}}^B[\text{leg}]
 \end{aligned}
 $$
 
@@ -169,6 +171,9 @@ Where:
 - $\Delta p_W$ corresponds to `step_W`.
 - $p_{\text{brake}}^B$ corresponds to `brakingOffset_B`.
 - $p_{\text{nom}}^B[\text{leg}]$ corresponds to `nominalFootOffsets_B[leg]`.
+- $T_{\text{td}}$ corresponds to `remainingSwingTime`.
+
+This nominal offset term is evaluated once when the touchdown target is latched for the swing.
 
 If the body target has not been seeded yet, the planner falls back to the last known footprint center.
 
@@ -176,22 +181,148 @@ If the body target has not been seeded yet, the planner falls back to the last k
 
 When the robot is slowing down, the planner can add an extra body-frame offset that helps the next touchdown brake the motion.
 
+Let the planar braking offset be
+
+$$
+p_{\text{brake}}^B = \begin{bmatrix} b_x \\ b_y \end{bmatrix}.
+$$
+
+It enters the touchdown target as
+
+$$
+p_{\text{td}}^W \leftarrow p_{\text{td}}^W + R_z(\psi_0)\begin{bmatrix}b_x\\b_y\\0\end{bmatrix}.
+$$
+
+Only the planar `x/y` components are used by the current planner. If `swing.stop_braking_offset_B` is set in YAML, that value is used directly and the capture-point estimate is skipped.
+
 > [!TIP]
-> If the robot should brake harder on the next step, the relevant knobs are `stop_capture_point_gain`, `stop_capture_point_max_offset`, and an optional fixed `swing.stop_braking_offset_B`.
+> If the robot should brake harder on the next step, the relevant knobs are `stop_capture_point_gain`, `stop_capture_point_max_offset`, `stop_velocity_deadband`, `stop_braking_latch_clear_ticks`, and an optional fixed `swing.stop_braking_offset_B`.
 
-The logic is:
+### 8.1 When the braking offset is active
 
-1. Watch the filtered planar command.
-2. If command magnitude is dropping toward zero, capture a braking offset.
-3. Reuse that offset for the next touchdown calculation.
+The planner watches the filtered planar command
 
-Relevant YAML keys:
+$$
+c_B = \begin{bmatrix}\dot{x}\\\dot{y}\end{bmatrix},
+\qquad
+c_{B,\text{prev}} = \begin{bmatrix}\dot{x}_{\text{prev}}\\\dot{y}_{\text{prev}}\end{bmatrix}.
+$$
 
-- `stop_capture_point_gain`
-- `stop_capture_point_max_offset`
-- `stop_velocity_deadband`
+Let $\epsilon_c$ denote the deadband threshold used by the planner.
 
-If you want to bypass the capture-point calculation and force a fixed value, set `swing.stop_braking_offset_B` in YAML. When that key is present, the planner uses the configured value instead of the capture-point estimate.
+The braking offset is considered active when the previous command was already outside the deadband and the current command is either near zero or is shrinking:
+
+$$
+a_{\text{brake}} =
+\begin{cases}
+0, & \|c_{B,\text{prev}}\| \le \epsilon_c, \\
+1, & \|c_B\| \le \epsilon_c, \\
+1, & \|c_B\| + 10^{-9} < \|c_{B,\text{prev}}\|, \\
+0, & \text{otherwise.}
+\end{cases}
+$$
+
+This means the offset is latched when the command starts decaying into a stop. The first valid braking offset for that stop episode is cached, then reused until the command has stayed inside the deadband long enough to clear the latch.
+
+### 8.2 Capture-point estimate
+
+If no fixed YAML override is present, the planner estimates a braking offset from the reduced-body COM velocity.
+
+The symbols below map to YAML keys:
+
+- $k_{\text{cp}}$ maps to `stop_capture_point_gain`
+- $r_{\max}$ maps to `stop_capture_point_max_offset`
+- $\epsilon_c$ maps to `stop_velocity_deadband`
+- $n_{\text{clear}}$ maps to `stop_braking_latch_clear_ticks`
+
+First, it computes the world-frame reduced-body COM velocity:
+
+$$
+v_{\text{com}}^W = v_{\text{torso}}^W + \omega^W \times \left(R_z(\psi_0) r_{\text{com}}^B\right)
+$$
+
+where `reducedBodyComVelocityWorld()` combines the torso linear velocity and the angular contribution from the body COM offset.
+
+Then it projects that velocity into the body-yaw frame:
+
+$$
+v_{\text{com}}^B = R_z(\psi_0)^\top v_{\text{com}}^W.
+$$
+
+Let
+$$
+h_{\text{com}} = \max\!\left(10^{-6},\ p_{\text{com},z}^W\right), \qquad
+\omega_0 = \sqrt{\frac{|g|}{h_{\text{com}}}}.
+$$
+
+The raw capture-point-style offset is
+
+$$
+p_{\text{brake,raw}}^B =
+\frac{k_{\text{cp}}}{\omega_0}
+\begin{bmatrix}
+v_{\text{com},x}^B \\
+v_{\text{com},y}^B
+\end{bmatrix}.
+$$
+
+This is the usual linear inverted pendulum capture-point scaling: larger COM velocity gives a larger braking step, and the gain lets you make it more or less aggressive.
+
+The planner then clamps the norm:
+
+$$
+p_{\text{brake}}^B =
+\begin{cases}
+p_{\text{brake,raw}}^B, & \|p_{\text{brake,raw}}^B\| \le r_{\max}, \\
+\dfrac{r_{\max}}{\|p_{\text{brake,raw}}^B\|} p_{\text{brake,raw}}^B, & \text{otherwise}.
+\end{cases}
+$$
+
+### 8.3 Deadband behavior
+
+`stop_velocity_deadband` is used in two places:
+
+1. To decide whether the filtered planar command is close enough to zero for braking to be active.
+2. To ignore tiny computed braking offsets when the estimated COM motion is already negligible.
+
+The first case controls when the latch may be refreshed or released. The second case suppresses tiny offsets that would otherwise jitter around zero.
+
+If
+
+$$
+\left\|\begin{bmatrix}v_{\text{com},x}^B \\ v_{\text{com},y}^B\end{bmatrix}\right\|
+\le \epsilon_c,
+$$
+
+the braking estimate is treated as negligible.
+
+The deadband-hold counter is
+
+$$
+h_{k+1} =
+\begin{cases}
+0, & a_{\text{brake}} = 1, \\
+h_k + 1, & a_{\text{brake}} = 0 \text{ and } \|c_B\| \le \epsilon_c, \\
+0, & \|c_B\| > \epsilon_c.
+\end{cases}
+$$
+
+The latched braking offset is cleared when
+
+$$
+h_k \ge n_{\text{clear}}.
+$$
+
+In words: once a braking offset has been latched, it stays live while the command is near zero, but it is cleared after `stop_braking_latch_clear_ticks` consecutive control ticks inside the deadband. If the command leaves the deadband before that, the hold counter resets. If the command rises back above the deadband, the latch is cleared immediately.
+
+When the estimate is recomputed directly from COM velocity, the planner still returns zero if the reduced-body planar COM velocity is already negligible:
+
+$$
+\left\|\begin{bmatrix}v_{\text{com},x}^B \\ v_{\text{com},y}^B\end{bmatrix}\right\|
+\le \epsilon_c
+\quad\Rightarrow\quad
+p_{\text{brake}}^B = 0.
+$$
 
 ## 9. Why the Planner Reconstructs the Footprint Center
 
@@ -223,7 +354,7 @@ Once the center is known, the next foot target is computed from that center plus
 
 When `space` clears the raw keyboard command, the filtered command decays gradually. The body marker and MPC reference do not snap to zero instantly.
 
-The planner may then add a braking offset. That offset is only latched when the filtered planar command is actually dropping or is already near zero. It is not recomputed every tick.
+The planner may then add a braking offset. That offset is only latched when the filtered planar command is actually dropping or is already near zero. It stays latched until the filtered command has remained inside the deadband for `stop_braking_latch_clear_ticks` consecutive ticks, or until the command leaves the stop region and the latch is cleared immediately.
 
 ### 10.2 Forward motion: `x_dot > 0`, `y_dot = 0`, `psi_dot = 0`
 
@@ -232,7 +363,7 @@ $$
 $$
 
 $$
-p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0 + \dot{\psi} T_{\text{td}}) p_{\text{nom}}^B[\text{leg}]
 $$
 
 Result:
@@ -247,7 +378,7 @@ $$
 $$
 
 $$
-p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0 + \dot{\psi} T_{\text{td}}) p_{\text{nom}}^B[\text{leg}]
 $$
 
 Result:
@@ -262,7 +393,7 @@ $$
 $$
 
 $$
-p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0 + \dot{\psi} T_{\text{td}}) p_{\text{nom}}^B[\text{leg}]
 $$
 
 Result:
@@ -282,7 +413,7 @@ $$
 $$
 
 $$
-p_{\text{td}}^W = p_{\text{center}}^W + R_z(\psi_0) p_{\text{brake}}^B + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+p_{\text{td}}^W = p_{\text{center}}^W + R_z(\psi_0) p_{\text{brake}}^B + R_z(\psi_0 + \dot{\psi} T_{\text{td}}) p_{\text{nom}}^B[\text{leg}]
 $$
 
 Result:
@@ -290,6 +421,7 @@ Result:
 - Pure turning does not add a separate translational turn bias in the touchdown position.
 - The touchdown target remains anchored to the current body / footprint center plus the
   braking and nominal foot offsets.
+- The nominal foot offset uses the estimated yaw at touchdown, where `T_td = remainingSwingTime`.
 - Turning-specific heading adjustment happens later in
   `My_Controller::swingFootYawFromDiagonalStepHeading()`, where `psiBias_W` is added to the
   swing-foot yaw.
@@ -302,22 +434,22 @@ $$
 $$
 
 $$
-p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0 + \dot{\psi} T_{\text{td}}) p_{\text{nom}}^B[\text{leg}]
 $$
 
 Result:
 
 - The translation is approximated using the midpoint yaw over the preview interval.
 - Left/right stance spacing is still defined in the body-yaw frame.
-- The swing target therefore follows the future heading instead of the instantaneous one.
-- When the raw command drops to zero, the braking offset turns on during the decay and turns off again once the command stabilizes.
+- The nominal foot offset is rotated using the heading expected at touchdown.
+- When the raw command drops to zero, the braking offset turns on during the decay and then stays latched for a short deadband hold window before turning off again.
 
 ## 11. What This Planner Deliberately Does Not Do
 
 - It does not recompute the braking offset on every tick.
+- It does not keep a braking offset latched forever once the command has sat inside the deadband long enough.
 - It does not keep changing the touchdown target after a swing has already started.
-- In `fixed` mode, the touchdown target is latched once for the swing and then held.
-- In `realtime` mode, the target may be refreshed, but the current implementation still treats the touchdown geometry as a step-local decision.
+- It does not expose a `fixed` / `realtime` touchdown-target mode switch anymore.
 - A zero keyboard command does not automatically trigger braking unless the filtered command actually decreases.
 
 ## 12. Summary
