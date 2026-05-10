@@ -149,10 +149,10 @@ flowchart LR
 | `sim/` | MuJoCo runner, robot bindings, and cheater-state reader |
 | `My_Controller/` | Gait scheduler, touchdown planning, reference generation, MPC, and swing-foot tracking |
 | `config/` | Robot-specific and simulation YAML configuration |
-| `docs/` | Technical notes about frames, swing planning, and controller conventions |
+| `docs/` | Technical notes about frames, reference trajectories, gait scheduling, swing planning, and controller conventions |
 | `test/` | Manual experiments and standing debug tools |
 
-The `docs/` directory contains standalone notes such as [MPC frame convention](docs/mpc_frame_convention.md), [swing-foot touchdown planning](docs/swing_foot_touchdown_planner.md), and [gait scheduling + contact management](docs/gait_scheduler_and_contact_management.md).
+The `docs/` directory contains standalone notes such as [MPC frame convention](docs/mpc_frame_convention.md), [reference trajectory](docs/reference_trajectory.md), [swing-foot touchdown planning](docs/swing_foot_touchdown_planner.md), and [gait scheduling + contact management](docs/gait_scheduler_and_contact_management.md).
 
 ## Supported robots
 
