@@ -42,6 +42,8 @@ The runner uses `KeyboardCommand`.
 | Space | Reset velocity commands |
 
 Only the planar `x_dot`, `y_dot`, and `psi_dot` commands are applied to the base motion in this runner.
+The shared keyboard layer also accepts `up/down` and `i/j/k/l`, but this runner does not use those
+fields when moving the base.
 
 ## Build
 

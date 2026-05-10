@@ -66,8 +66,9 @@ u_{\text{cmd}}^B =
 \dot \psi_{\text{cmd}} \in \mathbb{R}.
 $$
 
-In walking mode, the controller zeroes `z_dot` before building the trajectory.
-That means the horizon motion is effectively planar there, while standing-style motions may still carry a vertical command.
+The controller forwards the filtered `z_dot` command into the trajectory builder.
+That keeps the seed body height and the horizon vertical velocity consistent with the
+current keyboard input.
 
 ## 3. Yaw Reference
 

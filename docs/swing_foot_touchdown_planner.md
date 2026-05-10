@@ -2,7 +2,7 @@
 
 This note explains how `SwingFootPlanner` computes the red touchdown marker used by swing feet. The planner is body-yaw aware, latches a touchdown target once per swing, and no longer uses the old `legacy_com_yaw_corrected` path.
 
-Keyboard commands enter the controller through `user_command_filter` before they reach the planner. The same filter applies to walking `x_dot / y_dot / psi_dot` and standing `z_dot / roll / pitch`.
+Keyboard commands enter the controller through `user_command_filter` before they reach the planner. The same filtered command stream updates the body target, and the planner consumes the resulting body position/yaw when placing touchdown targets.
 
 > [!IMPORTANT]
 > The planner keeps **touchdown position** in world coordinates, **nominal spacing** in the body-yaw frame, and **swing-foot yaw** as a separate heading problem.

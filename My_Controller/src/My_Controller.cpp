@@ -51,7 +51,7 @@ double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPositi
                                            const Side side,
                                            const double fallbackYaw_W) {
     constexpr double kDiagonalCommandDeadband = 1e-3;
-    constexpr double kFilteredLateralSpeedThreshold = 0.2;
+    constexpr double kFilteredLateralSpeedThreshold = 0.1;
     constexpr double kHalfPi = 1.570796326794896619231321691639751442;
     const double psiBias_W = swingFootYawPsiOffset(side, psi_dot);
     if (std::abs(filteredPlanarCommand_B.y()) < kFilteredLateralSpeedThreshold) {
@@ -713,23 +713,27 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         _bodyTarget.initialized = true;
     }
 
+    const double z_dot = _filteredUserCommand.z_dot;
+    const double standingRollOffset = _filteredUserCommand.standing_roll_offset_rad;
+    const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
+    const auto applyPoseOffsets = [&]() {
+        _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
+        _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
+        _bodyTarget.nominalPosition_W[2] += z_dot * dt;
+        _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
+    };
+
     if (_locomotionMode == LocomotionMode::Standing) {
         const Vec2<double> avgFootXY =
             averageFootEndEffectorXY(*_stateEstimate, *_robotParams);
         _bodyTarget.nominalPosition_W[0] = avgFootXY[0];
         _bodyTarget.nominalPosition_W[1] = avgFootXY[1];
-        const double z_dot = _filteredUserCommand.z_dot;
-        const double standingRollOffset = _filteredUserCommand.standing_roll_offset_rad;
-        const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
-        _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
-        _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
         _bodyTarget.euler_W[2] = BodyMotionReference::advanceYaw(_gaitScheduler.get(),
                                                                  _bodyTarget.euler_W[2],
                                                                  _filteredUserCommand.psi_dot,
                                                                  dt,
                                                                  _stateEstimate->time);
-        _bodyTarget.nominalPosition_W[2] += z_dot * dt;
-        _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
+        applyPoseOffsets();
         return;
     }
 
@@ -747,7 +751,7 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
                                                              psi_dot,
                                                              dt,
                                                              _stateEstimate->time);
-    _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
+    applyPoseOffsets();
 }
 
 bool MyController::activeContactForSide(const Side side, const double time) const {
@@ -969,10 +973,6 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
 
             UserCommand referenceCommand = _filteredUserCommand;
-            if (_locomotionMode == LocomotionMode::Walking) {
-                referenceCommand.z_dot = 0.0;
-            }
-
             {
                 profiling::ScopedTimer timer(_referenceTrajectoryTime);
                 ReferenceTrajectory(&referenceCommand,
@@ -1201,11 +1201,22 @@ void MyController::collectDebugVisualization(DebugVizState<double>& debugViz) co
         marker.position_W = target_W;
         const Vec3<double> yawEuler_W(0.0, 0.0, targetYaw_W);
         marker.orientation_W = rollPitchYawToQuaternion(yawEuler_W);
-        const bool isStance =
-            _gaitScheduler != nullptr && _stateEstimate != nullptr &&
-            activeContactForSide(side, _stateEstimate->time);
+        TouchdownMarkerContactState markerState = TouchdownMarkerContactState::Swing;
+        if (_contactManager != nullptr) {
+            const ContactManagerLegState& contactState = _contactManager->legState(side);
+            if (contactState.lateContact) {
+                markerState = TouchdownMarkerContactState::LateContact;
+            } else if (contactState.earlyContact) {
+                markerState = TouchdownMarkerContactState::EarlyContact;
+            } else if (contactState.activeContact) {
+                markerState = TouchdownMarkerContactState::Stance;
+            }
+        } else if (_gaitScheduler != nullptr && _stateEstimate != nullptr &&
+                   activeContactForSide(side, _stateEstimate->time)) {
+            markerState = TouchdownMarkerContactState::Stance;
+        }
         marker.hasRgba = true;
-        marker.rgba = touchdownMarkerRgba<double>(isStance);
+        marker.rgba = touchdownMarkerRgba<double>(markerState);
         marker.active = true;
         debugViz.markers.push_back(marker);
     };

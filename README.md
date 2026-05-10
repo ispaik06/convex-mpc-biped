@@ -205,6 +205,9 @@ requested_locomotion_mode: walking
 - `w / s`: forward / backward velocity
 - `a / d`: left / right velocity
 - `q / e`: yaw rate left / right
+- `up / down`: body height up / down
+- `i / k`: pitch forward / backward
+- `j / l`: roll left / right
 - `space`: clear the command
 
 ### Standing mode
@@ -217,7 +220,8 @@ requested_locomotion_mode: walking
 ### Notes
 
 - Keyboard commands are filtered before they reach the controller.
-- Mode-specific commands are ignored when the other mode is active.
+- Walking mode accepts both planar velocity commands and body pose offsets.
+- Standing mode still ignores `w / s`, `a / d`, and `q / e`.
 - The active walking limits for `x_dot`, `y_dot`, and `psi_dot` come from `user_command_filter` in YAML.
 
 ## Configuration
