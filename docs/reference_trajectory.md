@@ -262,7 +262,14 @@ If you are debugging a trajectory plot:
 
 If yaw looks too aggressive, the first thing to check is whether the robot is spending too much time outside double support or whether `psi_dot` is being filtered too weakly upstream.
 
-## 9. Summary
+## 9. Code References
+
+- Yaw gating and the recurrence for `psi_k` are implemented in [BodyMotionReference::shouldAdvanceYaw](../My_Controller/src/BodyMotionReference.cpp#L16), [BodyMotionReference::advanceYaw](../My_Controller/src/BodyMotionReference.cpp#L20), and [BodyMotionReference::yawRate](../My_Controller/src/BodyMotionReference.cpp#L31); they are called from [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8).
+- Planar propagation of `p_k^W` and `v_k^W` lives in [BodyMotionReference::advancePlanarPosition](../My_Controller/src/BodyMotionReference.cpp#L35) and is consumed in [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8).
+- Horizon assembly for `X_ref`, `psi`, `tk`, `r_left`, and `r_right` is done in [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8).
+- The body-target seed that the trajectory starts from is updated in [MyController::updateBodyTarget](../My_Controller/src/My_Controller.cpp#L695).
+
+## 10. Summary
 
 - `ReferenceTrajectory` turns a body target and a filtered command into horizon arrays.
 - Yaw advances only when the gait is not in double support.

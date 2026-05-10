@@ -218,7 +218,15 @@ Then apply the step-local yaw transform and restore the anisotropic weights.
 
 If turning still looks strange after that, inspect the contact wrench constraints in the foot frame.
 
-## 8. Summary
+## 8. Code References
+
+- The world-frame velocity reference and horizon state seed are assembled in [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8) and [BodyMotionReference::worldVelocity](../My_Controller/src/BodyMotionReference.cpp#L48).
+- The reduced-body dynamics in world coordinates are built in [MPCFormulation::build](../My_Controller/src/MPCFormulation.cpp#L39), including the yaw-aligned inertia and the lifted horizon matrices.
+- The current cost transform is applied inside [ConvexMPC::buildQP](../My_Controller/src/ConvexMPC.cpp#L325) through [bodyYawStateCost](../My_Controller/src/ConvexMPC.cpp#L181), which rotates the position, angular-velocity, and COM-velocity blocks by the reference yaw.
+- The contact wrench limits are generated in [GaitScheduler::buildConstraintMatrices](../My_Controller/src/GaitScheduler.cpp#L78) and copied into the QP in [ConvexMPC::buildConstraintMatrix](../My_Controller/src/ConvexMPC.cpp#L566).
+- The foot-local roll-moment handling for `NoRollMoment` is injected in [MyController::maybeUpdateMpc](../My_Controller/src/My_Controller.cpp#L937) before the scheduler rebuilds the constraints.
+
+## 9. Summary
 
 - Keep desired body target and final foot target in world coordinates.
 - Keep user command semantics and nominal offsets in the body-yaw frame.

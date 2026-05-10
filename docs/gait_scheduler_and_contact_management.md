@@ -399,7 +399,15 @@ This separation is deliberate:
 - If the QP suddenly cold-starts, the nonzero pattern of `D` probably changed.
 - If stance feels too aggressive around touchdown, check `contactRampAlpha` and the effective `F_{z,\min}` scaling.
 
-## 9. Summary
+## 9. Code References
+
+- The nominal phase `\varphi_s(t)`, stance decision `c_s(t)`, and the standing short-circuit are implemented in [GaitScheduler::p](../My_Controller/src/GaitScheduler.cpp#L50), [GaitScheduler::c](../My_Controller/src/GaitScheduler.cpp#L64), and [GaitScheduler::bothFeetStance](../My_Controller/src/GaitScheduler.cpp#L74). The horizon timestamps come from [HorizonClock::sync](../My_Controller/include/MyController/HorizonClock.h#L18) and [HorizonClock::tk](../My_Controller/include/MyController/HorizonClock.h#L32).
+- The horizon contact matrices `D`, `C`, and `C_{\text{bound}}` are built in [GaitScheduler::buildConstraintMatrices](../My_Controller/src/GaitScheduler.cpp#L78) and consumed by [ConvexMPC::updateInput](../My_Controller/src/ConvexMPC.cpp#L256), [ConvexMPC::buildQP](../My_Controller/src/ConvexMPC.cpp#L325), and [ConvexMPC::contactConstraintSignature](../My_Controller/src/ConvexMPC.cpp#L570).
+- The measured-contact hysteresis, early/late contact logic, search-mode target update, and `contactRampAlpha` evolution are implemented in [ContactManager::updateEstimatedContact](../My_Controller/src/ContactManager.cpp#L89) and [ContactManager::update](../My_Controller/src/ContactManager.cpp#L200).
+- The managed foot targets and near-term horizon override are produced by [ContactManager::managedFootPositions](../My_Controller/src/ContactManager.cpp#L394) and [ContactManager::buildHorizonOverride](../My_Controller/src/ContactManager.cpp#L416).
+- The main controller wires the override into the MPC in [MyController::maybeUpdateMpc](../My_Controller/src/My_Controller.cpp#L937), and it uses `contactRampAlpha` again when blending stance wrench feedforward in [MyController::writeLegCommands](../My_Controller/src/My_Controller.cpp#L1282) via [MyController::contactRampAlphaForSide](../My_Controller/src/My_Controller.cpp#L767).
+
+## 10. Summary
 
 - `GaitScheduler` gives a clean periodic stance/swing pattern.
 - `ContactManager` handles the real-world mismatch between the nominal schedule and measured contact.

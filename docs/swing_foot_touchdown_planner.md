@@ -460,4 +460,11 @@ Result:
 - Swing-foot yaw is body-yaw aware, with a diagonal-step heuristic and a signed `psi_dot` bias.
 - Stopping adds a braking offset so the feet help bring the body marker back over the support footprint.
 
+## 13. Code References
+
+- Nominal foot offsets and the reconstructed stance center are implemented in [SwingFootPlanner::ensureNominalFootOffsets](../My_Controller/src/SwingFootPlanner.cpp#L91), [SwingFootPlanner::currentFootTouchdownTarget](../My_Controller/src/SwingFootPlanner.cpp#L136), and [SwingFootPlanner::recordSequentialTouchdown](../My_Controller/src/SwingFootPlanner.cpp#L262).
+- Preview-time logic lives in [SwingFootPlanner::touchdownPreviewTime](../My_Controller/src/SwingFootPlanner.cpp#L149), and the full touchdown target equation is assembled in [SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance](../My_Controller/src/SwingFootPlanner.cpp#L226).
+- Swing-foot yaw and the diagonal-step heuristic are implemented in [MyController::swingFootYawTargetWorld](../My_Controller/src/My_Controller.cpp#L917), [swingFootYawFromDiagonalStepHeading](../My_Controller/src/My_Controller.cpp#L47), and [swingFootYawPsiOffset](../My_Controller/src/My_Controller.cpp#L29).
+- The braking-offset capture-point estimate, deadband gating, and latch-clear logic are implemented in [SwingFootPlanner::shouldApplyBrakingOffset](../My_Controller/src/SwingFootPlanner.cpp#L154), [SwingFootPlanner::computeStopBrakingOffsetBodyFrame](../My_Controller/src/SwingFootPlanner.cpp#L173), [SwingFootPlanner::stopBrakingOffsetBodyFrame](../My_Controller/src/SwingFootPlanner.cpp#L218), and the latch block inside [SwingFootPlanner::desiredFootPositions](../My_Controller/src/SwingFootPlanner.cpp#L271). The tuning knobs come from [ControllerConfig.h](../My_Controller/include/MyController/ControllerConfig.h#L68) and [ControllerConfig.cpp](../My_Controller/src/ControllerConfig.cpp#L268).
+
 This is the smallest frame convention that keeps the planner readable and consistent with the rest of the controller.
