@@ -6,33 +6,45 @@ This note explains how the reduced-body MPC separates world-frame dynamics from 
 2. Interpret command semantics, nominal offsets, and planar tracking costs in the body-yaw frame.
 3. Keep the cost transform fixed from the reference yaw so the QP stays convex.
 
+> [!IMPORTANT]
+> **World coordinates** are used for dynamics, COM motion, and contact geometry, while the **body-yaw frame** is used to interpret commands, nominal offsets, and planar tracking costs.
+
 ## 1. Current Implementation Summary
 
 The current reduced-body MPC state is ordered as:
 
-```text
-x = [
-  roll, pitch, yaw,
-  px, py, pz,
-  omega_x, omega_y, omega_z,
-  vx, vy, vz,
-  g
-]
-```
+$$
+\mathbf{x} =
+\begin{bmatrix}
+\phi \\
+\theta \\
+\psi \\
+p_x \\
+p_y \\
+p_z \\
+\omega_x \\
+\omega_y \\
+\omega_z \\
+v_x \\
+v_y \\
+v_z \\
+g
+\end{bmatrix}
+$$
 
 The current code interprets these pieces as follows:
 
-- `x0[0:3]`: torso orientation, where yaw is the world heading.
-- `x0[3:6]`: reduced-body COM position in world coordinates.
-- `x0[6:9]`: torso angular velocity in world coordinates.
-- `x0[9:12]`: reduced-body COM velocity in world coordinates.
-- `x0[12]`: gravity scalar.
+- $\mathbf{x}_0[0{:}3]$: torso orientation, where yaw is the world heading.
+- $\mathbf{x}_0[3{:}6]$: reduced-body COM position in world coordinates.
+- $\mathbf{x}_0[6{:}9]$: torso angular velocity in world coordinates.
+- $\mathbf{x}_0[9{:}12]$: reduced-body COM velocity in world coordinates.
+- $\mathbf{x}_0[12]$: gravity scalar.
 
 The main pipeline is:
 
-- `ReferenceTrajectory` builds `Rz(psi_ref) * u_cmd_B` to obtain a world-frame velocity reference.
+- `ReferenceTrajectory` builds $R_z(\psi_{\mathrm{ref}})\,u_{\mathrm{cmd}}^B$ to obtain a world-frame velocity reference.
 - `MPCFormulation` builds the dynamics matrix in world coordinates.
-- `ConvexMPC::buildQP()` assembles `stateError = A_qp * x0 - X_ref` directly in world coordinates and applies a fixed diagonal state weight.
+- `ConvexMPC::buildQP()` assembles $\mathbf{e}_{\text{state}} = A_{\mathrm{qp}} \mathbf{x}_0 - X_{\mathrm{ref}}$ directly in world coordinates and applies a fixed diagonal state weight.
 
 That last point is the one that matters most.
 
@@ -42,11 +54,14 @@ If the configuration uses anisotropic weights such as `px != py` or `vx != vy`, 
 
 Consider a diagonal cost:
 
-```text
-J = (x - x_ref)^T Q_world (x - x_ref)
-```
+$$
+J = (\mathbf{x} - \mathbf{x}_{\mathrm{ref}})^\top Q_{\mathrm{world}} (\mathbf{x} - \mathbf{x}_{\mathrm{ref}})
+$$
 
-If `Q_world` is diagonal and anisotropic, the cost is tied to world axes.
+If $Q_{\mathrm{world}}$ is diagonal and anisotropic, the cost is tied to world axes.
+
+> [!WARNING]
+> If the cost stays locked to world x/y while the robot yaws, turning can feel loose or underdamped even when straight walking looks fine.
 
 That leads to the following issue during turning:
 
@@ -93,18 +108,19 @@ Keep the dynamics and the targets in world coordinates, but transform the cost e
 
 Current form:
 
-```text
-J = Σ (x_k - x_ref_k)^T Q_world (x_k - x_ref_k)
-```
+$$
+J = \sum_k (\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k})^\top Q_{\mathrm{world}} (\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k})
+$$
 
 Recommended form:
 
-```text
-J = Σ e_k^T Q_world e_k
-e_k = T_k (x_k - x_ref_k)
-```
+$$
+J = \sum_k \mathbf{e}_k^\top Q_{\mathrm{world}} \mathbf{e}_k,
+\qquad
+\mathbf{e}_k = T_k (\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k})
+$$
 
-Where `T_k` is a fixed step-local transform built from the reference yaw `psi_ref_k`.
+Where $T_k$ is a fixed step-local transform built from the reference yaw $\psi_{\mathrm{ref},k}$.
 
 Because `T_k` is fixed from the reference trajectory, the problem remains a convex quadratic program.
 
@@ -112,22 +128,26 @@ Because `T_k` is fixed from the reference trajectory, the problem remains a conv
 
 For planar position, planar velocity, and horizontal angular velocity, use a yaw rotation:
 
-```text
-R_k = Rz(psi_ref_k)^T
+$$
+R_k = R_z(\psi_{\mathrm{ref},k})^\top
+$$
 
-T_position   = diag(R_k, 1)
-T_velocity   = diag(R_k, 1)
-T_omega      = diag(R_k, 1)
-T_orientation = I_3
-```
+$$
+T_{\mathrm{position}} = \operatorname{diag}(R_k, 1), \qquad
+T_{\mathrm{velocity}} = \operatorname{diag}(R_k, 1), \qquad
+T_{\omega} = \operatorname{diag}(R_k, 1), \qquad
+T_{\mathrm{orientation}} = I_3
+$$
 
 In matrix form, the 3x3 planar rotation block is:
 
-```text
-[ cos ψ   sin ψ   0 ]
-[ -sin ψ  cos ψ   0 ]
-[   0       0     1 ]
-```
+$$
+\begin{bmatrix}
+\cos \psi & \sin \psi & 0 \\
+-\sin \psi & \cos \psi & 0 \\
+0 & 0 & 1
+\end{bmatrix}
+$$
 
 The safest first implementation is:
 
@@ -144,15 +164,13 @@ The state stores Euler `[roll, pitch, yaw]`, so roll and pitch should remain raw
 
 The smallest code change is to modify `ConvexMPC::buildQP()` so that the weighted state assembly uses the transformed error blocks instead of a world-fixed diagonal penalty.
 
-In pseudocode:
+For each horizon step $k$:
 
-```text
-for each horizon step k:
-    psi_ref = reference yaw at step k
-    T_k = block transform built from psi_ref
-    e_k = T_k * (x_k - x_ref_k)
-    accumulate Q_k = T_k^T * Q_world * T_k
-```
+$$
+\psi_{\mathrm{ref},k} \mapsto T_k, \qquad
+\mathbf{e}_k = T_k(\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k}), \qquad
+Q_k = T_k^\top Q_{\mathrm{world}} T_k
+$$
 
 This preserves convexity while making the cost semantics follow the robot heading.
 
@@ -160,11 +178,14 @@ This preserves convexity while making the cost semantics follow the robot headin
 
 Turning instability is not always a cost-frame problem.
 
+> [!NOTE]
+> After fixing the cost transform, the next thing to inspect is whether wrench limits are being evaluated in the same frame as the foot geometry.
+
 `GaitScheduler::buildConstraintMatrices()` currently applies friction and wrench limits directly to the wrench decision variables:
 
-```text
-[Fx, Fy, Fz, Mx, My, Mz]
-```
+$$
+\mathbf{w} = \begin{bmatrix} F_x & F_y & F_z & M_x & M_y & M_z \end{bmatrix}^\top
+$$
 
 That is fine as long as the constraint geometry matches the foot frame. In particular, these quantities should be checked in a foot-local or foot-yaw frame:
 
@@ -173,7 +194,7 @@ That is fine as long as the constraint geometry matches the foot frame. In parti
 - roll-moment limits
 - pitch-moment limits
 
-If `Mx` and `My` are treated as fixed world axes while the foot yaw changes, the foot length and width axes no longer line up with the constraint interpretation.
+If $M_x$ and $M_y$ are treated as fixed world axes while the foot yaw changes, the foot length and width axes no longer line up with the constraint interpretation.
 
 Recommended direction:
 

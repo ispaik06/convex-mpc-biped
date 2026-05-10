@@ -152,6 +152,8 @@ flowchart LR
 | `docs/` | Technical notes about frames, swing planning, and controller conventions |
 | `test/` | Manual experiments and standing debug tools |
 
+The `docs/` directory contains standalone notes such as [MPC frame convention](docs/mpc_frame_convention.md) and [swing-foot touchdown planning](docs/swing_foot_touchdown_planner.md).
+
 ## Supported robots
 
 | Robot | Status | Notes |

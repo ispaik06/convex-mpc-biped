@@ -4,6 +4,9 @@ This note explains how `SwingFootPlanner` computes the red touchdown marker used
 
 Keyboard commands enter the controller through `user_command_filter` before they reach the planner. The same filter applies to walking `x_dot / y_dot / psi_dot` and standing `z_dot / roll / pitch`.
 
+> [!IMPORTANT]
+> The planner keeps **touchdown position** in world coordinates, **nominal spacing** in the body-yaw frame, and **swing-foot yaw** as a separate heading problem.
+
 ## 1. What the Planner Must Do
 
 Touchdown targets should satisfy these constraints:
@@ -15,6 +18,9 @@ Touchdown targets should satisfy these constraints:
 5. When the robot is transitioning into a stop, touchdown should move slightly farther in the direction of travel so the robot brakes instead of coasting past the target.
 
 The key design choice is:
+
+> [!NOTE]
+> The planner deliberately moves the **touchdown target** toward the desired body marker instead of pulling the body marker toward the feet.
 
 ```text
 Do not pull the desired body marker toward the feet.
@@ -44,21 +50,26 @@ When the planner is reset, the first call to `desiredFootPositions()` captures t
 
 The procedure is:
 
-```text
-footCenter_W = (leftFoot_W + rightFoot_W) / 2
-offset_B[leg] = Rz(yaw_des)^T * (footPos_W - footCenter_W)
-offset_B[leg].x = 0
-offset_B[leg].z = 0
-```
+$$
+p_{\text{center}}^W = \frac{p_{\text{left}}^W + p_{\text{right}}^W}{2}
+$$
+
+$$
+o_{\text{leg}}^B = R_z(\psi_{\text{des}})^\top \left(p_{\text{foot}}^W - p_{\text{center}}^W\right)
+$$
+
+$$
+\left(o_{\text{leg}}^B\right)_x = 0,\qquad \left(o_{\text{leg}}^B\right)_z = 0
+$$
 
 This means the planner remembers only the left/right spacing between the feet. The forward/backward component is deliberately discarded so the feet can keep a clean stance line while moving forward or backward.
 
 Example:
 
-```text
-left  offset_B = [0, +0.08, 0]
-right offset_B = [0, -0.08, 0]
-```
+$$
+o_{\text{left}}^B = \begin{bmatrix} 0 \\ +0.08 \\ 0 \end{bmatrix},\qquad
+o_{\text{right}}^B = \begin{bmatrix} 0 \\ -0.08 \\ 0 \end{bmatrix}
+$$
 
 If `swing.nominal_foot_offsets_B` is present in YAML, that value is used directly and the runtime estimate is skipped.
 
@@ -68,9 +79,12 @@ The touchdown target is not computed from the current foot position alone. It is
 
 The preview horizon is:
 
-```text
-previewTime = (0.5 + bodyVelocityHalfStanceOffset) * stanceTime()
-```
+$$
+T_{\text{preview}} = \left(0.5 + \alpha_{\text{half-stance}}\right) T_{\text{stance}}
+$$
+
+Here, $\alpha_{\text{half-stance}}$ maps to `bodyVelocityHalfStanceOffset`, and
+$T_{\text{stance}}$ maps to `stanceTime()`.
 
 The intuition is simple:
 
@@ -86,9 +100,11 @@ If `bodyVelocityHalfStanceOffset = 0.5`, the planner is looking one full stance 
 
 The swing-foot yaw target is usually the torso yaw plus a yaw-lead term:
 
-```text
-yaw_target = yaw0 + swing_foot_yaw_lead_scale * psi_dot * previewTime
-```
+$$
+\psi_{\text{foot}}^{\text{des}} = \psi_0 + k_{\text{lead}} \dot{\psi} \, T_{\text{preview}}
+$$
+
+Here, `k_{\text{lead}}` maps to `swing_foot_yaw_lead_scale`.
 
 There is one extra heuristic for diagonal stepping. If the filtered lateral command is large enough, the planner uses the world direction from the current foot position to the touchdown target as the base yaw. That path is only enabled when:
 
@@ -106,9 +122,9 @@ There is also a `psi_dot` bias:
 
 The bias magnitude is:
 
-```text
-min(20 deg, 100 * |psi_dot| deg)
-```
+$$
+|\Delta \psi| = \min\left(20^\circ,\ 100^\circ |\dot{\psi}|\right)
+$$
 
 This is intentionally a small correction. It adjusts the swing-foot heading, not the touchdown position.
 
@@ -116,18 +132,22 @@ This is intentionally a small correction. It adjusts the swing-foot heading, not
 
 Touchdown position uses a small yaw-averaging approximation:
 
-```text
-translationYaw = yaw0 + 0.5 * psi_dot * previewTime
-step_W = Rz(translationYaw) * [x_dot, y_dot, 0] * previewTime
-```
+$$
+\psi_{\text{trans}} = \psi_0 + \frac{1}{2}\dot{\psi} T_{\text{preview}}
+$$
+
+$$
+\Delta p_W = R_z(\psi_{\text{trans}})\begin{bmatrix}\dot{x}\\\dot{y}\\0\end{bmatrix} T_{\text{preview}}
+$$
 
 Why the `0.5`?
 
 During the preview window, the body yaw changes from `yaw0` to `yaw0 + psi_dot * previewTime`. Using the midpoint yaw is a simple approximation to the full integral:
 
-```text
-step_W = integral from 0 to T of Rz(yaw0 + psi_dot * t) * v_cmd_B dt
-```
+$$
+\Delta p_W = \int_0^{T_{\text{preview}}} R_z(\psi_0 + \dot{\psi} t)
+\begin{bmatrix}\dot{x}\\\dot{y}\\0\end{bmatrix}\, dt
+$$
 
 For short preview intervals, the midpoint approximation is easier to reason about and is usually sufficient.
 
@@ -135,25 +155,29 @@ For short preview intervals, the midpoint approximation is easier to reason abou
 
 The core touchdown equation is:
 
-```text
-target_W = currentCenter_W
-         + step_W
-         + Rz(yaw0) * brakingOffset_B
-         + Rz(yaw0) * nominalFootOffsets_B[leg]
-```
+$$
+\begin{aligned}
+p_{\text{td}}^W &= p_{\text{center}}^W + \Delta p_W \\
+                &\quad + R_z(\psi_0) p_{\text{brake}}^B \\
+                &\quad + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+\end{aligned}
+$$
 
 Where:
 
-- `currentCenter_W` is usually `_bodyTarget.position_W`.
-- `step_W` is the previewed displacement from the command.
-- `brakingOffset_B` is the optional stop/braking offset in body-yaw coordinates.
-- `nominalFootOffsets_B[leg]` preserves the left/right stance spacing.
+- $p_{\text{center}}^W$ corresponds to `currentCenter_W` in the code.
+- $\Delta p_W$ corresponds to `step_W`.
+- $p_{\text{brake}}^B$ corresponds to `brakingOffset_B`.
+- $p_{\text{nom}}^B[\text{leg}]$ corresponds to `nominalFootOffsets_B[leg]`.
 
 If the body target has not been seeded yet, the planner falls back to the last known footprint center.
 
 ## 8. Stop / Braking Offset
 
 When the robot is slowing down, the planner can add an extra body-frame offset that helps the next touchdown brake the motion.
+
+> [!TIP]
+> If the robot should brake harder on the next step, the relevant knobs are `stop_capture_point_gain`, `stop_capture_point_max_offset`, and an optional fixed `swing.stop_braking_offset_B`.
 
 The logic is:
 
@@ -175,19 +199,21 @@ The planner does not use the previous foot target directly as the next foot's in
 
 Example:
 
-```text
-left touchdown  = [x=0.10, y=+0.08]
-next right p_init = left touchdown
-right touchdown = [x=0.20, y=+0.08]
-```
+$$
+\begin{aligned}
+p_{\text{td},L}^W &= \begin{bmatrix} 0.10 \\ +0.08 \end{bmatrix} \\
+p_{\text{init},R}^W &= p_{\text{td},L}^W \\
+p_{\text{td},R}^W &= \begin{bmatrix} 0.20 \\ +0.08 \end{bmatrix}
+\end{aligned}
+$$
 
 That would collapse the stance geometry because the right foot would walk onto the left foot's lateral line.
 
 Instead, the planner reconstructs the footprint center:
 
-```text
-center = touchdown - Rz(yaw_des) * nominalFootOffsets_B[leg]
-```
+$$
+p_{\text{center}}^W = p_{\text{td}}^W - R_z(\psi_{\text{des}}) p_{\text{nom}}^B[\text{leg}]
+$$
 
 Once the center is known, the next foot target is computed from that center plus the opposite foot offset. This keeps the left/right spacing stable across steps.
 
@@ -201,10 +227,13 @@ The planner may then add a braking offset. That offset is only latched when the 
 
 ### 10.2 Forward motion: `x_dot > 0`, `y_dot = 0`, `psi_dot = 0`
 
-```text
-step_W = Rz(yaw0) * [x_dot, 0, 0] * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
-```
+$$
+\Delta p_W = R_z(\psi_0)\begin{bmatrix}\dot{x}\\0\\0\end{bmatrix} T_{\text{preview}}
+$$
+
+$$
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+$$
 
 Result:
 
@@ -213,10 +242,13 @@ Result:
 
 ### 10.3 Backward motion: `x_dot < 0`, `y_dot = 0`, `psi_dot = 0`
 
-```text
-step_W = Rz(yaw0) * [x_dot, 0, 0] * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
-```
+$$
+\Delta p_W = R_z(\psi_0)\begin{bmatrix}\dot{x}\\0\\0\end{bmatrix} T_{\text{preview}}
+$$
+
+$$
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+$$
 
 Result:
 
@@ -225,10 +257,13 @@ Result:
 
 ### 10.4 Lateral motion: `y_dot != 0`
 
-```text
-step_W = Rz(yaw0) * [0, y_dot, 0] * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
-```
+$$
+\Delta p_W = R_z(\psi_0)\begin{bmatrix}0\\\dot{y}\\0\end{bmatrix} T_{\text{preview}}
+$$
+
+$$
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+$$
 
 Result:
 
@@ -238,13 +273,17 @@ Result:
 
 ### 10.5 In-place turning: `x_dot = 0`, `y_dot = 0`, `psi_dot != 0`
 
-```text
-v_body_cmd = [x_dot, y_dot, 0] = [0, 0, 0]
-step_W = Rz(yaw0 + 0.5 * psi_dot * previewTime) * v_body_cmd * previewTime = 0
-target_W = currentCenter_W + step_W +
-           Rz(yaw0) * brakingOffset_B +
-           Rz(yaw0) * nominalFootOffsets_B[leg]
-```
+$$
+\mathbf{v}_{\text{cmd}}^B = \begin{bmatrix}0\\0\\0\end{bmatrix}
+$$
+
+$$
+\Delta p_W = \mathbf{0}
+$$
+
+$$
+p_{\text{td}}^W = p_{\text{center}}^W + R_z(\psi_0) p_{\text{brake}}^B + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+$$
 
 Result:
 
@@ -257,10 +296,14 @@ Result:
 
 ### 10.6 Moving while turning: `x_dot / y_dot != 0`, `psi_dot != 0`
 
-```text
-step_W = Rz(yaw0 + 0.5 * psi_dot * previewTime) * [x_dot, y_dot, 0] * previewTime
-target_W = bodyTarget_W + step_W + Rz(yaw0) * nominalFootOffsets_B[leg]
-```
+$$
+\Delta p_W = R_z\!\left(\psi_0 + \frac{1}{2}\dot{\psi} T_{\text{preview}}\right)
+\begin{bmatrix}\dot{x}\\\dot{y}\\0\end{bmatrix} T_{\text{preview}}
+$$
+
+$$
+p_{\text{td}}^W = p_{\text{body}}^W + \Delta p_W + R_z(\psi_0) p_{\text{nom}}^B[\text{leg}]
+$$
 
 Result:
 
