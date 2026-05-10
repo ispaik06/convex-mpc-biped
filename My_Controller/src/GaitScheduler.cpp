@@ -71,6 +71,10 @@ bool GaitScheduler::c(Side i, double t) const {
     return (0.0 <= phase && phase < stanceFraction);
 }
 
+bool GaitScheduler::bothFeetStance(const double t) const {
+    return c(Side::Left, t) && c(Side::Right, t);
+}
+
 void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* contactOverride) {
     if (_horizonClock == nullptr) {
         throw std::runtime_error(

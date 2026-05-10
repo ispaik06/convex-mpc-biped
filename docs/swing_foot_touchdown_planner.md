@@ -120,7 +120,7 @@ There is also a `psi_dot` bias:
 
 - If `x_dot >= 0` and `psi_dot > 0`, the left foot gets a positive bias.
 - If `x_dot >= 0` and `psi_dot < 0`, the right foot gets a negative bias.
-- If `x_dot < 0`, the signs are flipped.
+- If `x_dot < 0`, the bias sign is **not** flipped; only the diagonal-heading heuristic changes.
 
 The bias magnitude is:
 

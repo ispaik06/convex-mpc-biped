@@ -12,6 +12,7 @@
 
 #include "Controllers/LegController.h"
 #include "Dynamics/OperationalSpaceDynamics.h"
+#include "BodyMotionReference.h"
 #include "StandingMpcDebugLogger.h"
 #include "Utilities/Timing.h"
 #include "Utilities/MatrixUtils.h"
@@ -25,22 +26,20 @@ double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
 
-double swingFootYawPsiOffset(const Side side,
-                             const double x_dot,
-                             const double psi_dot) {
+double swingFootYawPsiOffset(const Side side, const double psi_dot) {
     constexpr double kPsiYawGainDegPerRad = 100.0;
     constexpr double kPsiYawMaxOffsetDeg = 20.0;
     constexpr double kDegToRad = 3.141592653589793238462643383279502884 / 180.0;
 
-    const double direction = (x_dot >= 0.0) ? 1.0 : -1.0;
     const double offsetMagDeg =
         std::clamp(kPsiYawGainDegPerRad * std::abs(psi_dot), 0.0, kPsiYawMaxOffsetDeg);
     // Keep the sign rule explicit: left-foot bias for +psi_dot, right-foot bias for -psi_dot.
+    // Backward motion no longer flips the bias sign.
     if (psi_dot > 0.0 && side == Side::Left) {
-        return direction * offsetMagDeg * kDegToRad;
+        return offsetMagDeg * kDegToRad;
     }
     if (psi_dot < 0.0 && side == Side::Right) {
-        return -direction * offsetMagDeg * kDegToRad;
+        return -offsetMagDeg * kDegToRad;
     }
     return 0.0;
 }
@@ -54,8 +53,7 @@ double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPositi
     constexpr double kDiagonalCommandDeadband = 1e-3;
     constexpr double kFilteredLateralSpeedThreshold = 0.2;
     constexpr double kHalfPi = 1.570796326794896619231321691639751442;
-    const double psiBias_W =
-        swingFootYawPsiOffset(side, filteredPlanarCommand_B.x(), psi_dot);
+    const double psiBias_W = swingFootYawPsiOffset(side, psi_dot);
     if (std::abs(filteredPlanarCommand_B.y()) < kFilteredLateralSpeedThreshold) {
         return wrapAngle(fallbackYaw_W + psiBias_W);
     }
@@ -725,11 +723,12 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
         _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
         _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
-        if (dt > 0.0) {
-            _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] +
-                                               _filteredUserCommand.psi_dot * dt);
-            _bodyTarget.nominalPosition_W[2] += z_dot * dt;
-        }
+        _bodyTarget.euler_W[2] = BodyMotionReference::advanceYaw(_gaitScheduler.get(),
+                                                                 _bodyTarget.euler_W[2],
+                                                                 _filteredUserCommand.psi_dot,
+                                                                 dt,
+                                                                 _stateEstimate->time);
+        _bodyTarget.nominalPosition_W[2] += z_dot * dt;
         _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
         return;
     }
@@ -737,10 +736,17 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     const double x_dot = _filteredUserCommand.x_dot;
     const double y_dot = _filteredUserCommand.y_dot;
     const double psi_dot = _filteredUserCommand.psi_dot;
-    const Vec3<double> v_cmd_B(x_dot, y_dot, 0.0);
 
-    _bodyTarget.nominalPosition_W += Rz(_bodyTarget.euler_W[2]) * v_cmd_B * dt;
-    _bodyTarget.euler_W[2] = wrapAngle(_bodyTarget.euler_W[2] + psi_dot * dt);
+    _bodyTarget.nominalPosition_W =
+        BodyMotionReference::advancePlanarPosition(_bodyTarget.nominalPosition_W,
+                                                   _bodyTarget.euler_W[2],
+                                                   Vec2<double>(x_dot, y_dot),
+                                                   dt);
+    _bodyTarget.euler_W[2] = BodyMotionReference::advanceYaw(_gaitScheduler.get(),
+                                                             _bodyTarget.euler_W[2],
+                                                             psi_dot,
+                                                             dt,
+                                                             _stateEstimate->time);
     _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
 }
 
@@ -921,7 +927,7 @@ double MyController::swingFootYawTargetWorld() const {
 double MyController::swingFootYawTargetWorld(const Side side) const {
     return wrapAngle(
         swingFootYawTargetWorld() +
-        swingFootYawPsiOffset(side, _filteredUserCommand.x_dot, _filteredUserCommand.psi_dot));
+        swingFootYawPsiOffset(side, _filteredUserCommand.psi_dot));
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,
@@ -972,7 +978,8 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
                 ReferenceTrajectory(&referenceCommand,
                                     referenceSeed,
                                     desiredFootPositions,
-                                    _horizonClock.get())
+                                    _horizonClock.get(),
+                                    _gaitScheduler.get())
                     .build(_referenceTrajectoryOutput);
             }
 

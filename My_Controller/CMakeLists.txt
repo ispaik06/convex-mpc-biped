@@ -3,6 +3,7 @@ add_library(My_Controller
 	src/ContactManager.cpp
 	src/ControllerConfig.cpp
 	src/GaitScheduler.cpp
+	src/BodyMotionReference.cpp
 	src/LocomotionFSM.cpp
 	src/SwingFootPlanner.cpp
 	src/ReferenceTrajectory.cpp

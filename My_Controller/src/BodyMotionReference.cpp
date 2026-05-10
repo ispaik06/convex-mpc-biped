@@ -1,0 +1,52 @@
+#include "BodyMotionReference.h"
+
+#include <cmath>
+
+namespace BodyMotionReference {
+namespace {
+double wrapAngle(const double angle) {
+    return std::atan2(std::sin(angle), std::cos(angle));
+}
+
+bool isDoubleSupport(const GaitScheduler* gaitScheduler, const double sampleTime) {
+    return gaitScheduler != nullptr && gaitScheduler->bothFeetStance(sampleTime);
+}
+}  // namespace
+
+bool shouldAdvanceYaw(const GaitScheduler* gaitScheduler, const double sampleTime) {
+    return !isDoubleSupport(gaitScheduler, sampleTime);
+}
+
+double advanceYaw(const GaitScheduler* gaitScheduler,
+                  const double currentYaw,
+                  const double psiDot,
+                  const double dt,
+                  const double sampleTime) {
+    if (!(dt > 0.0) || !shouldAdvanceYaw(gaitScheduler, sampleTime)) {
+        return currentYaw;
+    }
+    return wrapAngle(currentYaw + psiDot * dt);
+}
+
+double yawRate(const GaitScheduler* gaitScheduler, const double psiDot, const double sampleTime) {
+    return shouldAdvanceYaw(gaitScheduler, sampleTime) ? psiDot : 0.0;
+}
+
+Vec3<double> advancePlanarPosition(const Vec3<double>& position_W,
+                                   const double bodyYaw_W,
+                                   const Vec2<double>& planarCommand_B,
+                                   const double dt) {
+    if (!(dt > 0.0)) {
+        return position_W;
+    }
+
+    const Vec3<double> command_W = Rz(bodyYaw_W) *
+                                   Vec3<double>(planarCommand_B.x(), planarCommand_B.y(), 0.0);
+    return position_W + command_W * dt;
+}
+
+Vec3<double> worldVelocity(const Vec3<double>& bodyCommand_B, const double bodyYaw_W) {
+    return Rz(bodyYaw_W) * bodyCommand_B;
+}
+
+}  // namespace BodyMotionReference

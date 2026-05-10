@@ -54,11 +54,13 @@ public:
     ReferenceTrajectory(const UserCommand* userCommand,
                         const Vec13<double>& x0,
                         const DesiredFootPositions& desiredFootPositions,
-                        const HorizonClock* horizonClock)
+                        const HorizonClock* horizonClock,
+                        const GaitScheduler* gaitScheduler)
         : _userCommand(userCommand),
           _x0(x0),
           _desiredFootPositions(desiredFootPositions),
-          _horizonClock(horizonClock) {}
+          _horizonClock(horizonClock),
+          _gaitScheduler(gaitScheduler) {}
 
     void build(ReferenceTrajectoryOutput& out) const;
 
@@ -67,6 +69,7 @@ private:
     Vec13<double> _x0 = Vec13<double>::Zero();
     DesiredFootPositions _desiredFootPositions;
     const HorizonClock* _horizonClock = nullptr;
+    const GaitScheduler* _gaitScheduler = nullptr;
 };
 
 #endif  // REFERENCE_TRAJECTORY_H

@@ -2,6 +2,7 @@
 
 #include <stdexcept>
 
+#include "BodyMotionReference.h"
 #include "Utilities/MatrixUtils.h"
 
 void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
@@ -22,22 +23,35 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
 
     const double psi0 = _x0[2];
     const double gravity = _x0[12];
+    const double dt = dtMpc();
     const int steps = horizonSteps();
 
     Vec3<double> p_ref = _x0.template segment<3>(3);
     Vec3<double> euler_ref = _x0.template segment<3>(0);
     Vec3<double> v_ref_W = Vec3<double>::Zero();
+    const Vec2<double> planarCommand_B(u_des_B.x(), u_des_B.y());
+    double psi_ref = psi0;
 
     for (int k = 0; k < steps; ++k) {
         const double tk = _horizonClock->tk(k);
-        const double tau_k = tk - _horizonClock->t0();
-        const double psi_k = psi0 + psi_dot_des * tau_k;
-        const Mat3<double> R_WB = Rz(psi_k);
+        const double yawSampleTime = (k == 0) ? tk : (tk - 0.5 * dt);
+        if (k > 0) {
+            psi_ref = BodyMotionReference::advanceYaw(_gaitScheduler,
+                                                      psi_ref,
+                                                      psi_dot_des,
+                                                      dt,
+                                                      yawSampleTime);
+        }
 
-        v_ref_W = R_WB * u_des_B;
+        const double psi_k = psi_ref;
+        v_ref_W = BodyMotionReference::worldVelocity(u_des_B, psi_k);
 
         if (k > 0) {
-            p_ref += v_ref_W * dtMpc();
+            p_ref = BodyMotionReference::advancePlanarPosition(
+                p_ref,
+                psi_k,
+                planarCommand_B,
+                dt);
         }
 
         out.tk[k] = tk;
@@ -53,7 +67,7 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
         x_ref_k.template segment<3>(3) = p_ref;
         x_ref_k[6] = 0.0;
         x_ref_k[7] = 0.0;
-        x_ref_k[8] = psi_dot_des;
+        x_ref_k[8] = BodyMotionReference::yawRate(_gaitScheduler, psi_dot_des, yawSampleTime);
         x_ref_k.template segment<3>(9) = v_ref_W;
         x_ref_k[12] = gravity;
     }

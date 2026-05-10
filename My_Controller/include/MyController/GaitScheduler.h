@@ -20,6 +20,7 @@ public:
 
     double p(Side, double) const;
     bool c(Side, double) const;
+    bool bothFeetStance(double t) const;
 
     void buildConstraintMatrices(const ContactScheduleOverride* contactOverride = nullptr);
 

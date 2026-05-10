@@ -1105,7 +1105,8 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
             &result.userCommand,
             referenceSeed,
             result.desiredFootPositions,
-            &horizonClock)
+            &horizonClock,
+            &gaitScheduler)
             .build(referenceOutput);
 
         RolloutRow row = makeRowSkeleton(
