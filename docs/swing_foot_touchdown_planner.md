@@ -113,6 +113,8 @@ There is one extra heuristic for diagonal stepping. If the filtered lateral comm
 - `|filtered_y_dot| >= 0.2 m/s`
 - `filtered_x_dot != 0`
 - the swing leg matches the lateral direction
+- if `filtered_x_dot > 0`, require `filtered_x_dot >= filtered_y_dot`
+- if `filtered_x_dot < 0`, require `filtered_x_dot <= filtered_y_dot`
 
 If `filtered_x_dot < 0`, the yaw is rotated by `+90 deg` for the right foot and `-90 deg` for the left foot.
 

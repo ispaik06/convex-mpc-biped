@@ -69,6 +69,16 @@ double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPositi
         return wrapAngle(fallbackYaw_W + psiBias_W);
     }
 
+    const double xDot = filteredPlanarCommand_B.x();
+    const double yDot = filteredPlanarCommand_B.y();
+    // Only treat the command as diagonal when the forward/back component dominates in the
+    // same-sign case; otherwise keep the simpler fallback heading.
+    const bool diagonalHeadingDominates =
+        (xDot > 0.0 && xDot >= yDot) || (xDot < 0.0 && xDot <= yDot);
+    if (!diagonalHeadingDominates) {
+        return wrapAngle(fallbackYaw_W + psiBias_W);
+    }
+
     const Vec2<double> stepXY_W =
         (touchdownTarget_W - currentFootPosition_W).template head<2>();
     if (stepXY_W.squaredNorm() <= 1e-8) {
@@ -76,7 +86,7 @@ double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPositi
     }
 
     double yaw_W = std::atan2(stepXY_W.y(), stepXY_W.x());
-    if (filteredPlanarCommand_B.x() < 0.0) {
+    if (xDot < 0.0) {
         yaw_W += (side == Side::Right) ? kHalfPi : -kHalfPi;
     }
     return wrapAngle(yaw_W + psiBias_W);
