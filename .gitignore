@@ -3,7 +3,11 @@
 # Exclude temporary folders
 build/
 build-codex/
-logs/
+# Keep the logs directory skeleton via .gitkeep files, but ignore generated payloads.
+logs/**
+!logs/**/
+!logs/.gitkeep
+!logs/**/*.gitkeep
 debug_logs/
 __pycache__/
 *.pyc

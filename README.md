@@ -354,7 +354,7 @@ The existing examples are:
 
 - **StateEstimator** is still cheater-state based.
 - **Headless** runs continue until interrupted.
-- **The MIT Humanoid MJCF and URDF are intentionally not shared in this public repository.**
+- <ins>**The MIT Humanoid MJCF and URDF are intentionally not shared in this public repository.**</ins>
 - The Unitree G1 and H1 parameters in `config/unitree_robots/{g1,h1}/my_controller.yaml` are
   present, but they are **not fully tuned or validated** yet; treat them as starting points
   rather than final gains.
