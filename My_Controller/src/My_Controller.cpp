@@ -242,6 +242,23 @@ const char* locomotionModeName(const LocomotionMode mode) {
             return "walking";
         case LocomotionMode::Standing:
             return "standing";
+        case LocomotionMode::Interactive:
+            return "interactive";
+    }
+
+    return "unknown";
+}
+
+const char* locomotionStateName(const LocomotionState state) {
+    switch (state) {
+        case LocomotionState::StandingSettle:
+            return "standing_settle";
+        case LocomotionState::Standing:
+            return "standing";
+        case LocomotionState::Walking:
+            return "walking";
+        case LocomotionState::BrakingToStanding:
+            return "braking_to_standing";
     }
 
     return "unknown";
@@ -526,6 +543,10 @@ void MyController::initializeRuntimeObjects() {
     _locomotionFSM = std::make_unique<LocomotionFSM>(
         config.requestedLocomotionMode,
         config.startup.postInitStandingSettleTime,
+        config.transition.brakingSettleSpeedThreshold,
+        config.transition.brakingSettleHoldTicks,
+        config.transition.brakingTimeoutSeconds,
+        config.transition.brakingTouchdownCount,
         _stateEstimate->time);
     setFootEndEffectorSource(config.model.footEndEffectorSource);
     _swingNaturalFrequency = config.swing.naturalFrequency;
@@ -558,12 +579,14 @@ void MyController::initializeRuntimeObjects() {
     _standingMpcDebugLogPending = false;
     _standingMpcDebugLogReady = false;
     _lastStandingMpcDebugLogRequest = 0;
+    _lastLocomotionModeToggleRequest = 0;
     _nextStandingMpcDebugTriggerIndex = 0;
     _standingMpcDebugRequestSource.clear();
     _standingMpcDebugRequestTime = std::numeric_limits<double>::quiet_NaN();
     _standingMpcDebugTriggerTime = std::numeric_limits<double>::quiet_NaN();
     _lastControlTime = _stateEstimate->time;
     _bodyTarget = BodyTargetState{};
+    _zeroMotionCommand = false;
     _initialized = true;
 }
 
@@ -662,9 +685,11 @@ void MyController::applyLocomotionOutput(const LocomotionFSMOutput& output) {
     }
     if (output.justTransitioned) {
         // seedBodyTargetFromCurrentState();
-        std::cout << "[LocomotionFSM] switched to " << locomotionModeName(output.mode)
+        std::cout << "[LocomotionFSM] switched to " << locomotionStateName(output.state)
+                  << " (" << locomotionModeName(output.mode) << ")"
                   << " at t=" << formatTimeSeconds(_stateEstimate->time) << std::endl;
     }
+    _zeroMotionCommand = output.zeroMotionCommand;
 }
 
 LocomotionFSMOutput MyController::syncLocomotionFSM() {
@@ -672,12 +697,30 @@ LocomotionFSMOutput MyController::syncLocomotionFSM() {
         throw std::runtime_error("MyController::syncLocomotionFSM requires initialized runtime");
     }
 
-    const LocomotionFSMOutput output = _locomotionFSM->update(_stateEstimate->time);
+    if (_userCommand != nullptr) {
+        const unsigned long long toggleRequest =
+            _userCommand->locomotion_mode_toggle_request;
+        while (_lastLocomotionModeToggleRequest < toggleRequest) {
+            _locomotionFSM->requestToggle();
+            ++_lastLocomotionModeToggleRequest;
+        }
+    }
+
+    const double planarComSpeed =
+        reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams).head<2>().norm();
+    const LocomotionFSMOutput output =
+        _locomotionFSM->update(_stateEstimate->time, planarComSpeed);
     applyLocomotionOutput(output);
     return output;
 }
 
 void MyController::updateFilteredUserCommand(const double dt) {
+    if (_zeroMotionCommand) {
+        _filteredUserCommand = UserCommand{};
+        _filteredUserCommandInitialized = true;
+        return;
+    }
+
     const UserCommand rawCommand =
         clampUserCommand((_userCommand != nullptr) ? *_userCommand : UserCommand{});
     if (!_filteredUserCommandInitialized) {
@@ -868,6 +911,11 @@ void MyController::updateSwingTrajectories(
         auto& runtime = _legRuntime[leg];
 
         if (isStance) {
+            if (_locomotionFSM != nullptr &&
+                _locomotionFSM->state() == LocomotionState::BrakingToStanding &&
+                !runtime.wasInStance) {
+                _locomotionFSM->registerBrakingTouchdown();
+            }
             runtime.swingTrajectory.deactivate();
             runtime.wasInStance = true;
             runtime.wasSearchMode = false;

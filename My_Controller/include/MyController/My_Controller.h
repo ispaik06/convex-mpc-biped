@@ -97,6 +97,7 @@ private:
 	bool _standingMpcDebugLogPending{false};
 	bool _standingMpcDebugLogReady{false};
 	unsigned long long _lastStandingMpcDebugLogRequest{0};
+	unsigned long long _lastLocomotionModeToggleRequest{0};
 	std::size_t _nextStandingMpcDebugTriggerIndex{0};
 	std::string _standingMpcDebugRequestSource;
 	double _standingMpcDebugRequestTime{0.0};
@@ -121,6 +122,7 @@ private:
 	u64 _iterationsBetweenMpc{10};
 	LocomotionMode _locomotionMode{LocomotionMode::Walking};
 	LegDynamicsRequest _legDynamicsRequest;
+	bool _zeroMotionCommand{false};
 	profiling::TimingStats _torqueComputeTime;
 	BodyTargetState _bodyTarget;
 	Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();

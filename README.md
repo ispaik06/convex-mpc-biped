@@ -185,17 +185,18 @@ Viewer selection:
 
 > [!WARNING]
 > `requested_locomotion_mode` is read at startup. Edit `config/<robot>/my_controller.yaml`
-> and restart the app to switch between `walking` and `standing`.
+> and restart the app to switch between modes.
 
 Set `requested_locomotion_mode` in `config/<robot>/my_controller.yaml`:
 
 - `walking`
 - `standing`
+- `interactive`  - start in standing and toggle walking / standing from the keyboard
 
 Example:
 
 ```yaml
-requested_locomotion_mode: walking
+requested_locomotion_mode: interactive
 ```
 
 ## Keyboard controls
@@ -208,6 +209,7 @@ requested_locomotion_mode: walking
 - `up / down`: body height up / down
 - `i / k`: pitch forward / backward
 - `j / l`: roll left / right
+- `t`: toggle walking / standing when `requested_locomotion_mode: interactive`
 - `space`: clear the command
 
 ### Standing mode
@@ -215,6 +217,7 @@ requested_locomotion_mode: walking
 - `up / down`: up / down velocity
 - `i / k`: pitch forward / backward
 - `j / l`: roll left / right
+- `t`: toggle walking / standing when `requested_locomotion_mode: interactive`
 - `space`: clear the command
 
 ### Notes
@@ -222,6 +225,8 @@ requested_locomotion_mode: walking
 - Keyboard commands are filtered before they reach the controller.
 - Walking mode accepts both planar velocity commands and body pose offsets.
 - Standing mode still ignores `w / s`, `a / d`, and `q / e`.
+- `interactive` mode starts in standing, and `t` switches between walking and standing.
+- Walking -> standing first zeroes the command while keeping the walking gait active, then waits until the body has been slow for a few ticks before it starts counting touchdown events or a timeout.
 - The active walking limits for `x_dot`, `y_dot`, and `psi_dot` come from `user_command_filter` in YAML.
 
 ## Configuration
@@ -236,6 +241,7 @@ Key fields:
 - `mpc`: contact model, weights, and solve rate
 - `swing`: touchdown planner gains, nominal offsets, and braking offset
 - `user_command_filter`: command smoothing and max command limits
+- `locomotion_transition`: settle speed / hold ticks, braking timeout, and touchdown count used when braking from walking to standing
 - `startup`: initial settle timing
 - `logging`: standing MPC debug trigger times
 

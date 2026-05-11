@@ -14,6 +14,7 @@ using InputWeightMat = Mat12<double>;
 enum class LocomotionMode {
     Walking,
     Standing,
+    Interactive,
 };
 
 enum class ContactWrenchModel {
@@ -112,6 +113,13 @@ struct StartupParameters {
     double postInitStandingSettleTime{2.0};
 };
 
+struct TransitionParameters {
+    double brakingSettleSpeedThreshold{0.05};
+    int brakingSettleHoldTicks{3};
+    double brakingTimeoutSeconds{2.0};
+    int brakingTouchdownCount{2};
+};
+
 struct InitialPoseParameters {
     std::vector<double> legJointOffsets{0.0, 0.0, -0.65, 0.80, -0.35};
     std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
@@ -137,6 +145,7 @@ struct ControllerConfig {
     ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;
+    TransitionParameters transition;
     InitialPoseParameters initialPose;
     GaitSwingHoldTestParameters gaitSwingHoldTest;
 };

@@ -115,6 +115,8 @@ std::string locomotionModeName(const LocomotionMode mode) {
             return "walking";
         case LocomotionMode::Standing:
             return "standing";
+        case LocomotionMode::Interactive:
+            return "interactive";
     }
     return "unknown";
 }
@@ -124,6 +126,7 @@ std::string shortLocomotionPrefix(const LocomotionMode mode) {
         case LocomotionMode::Walking:
             return "walk";
         case LocomotionMode::Standing:
+        case LocomotionMode::Interactive:
             return "stand";
     }
     return "unknown";
@@ -134,6 +137,7 @@ std::string debugDirectoryNameForMode(const LocomotionMode mode) {
         case LocomotionMode::Walking:
             return "walking_mpc";
         case LocomotionMode::Standing:
+        case LocomotionMode::Interactive:
             return "standing_mpc";
     }
     return "standing_mpc";
@@ -361,6 +365,9 @@ LocomotionMode locomotionModeFromString(const std::string& value) {
     }
     if (value == "standing" || value == "stand") {
         return LocomotionMode::Standing;
+    }
+    if (value == "interactive" || value == "general") {
+        return LocomotionMode::Interactive;
     }
     throw std::runtime_error("Invalid locomotion mode: " + value);
 }
@@ -686,6 +693,30 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
                   out.logging.standingMpcDebugTriggerTimes.end());
     }
 
+    if (cfg.contains("locomotion_transition") && cfg.at("locomotion_transition").is_object()) {
+        const json& transition = cfg.at("locomotion_transition");
+        if (transition.contains("braking_settle_speed_threshold") &&
+            transition.at("braking_settle_speed_threshold").is_number()) {
+            out.transition.brakingSettleSpeedThreshold =
+                transition.at("braking_settle_speed_threshold").get<double>();
+        }
+        if (transition.contains("braking_settle_hold_ticks") &&
+            transition.at("braking_settle_hold_ticks").is_number_integer()) {
+            out.transition.brakingSettleHoldTicks =
+                transition.at("braking_settle_hold_ticks").get<int>();
+        }
+        if (transition.contains("braking_timeout_seconds") &&
+            transition.at("braking_timeout_seconds").is_number()) {
+            out.transition.brakingTimeoutSeconds =
+                transition.at("braking_timeout_seconds").get<double>();
+        }
+        if (transition.contains("braking_touchdown_count") &&
+            transition.at("braking_touchdown_count").is_number_integer()) {
+            out.transition.brakingTouchdownCount =
+                transition.at("braking_touchdown_count").get<int>();
+        }
+    }
+
     if (cfg.contains("initial_pose") && cfg.at("initial_pose").is_object()) {
         const json& initialPose = cfg.at("initial_pose");
         const bool hasBasePosition = initialPose.contains("base_position_W");
@@ -824,6 +855,10 @@ UserCommand userCommandFromLog(const json& log) {
         jsonDoubleOr(command, "standing_roll_offset_rad", 0.0);
     out.standing_pitch_offset_rad =
         jsonDoubleOr(command, "standing_pitch_offset_rad", 0.0);
+    out.standing_mpc_debug_log_request =
+        static_cast<unsigned long long>(jsonDoubleOr(command, "standing_mpc_debug_log_request", 0.0));
+    out.locomotion_mode_toggle_request =
+        static_cast<unsigned long long>(jsonDoubleOr(command, "locomotion_mode_toggle_request", 0.0));
     return out;
 }
 

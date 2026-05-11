@@ -61,6 +61,7 @@ void printCommand(const UserCommand& command, const bool standingControls) {
                   << "  roll=" << formatDegrees(command.standing_roll_offset_rad, 2)
                   << " deg"
                   << "  debug_log_request=" << command.standing_mpc_debug_log_request
+                  << "  mode_toggle_request=" << command.locomotion_mode_toggle_request
                   << '\n';
         return;
     }
@@ -75,19 +76,21 @@ void printCommand(const UserCommand& command, const bool standingControls) {
               << "  roll=" << formatDegrees(command.standing_roll_offset_rad, 2)
               << " deg"
               << "  debug_log_request=" << command.standing_mpc_debug_log_request
+              << "  mode_toggle_request=" << command.locomotion_mode_toggle_request
               << '\n';
 }
 
 void printActiveControls(const bool standingControls) {
     if (standingControls) {
         std::cout << "[KeyboardCommand] standing controls active: up/down z_dot, "
-                  << "i/k pitch, j/l roll, Shift+L log, space reset\n";
+                  << "i/k pitch, j/l roll, t toggle stand/walk, Shift+L log, "
+                  << "space reset\n";
         return;
     }
 
     std::cout << "[KeyboardCommand] walking controls active: w/s x_dot, a/d y_dot, "
-              << "q/e psi_dot, up/down z_dot, i/k pitch, j/l roll, Shift+L log, "
-              << "space reset\n";
+              << "q/e psi_dot, up/down z_dot, i/k pitch, j/l roll, t toggle stand/walk, "
+              << "Shift+L log, space reset\n";
 }
 
 void logLimitReached(const char* axisName,
@@ -327,14 +330,32 @@ void KeyboardCommand::applyKey(char key) {
         return;
     }
 
+    if (key == 't' || key == 'T') {
+        std::lock_guard<std::mutex> lock(_commandMutex);
+        const unsigned long long debugRequestCount = _userCommand.standing_mpc_debug_log_request;
+        const unsigned long long requestCount = _userCommand.locomotion_mode_toggle_request;
+        _userCommand = UserCommand{};
+        _userCommand.standing_mpc_debug_log_request = debugRequestCount;
+        _userCommand.locomotion_mode_toggle_request = requestCount + 1;
+        sanitizeCommand(_userCommand);
+        printCommand(_userCommand, _standingControls.load());
+        std::cout << "[KeyboardCommand] locomotion mode toggle request #"
+                  << _userCommand.locomotion_mode_toggle_request
+                  << " queued; motion command cleared\n";
+        return;
+    }
+
     const char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
     const bool standingControls = _standingControls.load();
 
     if (key == ' ') {
         std::lock_guard<std::mutex> lock(_commandMutex);
         const unsigned long long requestCount = _userCommand.standing_mpc_debug_log_request;
+        const unsigned long long toggleRequestCount =
+            _userCommand.locomotion_mode_toggle_request;
         _userCommand = UserCommand{};
         _userCommand.standing_mpc_debug_log_request = requestCount;
+        _userCommand.locomotion_mode_toggle_request = toggleRequestCount;
         sanitizeCommand(_userCommand);
         printCommand(_userCommand, standingControls);
         return;

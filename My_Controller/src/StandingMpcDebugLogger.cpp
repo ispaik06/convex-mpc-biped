@@ -91,6 +91,7 @@ std::string debugLogPrefixForMode(const LocomotionMode mode) {
         case LocomotionMode::Walking:
             return "walking_mpc_debug_";
         case LocomotionMode::Standing:
+        case LocomotionMode::Interactive:
             return "standing_mpc_debug_";
     }
     return "mpc_debug_";
@@ -101,6 +102,7 @@ std::string debugLogDirectoryNameForMode(const LocomotionMode mode) {
         case LocomotionMode::Walking:
             return "walking_mpc";
         case LocomotionMode::Standing:
+        case LocomotionMode::Interactive:
             return "standing_mpc";
     }
     return "mpc";
@@ -304,6 +306,8 @@ std::string locomotionModeName(const LocomotionMode mode) {
             return "walking";
         case LocomotionMode::Standing:
             return "standing";
+        case LocomotionMode::Interactive:
+            return "interactive";
     }
     return "unknown";
 }
@@ -316,6 +320,8 @@ std::string locomotionStateName(const LocomotionState state) {
             return "standing";
         case LocomotionState::Walking:
             return "walking";
+        case LocomotionState::BrakingToStanding:
+            return "braking_to_standing";
     }
     return "unknown";
 }
@@ -377,6 +383,7 @@ json userCommandJson(const UserCommand& command) {
     out["standing_roll_offset_rad"] = scalarToJson(command.standing_roll_offset_rad);
     out["standing_pitch_offset_rad"] = scalarToJson(command.standing_pitch_offset_rad);
     out["standing_mpc_debug_log_request"] = command.standing_mpc_debug_log_request;
+    out["locomotion_mode_toggle_request"] = command.locomotion_mode_toggle_request;
     return out;
 }
 
@@ -506,6 +513,14 @@ json controllerConfigJson(const ControllerConfig& config,
     json startup = json::object();
     startup["post_init_standing_settle_time"] = config.startup.postInitStandingSettleTime;
     root["startup"] = std::move(startup);
+
+    json transition = json::object();
+    transition["braking_settle_speed_threshold"] =
+        config.transition.brakingSettleSpeedThreshold;
+    transition["braking_settle_hold_ticks"] = config.transition.brakingSettleHoldTicks;
+    transition["braking_timeout_seconds"] = config.transition.brakingTimeoutSeconds;
+    transition["braking_touchdown_count"] = config.transition.brakingTouchdownCount;
+    root["locomotion_transition"] = std::move(transition);
 
     json initialPose = json::object();
     if (config.initialPose.hasBasePose) {

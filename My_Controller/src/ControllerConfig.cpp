@@ -126,9 +126,13 @@ LocomotionMode parseLocomotionMode(const YAML::Node& node, const char* keyName) 
     if (mode == "standing" || mode == "stand") {
         return LocomotionMode::Standing;
     }
+    if (mode == "interactive" || mode == "general") {
+        return LocomotionMode::Interactive;
+    }
 
     throw std::runtime_error(std::string("Invalid ") + keyName +
-                             ". Expected one of: walking, walk, standing, stand");
+                             ". Expected one of: walking, walk, standing, stand, "
+                             "interactive, general");
 }
 
 FootEndEffectorSource parseFootEndEffectorSource(const YAML::Node& node) {
@@ -353,6 +357,20 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                             params.startup.postInitStandingSettleTime);
     }
 
+    const YAML::Node transition = config["locomotion_transition"];
+    readScalarIfPresent(transition,
+                        "braking_settle_speed_threshold",
+                        params.transition.brakingSettleSpeedThreshold);
+    readScalarIfPresent(transition,
+                        "braking_settle_hold_ticks",
+                        params.transition.brakingSettleHoldTicks);
+    readScalarIfPresent(transition,
+                        "braking_timeout_seconds",
+                        params.transition.brakingTimeoutSeconds);
+    readScalarIfPresent(transition,
+                        "braking_touchdown_count",
+                        params.transition.brakingTouchdownCount);
+
     const YAML::Node initialPose = config["initial_pose"];
     readVectorIfPresent(initialPose, "leg_joint_offsets", params.initialPose.legJointOffsets);
     readVectorIfPresent(initialPose, "arm_joint_offsets", params.initialPose.armJointOffsets);
@@ -383,6 +401,24 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !std::isfinite(params.startup.postInitStandingSettleTime)) {
         throw std::runtime_error(
             "startup.post_init_standing_settle_time must be finite and non-negative");
+    }
+    if (!std::isfinite(params.transition.brakingSettleSpeedThreshold) ||
+        params.transition.brakingSettleSpeedThreshold < 0.0) {
+        throw std::runtime_error(
+            "locomotion_transition.braking_settle_speed_threshold must be finite and non-negative");
+    }
+    if (params.transition.brakingSettleHoldTicks < 0) {
+        throw std::runtime_error(
+            "locomotion_transition.braking_settle_hold_ticks must be non-negative");
+    }
+    if (!std::isfinite(params.transition.brakingTimeoutSeconds) ||
+        params.transition.brakingTimeoutSeconds < 0.0) {
+        throw std::runtime_error(
+            "locomotion_transition.braking_timeout_seconds must be finite and non-negative");
+    }
+    if (params.transition.brakingTouchdownCount < 0) {
+        throw std::runtime_error(
+            "locomotion_transition.braking_touchdown_count must be non-negative");
     }
 
     const YAML::Node gaitSwingHoldTest = config["gait_swing_hold_test"];
@@ -544,11 +580,11 @@ UserCommand clampUserCommand(const UserCommand& command) {
 
 namespace {
 const StateWeightMat& stateWeightForMode(const MPCParameters& mpc, const LocomotionMode mode) {
-    return mode == LocomotionMode::Standing ? mpc.standingStateWeight : mpc.walkingStateWeight;
+    return mode == LocomotionMode::Walking ? mpc.walkingStateWeight : mpc.standingStateWeight;
 }
 
 const InputWeightMat& inputWeightForMode(const MPCParameters& mpc, const LocomotionMode mode) {
-    return mode == LocomotionMode::Standing ? mpc.standingInputWeight : mpc.walkingInputWeight;
+    return mode == LocomotionMode::Walking ? mpc.walkingInputWeight : mpc.standingInputWeight;
 }
 }  // namespace
 
@@ -604,9 +640,8 @@ LocomotionMode requestedLocomotionMode() {
 
 ContactWrenchModel contactWrenchModelForMode(const MPCParameters& mpc,
                                              const LocomotionMode mode) {
-    return mode == LocomotionMode::Standing
-               ? mpc.standingContactWrenchModel
-               : mpc.walkingContactWrenchModel;
+    return mode == LocomotionMode::Walking ? mpc.walkingContactWrenchModel
+                                           : mpc.standingContactWrenchModel;
 }
 
 ContactWrenchModel contactWrenchModel(const LocomotionMode mode) {
