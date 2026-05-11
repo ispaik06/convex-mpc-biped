@@ -170,6 +170,17 @@ The main executable takes two arguments:
 ./build/apps/main <robot> <viewer>
 ```
 
+For a single launcher that can start the controller and an optional Python dashboard, use:
+
+```bash
+./scripts/launch_convexmpc.sh <robot> <viewer>
+```
+
+When `dashboard/app.py` is present, the launcher starts it automatically on the first free
+dashboard port at or above `8001`, then opens the browser unless
+`CONVEXMPC_DASHBOARD_OPEN_BROWSER=0` is set. If you need a specific port, set
+`CONVEXMPC_DASHBOARD_PORT`.
+
 Robot selection:
 
 - `m`: MIT Humanoid

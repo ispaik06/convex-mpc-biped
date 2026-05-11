@@ -10,6 +10,7 @@
 
 #include "DebugVisualization.h"
 #include "StateEstimator/StateEstimator.h"
+#include "SharedMemoryPublisher.h"
 #include "LegSwingDynamicsProvider.h"
 #include "MujocoRobotBindings.h"
 #include "main_thread.h"
@@ -33,6 +34,8 @@ public:
 		_robotRunner = std::make_unique<RobotRunner>(ctrl);
 	}
 
+	~SimulationRunner();
+
 	void init();
 	void run();
 	void runRobotControl();
@@ -43,6 +46,7 @@ private:
 	void applyFixedJointCommands();
 	void applyRobotCommand();
 	void updateDebugVisualization();
+	bool maybeStartKeyboardCommand(double simTime);
 	void writeHeadlessTelemetry();
 
 	struct DebugMocapBinding {
@@ -61,8 +65,11 @@ private:
 	RobotCommand<double> _robotCommand;
 	std::unique_ptr<RobotRunner> _robotRunner = nullptr;
 	std::unique_ptr<LegSwingDynamicsProvider> _legSwingDynamicsProvider = nullptr;
+	std::unique_ptr<DashboardSharedMemoryPublisher> _dashboardPublisher = nullptr;
 	std::vector<DebugMocapBinding> _debugMocapBindings;
 	bool _firstControllerRun = true;
+	bool _keyboardCommandStartAttempted{false};
+	double _keyboardInputEnableTime{0.0};
 	std::string _modelPath;
 	FootEndEffectorSource _footEndEffectorSource{FootEndEffectorSource::Site};
 	u64 _iterations = 0;

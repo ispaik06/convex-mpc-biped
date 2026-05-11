@@ -18,6 +18,7 @@
 #include "MujocoCheaterStateReader.h"
 #include "RobotConfig.h"
 #include "SimulationConfig.h"
+#include "SharedMemoryPublisher.h"
 #include "SimulationRunner.h"
 #include "Utilities/MatrixUtils.h"
 #include "Utilities/Timing.h"
@@ -42,6 +43,57 @@ Vec2<double> rollPitchFromQuaternion(Quat<double> quat) {
 	const double sinPitch = std::clamp(2.0 * (w * y - z * x), -1.0, 1.0);
 	rollPitch[1] = std::asin(sinPitch);
 	return rollPitch;
+}
+
+Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& state,
+                                    const RobotParams<double>& params) {
+	return Rz(state.psi) * params.bodyComLocation;
+}
+
+Vec3<double> reducedBodyComWorld(const StateEstimate<double>& state,
+                                 const RobotParams<double>& params) {
+	return state.torsoPos_W + reducedBodyOffsetWorld(state, params);
+}
+
+Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& state,
+                                         const RobotParams<double>& params) {
+	const Vec3<double> bodyBOffset_W = reducedBodyOffsetWorld(state, params);
+	return state.torsoLinVel_W + state.torsoAngVel_W.cross(bodyBOffset_W);
+}
+
+std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateForDashboard(
+	const StateEstimate<double>& state,
+	const RobotParams<double>& params) {
+	const Vec2<double> rollPitch = rollPitchFromQuaternion(state.torsoQuat_W);
+	const Vec3<double> comWorld = reducedBodyComWorld(state, params);
+	const Vec3<double> comVelocityWorld = reducedBodyComVelocityWorld(state, params);
+
+	return {
+		rollPitch[0],
+		rollPitch[1],
+		state.psi,
+		comWorld.x(),
+		comWorld.y(),
+		comWorld.z(),
+		state.torsoAngVel_W.x(),
+		state.torsoAngVel_W.y(),
+		state.torsoAngVel_W.z(),
+		comVelocityWorld.x(),
+		comVelocityWorld.y(),
+		comVelocityWorld.z(),
+	};
+}
+
+std::string robotTypeName(const RobotType type) {
+	switch (type) {
+		case RobotType::MIT_HUMANOID:
+			return "MIT Humanoid";
+		case RobotType::UNITREE_G1:
+			return "Unitree G1";
+		case RobotType::UNITREE_H1:
+			return "Unitree H1";
+	}
+	return "Unknown";
 }
 
 int legControlModeCode(const LegControlMode mode) {
@@ -107,8 +159,14 @@ void applyMarkerColor(mjModel* model, const int bodyId, const DebugVizMarker<dou
 
 }  // namespace
 
+SimulationRunner::~SimulationRunner() = default;
+
 void SimulationRunner::init() {
 	setActiveRobotType(_robot);
+	if (_dashboardPublisher == nullptr) {
+		_dashboardPublisher =
+			std::make_unique<DashboardSharedMemoryPublisher>(robotTypeName(_robot));
+	}
 	const auto& controllerConfig = getControllerConfig(_robot);
 	_keyboardCommand.setWalkingLimits(controllerConfig.userCommandFilter.xDotMax,
 	                                  controllerConfig.userCommandFilter.yDotMax,
@@ -135,6 +193,8 @@ void SimulationRunner::init() {
 
 	configureSimulationModel(model);
 	mj_forward(model, data);
+	_keyboardInputEnableTime =
+		data->time + std::max(0.0, controllerConfig.startup.postInitStandingSettleTime);
 	_debugMocapBindings.clear();
 
 	std::cout << "Loaded MuJoCo model: " << _modelPath << '\n';
@@ -144,6 +204,7 @@ void SimulationRunner::init() {
 }
 
 void SimulationRunner::run() {
+	_keyboardCommandStartAttempted = false;
 	if (_headless) {
 		// Intentionally runs until the user interrupts it. Headless auto-stop
 		// criteria are deferred because this target is used for manual checking.
@@ -251,8 +312,6 @@ void SimulationRunner::runRobotControl() {
 		const bool standingControls =
 			standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest());
 		_keyboardCommand.setStandingControls(standingControls);
-		_keyboardCommand.start();
-		_keyboardCommand.setStandingControls(standingControls, true);
 		_firstControllerRun = false;
 
 		std::cout << "[SimulationRunner] MuJoCo physics timestep (model->opt.timestep): "
@@ -263,10 +322,17 @@ void SimulationRunner::runRobotControl() {
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
+	if (_dashboardPublisher != nullptr) {
+		_dashboardPublisher->publish(_iterations,
+		                             _stateEstimate.time,
+		                             reducedBodyStateForDashboard(_stateEstimate, _params));
+	}
+	const bool keyboardStartedNow = maybeStartKeyboardCommand(_stateEstimate.time);
 	_userCommand = _keyboardCommand.getUserCommand();
 	_robotRunner->prepareController(_stateEstimate);
-	_keyboardCommand.setStandingControls(
-		standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest()));
+	const bool standingControls =
+		standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest());
+	_keyboardCommand.setStandingControls(standingControls, keyboardStartedNow);
 	_legSwingDynamicsProvider->update(_stateEstimate, _robotRunner->legDynamicsRequest());
 
 	// if ((_iterations % 50) == 0) {
@@ -279,6 +345,15 @@ void SimulationRunner::runRobotControl() {
 	updateDebugVisualization();
 	applyRobotCommand();
 	writeHeadlessTelemetry();
+}
+
+bool SimulationRunner::maybeStartKeyboardCommand(const double simTime) {
+	if (_keyboardCommandStartAttempted || simTime < _keyboardInputEnableTime) {
+		return false;
+	}
+
+	_keyboardCommandStartAttempted = true;
+	return _keyboardCommand.start();
 }
 
 void SimulationRunner::writeHeadlessTelemetry() {
@@ -371,8 +446,7 @@ void SimulationRunner::writeHeadlessTelemetry() {
 		return;
 	}
 
-	const Vec3<double> com_W =
-		_stateEstimate.torsoPos_W + Rz(_stateEstimate.psi) * _params.bodyComLocation;
+	const Vec3<double> com_W = reducedBodyComWorld(_stateEstimate, _params);
 	const Vec2<double> rollPitch = rollPitchFromQuaternion(_stateEstimate.torsoQuat_W);
 	const double totalActualFz =
 		_stateEstimate.legs[0].contactForce_W.z() + _stateEstimate.legs[1].contactForce_W.z();
