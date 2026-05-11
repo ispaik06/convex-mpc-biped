@@ -130,6 +130,10 @@ $$
 
 This is intentionally a small correction. It adjusts the swing-foot heading, not the touchdown position.
 
+> [!NOTE]
+> The swing-foot yaw PD uses `swing.yaw_kp` and `swing.yaw_kd`.
+> Stance yaw hold uses separate gains, `swing.stance_yaw_kp` and `swing.stance_yaw_kd`, and lives in the stance wrench feedforward path rather than the touchdown planner.
+
 ## 6. Translation Yaw
 
 Touchdown position uses a small yaw-averaging approximation:

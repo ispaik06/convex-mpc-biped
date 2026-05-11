@@ -24,7 +24,7 @@ mpc:
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [5000,  8000,  100,   400000,  209300,  30900,     10,     10,     10,     700,    700,    100,   1 ]
+    state_weight_diag: [50000,  8000,  500,   400000,  909300,  700900,     10,     10,     10,     700,    700,    100,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
     input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
@@ -38,11 +38,12 @@ mpc:
 swing:
   natural_frequency: [111.0, 111.0, 110.0]
   kd_diag: [20.0, 20.0, 25.0]
-  height: 0.055
+  height: 0.06
   min_remaining_time: 0.001
-  body_velocity_half_stance_offset: 0.2
+  body_velocity_half_stance_offset: 0.3
   swing_foot_yaw_lead_scale: 1.0
-  turn_tangential_lead_scale: 0.75
+  enable_stance_foot_yaw_hold: true
+  turn_tangential_lead_scale: 1.0
   nominal_foot_offsets_B:
     - [0.0, 0.075999602, 0.0] # [0.0, 0.075999602, 0.0]
     - [0.0, -0.075999602, 0.0]
@@ -55,8 +56,10 @@ swing:
   stop_braking_latch_clear_ticks: 5
   pitch_kp: 300.0
   pitch_kd: 18.0
-  yaw_kp: 165.0
+  yaw_kp: 305.0
   yaw_kd: 18.0
+  stance_yaw_kp: 305.0
+  stance_yaw_kd: 18.0
 
 user_command_filter:
   x_dot_tau: 0.90

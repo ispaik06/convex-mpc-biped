@@ -253,6 +253,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(swing,
                         "turn_tangential_lead_scale",
                         params.swing.turnTangentialLeadScale);
+    readScalarIfPresent(swing,
+                        "enable_stance_foot_yaw_hold",
+                        params.swing.enableStanceFootYawHold);
     if (swing && swing["nominal_foot_offsets_B"]) {
         params.swing.nominalFootOffsets_B =
             readVec3Vector(swing["nominal_foot_offsets_B"], "swing.nominal_foot_offsets_B");
@@ -274,6 +277,8 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
     readScalarIfPresent(swing, "yaw_kd", params.swing.yawKd);
+    readScalarIfPresent(swing, "stance_yaw_kp", params.swing.stanceYawKp);
+    readScalarIfPresent(swing, "stance_yaw_kd", params.swing.stanceYawKd);
 
     const YAML::Node userCommandFilter = config["user_command_filter"];
     readScalarIfPresent(userCommandFilter, "x_dot_tau", params.userCommandFilter.xDotTau);
@@ -417,6 +422,8 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.psiDotMax) ||
         !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
         !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
+        !std::isfinite(params.swing.stanceYawKp) ||
+        !std::isfinite(params.swing.stanceYawKd) ||
         params.swing.bodyVelocityHalfStanceOffset < 0.0 ||
         params.swing.swingFootYawLeadScale < 0.0 ||
         params.swing.turnTangentialLeadScale < 0.0 ||
@@ -431,22 +438,23 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.userCommandFilter.standingRollOffsetTau < 0.0 ||
         params.userCommandFilter.standingPitchOffsetTau < 0.0 ||
         params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0 ||
-        params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
+        params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0 ||
+        params.swing.stanceYawKp < 0.0 || params.swing.stanceYawKd < 0.0) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
-            "swing.turn_tangential_lead_scale, "
-            "swing.nominal_foot_offsets_B, swing.stop_braking_offset_B, "
-            "swing.stop_capture_point_gain, swing.stop_capture_point_max_offset, "
-            "swing.stop_velocity_deadband, swing.stop_braking_latch_clear_ticks, "
+            "swing.turn_tangential_lead_scale, swing.nominal_foot_offsets_B, "
+            "swing.stop_braking_offset_B, swing.stop_capture_point_gain, "
+            "swing.stop_capture_point_max_offset, swing.stop_velocity_deadband, "
+            "swing.stop_braking_latch_clear_ticks, swing.pitch_kp, swing.pitch_kd, "
+            "swing.yaw_kp, swing.yaw_kd, swing.stance_yaw_kp, swing.stance_yaw_kd, "
             "user_command_filter.x_dot_tau, "
             "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
             "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "
             "user_command_filter.standing_pitch_offset_tau must be finite; "
             "user_command_filter.x_dot_max, user_command_filter.y_dot_max, and "
             "user_command_filter.psi_dot_max must be finite or positive infinity; "
-            "offsets, turn gains, time constants, and stop-braking gains must be non-negative; "
-            "stop_braking_latch_clear_ticks must be positive; attitude gains must be "
-            "non-negative");
+            "offsets, turn gains, time constants, stop-braking gains, and attitude gains "
+            "must be non-negative; stop_braking_latch_clear_ticks must be positive");
     }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
         !std::isfinite(params.contactManager.contactForceOffThreshold) ||

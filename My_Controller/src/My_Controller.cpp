@@ -193,6 +193,39 @@ DVec<double> computeSwingAttitudeLevelTorque(const RobotLegState<double>& legSta
     return torque;
 }
 
+Vec3<double> computeStanceYawHoldMomentWorld(const RobotLegState<double>& legState,
+                                             const LegControllerData<double>& legData,
+                                             const double desiredYaw_W,
+                                             const double yawKp,
+                                             const double yawKd) {
+    if (!(yawKp > 0.0 || yawKd > 0.0) || !std::isfinite(desiredYaw_W)) {
+        return Vec3<double>::Zero();
+    }
+    if (!legState.hasFootFrame) {
+        return Vec3<double>::Zero();
+    }
+    if (legData.Jw_W.rows() != 3 || legData.Jw_W.cols() != legData.qd.size() ||
+        legData.qd.size() == 0) {
+        return Vec3<double>::Zero();
+    }
+
+    Vec3<double> footX_W = legState.R_WF.col(0);
+    const Vec3<double> worldUp = Vec3<double>::UnitZ();
+    Vec3<double> footXProj_W = footX_W - footX_W.dot(worldUp) * worldUp;
+    if (!footXProj_W.allFinite() || footXProj_W.norm() <= 1e-9) {
+        return Vec3<double>::Zero();
+    }
+    footXProj_W.normalize();
+
+    const Vec3<double> desiredX_W(std::cos(desiredYaw_W), std::sin(desiredYaw_W), 0.0);
+    const double sinYawError = worldUp.dot(footXProj_W.cross(desiredX_W));
+    const double cosYawError = footXProj_W.dot(desiredX_W);
+    const double yawError = std::atan2(sinYawError, cosYawError);
+    const Vec3<double> omegaFoot_W = legData.Jw_W * legData.qd;
+    const double yawRate = worldUp.dot(omegaFoot_W);
+    return (yawKp * yawError - yawKd * yawRate) * worldUp;
+}
+
 const char* locomotionModeName(const LocomotionMode mode) {
     switch (mode) {
         case LocomotionMode::Walking:
@@ -1318,6 +1351,18 @@ void MyController::writeLegCommands() {
                 default:
                     throw std::runtime_error(
                         "MyController only supports left/right stance wrench mapping");
+            }
+
+            if (getControllerConfig().swing.enableStanceFootYawHold && contactRampAlpha > 0.0) {
+                const auto& legState = _stateEstimate->legs[leg];
+                const auto& legData = _legController->datas[leg];
+                const Vec3<double> yawHoldMoment_W = computeStanceYawHoldMomentWorld(
+                    legState,
+                    legData,
+                    _legRuntime[leg].touchdownYaw_W,
+                    getControllerConfig().swing.stanceYawKp,
+                    getControllerConfig().swing.stanceYawKd);
+                command.momentFeedForward_W.z() += contactRampAlpha * yawHoldMoment_W.z();
             }
             continue;
         }

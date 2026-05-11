@@ -60,6 +60,7 @@ struct SwingParameters {
     double bodyVelocityHalfStanceOffset{0.0};
     double swingFootYawLeadScale{1.0};
     double turnTangentialLeadScale{0.0};
+    bool enableStanceFootYawHold{false};
     std::vector<Vec3<double>> nominalFootOffsets_B;
     bool hasStopBrakingOffset{false};
     Vec3<double> stopBrakingOffset_B = Vec3<double>::Zero();
@@ -71,6 +72,8 @@ struct SwingParameters {
     double pitchKd{0.0};
     double yawKp{0.0};
     double yawKd{0.0};
+    double stanceYawKp{0.0};
+    double stanceYawKd{0.0};
 };
 
 struct UserCommandFilterParameters {

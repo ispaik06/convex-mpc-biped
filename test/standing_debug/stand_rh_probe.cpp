@@ -586,6 +586,14 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.swing.swingFootYawLeadScale =
                 swing.at("touchdown_yaw_lead_scale").get<double>();
         }
+        if (swing.contains("turn_tangential_lead_scale")) {
+            out.swing.turnTangentialLeadScale =
+                swing.at("turn_tangential_lead_scale").get<double>();
+        }
+        if (swing.contains("enable_stance_foot_yaw_hold")) {
+            out.swing.enableStanceFootYawHold =
+                swing.at("enable_stance_foot_yaw_hold").get<bool>();
+        }
         if (swing.contains("nominal_foot_offsets_B")) {
             out.swing.nominalFootOffsets_B =
                 readVec3VectorFromJson(swing.at("nominal_foot_offsets_B"),
@@ -624,6 +632,12 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         }
         if (swing.contains("yaw_kd")) {
             out.swing.yawKd = swing.at("yaw_kd").get<double>();
+        }
+        if (swing.contains("stance_yaw_kp")) {
+            out.swing.stanceYawKp = swing.at("stance_yaw_kp").get<double>();
+        }
+        if (swing.contains("stance_yaw_kd")) {
+            out.swing.stanceYawKd = swing.at("stance_yaw_kd").get<double>();
         }
     }
 

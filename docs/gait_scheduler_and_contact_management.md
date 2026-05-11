@@ -320,6 +320,40 @@ $$
 
 When the contact is inactive, the scale is zero.
 
+### 5.6 Stance Foot Yaw Hold
+
+When `swing.enable_stance_foot_yaw_hold` is set, the controller adds a small yaw-hold moment in
+the stance wrench feedforward path.
+
+Let the projected stance-foot heading be `\psi_{\text{foot}}` and the desired stance yaw be
+`\psi_{\text{td}}`. The hold moment is
+
+$$
+M_{z,\text{hold}}^W =
+\alpha_{\text{ramp}}
+\left(
+k_{p,\text{stance}} \, e_\psi - k_{d,\text{stance}} \, \dot{\psi}_{\text{foot}}
+\right)
+$$
+
+with
+
+$$
+e_\psi = \operatorname{wrap}\!\left(\psi_{\text{td}} - \psi_{\text{foot}}\right).
+$$
+
+The important part is the placement:
+
+- it is applied in `MyController::writeLegCommands()`,
+- it only affects `momentFeedForward_W.z()`,
+- it is scaled by `contactRampAlpha`,
+- it is **not** an MPC constraint.
+
+The swing and stance yaw gains are intentionally separate:
+
+- `swing.yaw_kp` / `swing.yaw_kd` track yaw while the foot is swinging,
+- `swing.stance_yaw_kp` / `swing.stance_yaw_kd` hold yaw while the foot is in stance.
+
 ## 6. How ContactManager Modifies the Controller Inputs
 
 The controller consumes the contact manager in two ways.
@@ -406,6 +440,7 @@ This separation is deliberate:
 - The measured-contact hysteresis, early/late contact logic, search-mode target update, and `contactRampAlpha` evolution are implemented in [ContactManager::updateEstimatedContact](../My_Controller/src/ContactManager.cpp#L89) and [ContactManager::update](../My_Controller/src/ContactManager.cpp#L200).
 - The managed foot targets and near-term horizon override are produced by [ContactManager::managedFootPositions](../My_Controller/src/ContactManager.cpp#L394) and [ContactManager::buildHorizonOverride](../My_Controller/src/ContactManager.cpp#L416).
 - The main controller wires the override into the MPC in [MyController::maybeUpdateMpc](../My_Controller/src/My_Controller.cpp#L937), and it uses `contactRampAlpha` again when blending stance wrench feedforward in [MyController::writeLegCommands](../My_Controller/src/My_Controller.cpp#L1282) via [MyController::contactRampAlphaForSide](../My_Controller/src/My_Controller.cpp#L767).
+- The stance yaw-hold helper and its separate gains are implemented in [computeStanceYawHoldMomentWorld](../My_Controller/src/My_Controller.cpp#L196), [MyController::writeLegCommands](../My_Controller/src/My_Controller.cpp#L1356), and [ControllerConfig.h](../My_Controller/include/MyController/ControllerConfig.h#L75).
 
 ## 10. Summary
 

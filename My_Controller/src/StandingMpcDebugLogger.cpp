@@ -434,6 +434,7 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
     swing["swing_foot_yaw_lead_scale"] = config.swing.swingFootYawLeadScale;
     swing["turn_tangential_lead_scale"] = config.swing.turnTangentialLeadScale;
+    swing["enable_stance_foot_yaw_hold"] = config.swing.enableStanceFootYawHold;
     if (!config.swing.nominalFootOffsets_B.empty()) {
         swing["nominal_foot_offsets_B"] = vec3VectorToJson(config.swing.nominalFootOffsets_B);
     }
@@ -448,6 +449,8 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;
     swing["yaw_kd"] = config.swing.yawKd;
+    swing["stance_yaw_kp"] = config.swing.stanceYawKp;
+    swing["stance_yaw_kd"] = config.swing.stanceYawKd;
     root["swing"] = std::move(swing);
 
     json userCommandFilter = json::object();
