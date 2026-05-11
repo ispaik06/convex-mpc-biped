@@ -42,6 +42,7 @@ swing:
   min_remaining_time: 0.001
   body_velocity_half_stance_offset: 0.2
   swing_foot_yaw_lead_scale: 1.0
+  turn_tangential_lead_scale: 0.75
   nominal_foot_offsets_B:
     - [0.0, 0.075999602, 0.0] # [0.0, 0.075999602, 0.0]
     - [0.0, -0.075999602, 0.0]

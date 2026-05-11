@@ -37,6 +37,7 @@ private:
     Vec2<double> currentPlanarCommandBodyFrame() const;
     double bodyYawTargetWorld() const;
     double touchdownPreviewTime() const;
+    Vec3<double> touchdownOffsetBodyFrame(std::size_t legIndex, double previewTime) const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
     bool shouldApplyBrakingOffset(const Vec2<double>& currentPlanarCommand) const;
     Vec2<double> computeStopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
@@ -44,9 +45,9 @@ private:
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex,
                                                             const Vec2<double>& currentPlanarCommand,
                                                             double* touchdownYaw_W_out = nullptr) const;
-    void recordSequentialTouchdown(std::size_t legIndex,
-                                   const Vec3<double>& target_W,
-                                   double touchdownYaw_W);
+    void recordSequentialTouchdown(const Vec3<double>& target_W,
+                                   double touchdownYaw_W,
+                                   const Vec3<double>& touchdownOffset_B);
 
     GaitScheduler* _gaitScheduler = nullptr;
     HorizonClock* _horizonClock = nullptr;

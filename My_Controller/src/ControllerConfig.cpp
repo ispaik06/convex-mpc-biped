@@ -250,6 +250,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                             "touchdown_yaw_lead_scale",
                             params.swing.swingFootYawLeadScale);
     }
+    readScalarIfPresent(swing,
+                        "turn_tangential_lead_scale",
+                        params.swing.turnTangentialLeadScale);
     if (swing && swing["nominal_foot_offsets_B"]) {
         params.swing.nominalFootOffsets_B =
             readVec3Vector(swing["nominal_foot_offsets_B"], "swing.nominal_foot_offsets_B");
@@ -394,6 +397,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     }
     if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
         !std::isfinite(params.swing.swingFootYawLeadScale) ||
+        !std::isfinite(params.swing.turnTangentialLeadScale) ||
         (!params.swing.nominalFootOffsets_B.empty() &&
          !std::all_of(params.swing.nominalFootOffsets_B.begin(),
                       params.swing.nominalFootOffsets_B.end(),
@@ -415,6 +419,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
         params.swing.bodyVelocityHalfStanceOffset < 0.0 ||
         params.swing.swingFootYawLeadScale < 0.0 ||
+        params.swing.turnTangentialLeadScale < 0.0 ||
         params.swing.stopCapturePointGain < 0.0 ||
         params.swing.stopCapturePointMaxOffset < 0.0 ||
         params.swing.stopVelocityDeadband < 0.0 ||
@@ -429,6 +434,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0) {
         throw std::runtime_error(
             "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
+            "swing.turn_tangential_lead_scale, "
             "swing.nominal_foot_offsets_B, swing.stop_braking_offset_B, "
             "swing.stop_capture_point_gain, swing.stop_capture_point_max_offset, "
             "swing.stop_velocity_deadband, swing.stop_braking_latch_clear_ticks, "
@@ -438,7 +444,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "user_command_filter.standing_pitch_offset_tau must be finite; "
             "user_command_filter.x_dot_max, user_command_filter.y_dot_max, and "
             "user_command_filter.psi_dot_max must be finite or positive infinity; "
-            "offsets, time constants, and stop-braking gains must be non-negative; "
+            "offsets, turn gains, time constants, and stop-braking gains must be non-negative; "
             "stop_braking_latch_clear_ticks must be positive; attitude gains must be "
             "non-negative");
     }

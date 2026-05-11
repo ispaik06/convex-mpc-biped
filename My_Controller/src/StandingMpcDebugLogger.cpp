@@ -433,6 +433,7 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["min_remaining_time"] = config.swing.minRemainingTime;
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
     swing["swing_foot_yaw_lead_scale"] = config.swing.swingFootYawLeadScale;
+    swing["turn_tangential_lead_scale"] = config.swing.turnTangentialLeadScale;
     if (!config.swing.nominalFootOffsets_B.empty()) {
         swing["nominal_foot_offsets_B"] = vec3VectorToJson(config.swing.nominalFootOffsets_B);
     }

@@ -59,6 +59,7 @@ struct SwingParameters {
     double minRemainingTime{1e-3};
     double bodyVelocityHalfStanceOffset{0.0};
     double swingFootYawLeadScale{1.0};
+    double turnTangentialLeadScale{0.0};
     std::vector<Vec3<double>> nominalFootOffsets_B;
     bool hasStopBrakingOffset{false};
     Vec3<double> stopBrakingOffset_B = Vec3<double>::Zero();

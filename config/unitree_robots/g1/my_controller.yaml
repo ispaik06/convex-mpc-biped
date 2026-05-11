@@ -40,6 +40,7 @@ swing:
   min_remaining_time: 0.001
   body_velocity_half_stance_offset: 0.0
   swing_foot_yaw_lead_scale: 1.0
+  turn_tangential_lead_scale: 0.0
   stop_capture_point_gain: 1.0
   stop_capture_point_max_offset: 0.20
   stop_velocity_deadband: 0.02
