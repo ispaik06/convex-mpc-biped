@@ -137,13 +137,13 @@ Eigen::SparseMatrix<c_float> makeRowLevelConstraintPattern(const int steps) {
 
     std::vector<Eigen::Triplet<c_float>> triplets;
 
-    // Current GaitScheduler pattern:
+    // Yaw-rotated GaitScheduler pattern:
     //
     // Per step:
-    //   C: 44 entries
-    //   D: 16 entries
-    //   total: 60 entries
-    triplets.reserve(static_cast<std::size_t>(steps) * 60);
+    // C: 60 entries
+    // D: 16 entries
+    // total: 76 entries
+    triplets.reserve(static_cast<std::size_t>(steps) * 76);
 
     auto add = [&triplets](const int row, const int col) {
         triplets.emplace_back(row, col, c_float(0));
@@ -152,18 +152,33 @@ Eigen::SparseMatrix<c_float> makeRowLevelConstraintPattern(const int steps) {
     // C_unit row-level pattern in local 6D foot wrench coordinates:
     // local foot wrench = [Fx, Fy, Fz, Mx, My, Mz]
     const std::array<std::vector<int>, 12> cUnitCols = {{
-        {0, 2},  // +Fx - mu Fz <= 0
-        {0, 2},  // -Fx - mu Fz <= 0
-        {1, 2},  // +Fy - mu Fz <= 0
-        {1, 2},  // -Fy - mu Fz <= 0
-        {2},     // +Fz <= Fz_max
-        {2},     // -Fz <= -Fz_min
-        {2, 3},  // +Mx - w Fz <= 0
-        {2, 3},  // -Mx - w Fz <= 0
-        {2, 4},  // +My - l Fz <= 0
-        {2, 4},  // -My - l Fz <= 0
-        {2, 5},  // +Mz - mu_t Fz <= 0
-        {2, 5},  // -Mz - mu_t Fz <= 0
+        // Friction pyramid in foot-local frame, rotated into world frame.
+        // Fx_F = c Fx_W + s Fy_W
+        // Fy_F = -s Fx_W + c Fy_W
+        // Therefore each tangential friction row can touch Fx_W, Fy_W, Fz_W.
+        {0, 1, 2}, // +Fx_F - mu Fz <= 0
+        {0, 1, 2}, // -Fx_F - mu Fz <= 0
+        {0, 1, 2}, // +Fy_F - mu Fz <= 0
+        {0, 1, 2}, // -Fy_F - mu Fz <= 0
+
+        // Normal force bounds.
+        // Yaw rotation does not change z.
+        {2},       // +Fz <= Fz_max
+        {2},       // -Fz <= -Fz_min
+
+        // CoP bounds in foot-local frame, rotated into world frame.
+        // Mx_F = c Mx_W + s My_W
+        // My_F = -s Mx_W + c My_W
+        // Therefore each CoP row can touch Fz_W, Mx_W, My_W.
+        {2, 3, 4}, // +Mx_F - footHalfWidth  Fz <= 0
+        {2, 3, 4}, // -Mx_F - footHalfWidth  Fz <= 0
+        {2, 3, 4}, // +My_F - footHalfLength Fz <= 0
+        {2, 3, 4}, // -My_F - footHalfLength Fz <= 0
+
+        // Torsional friction.
+        // Yaw-only rotation keeps Mz unchanged.
+        {2, 5},    // +Mz - mu_t Fz <= 0
+        {2, 5},    // -Mz - mu_t Fz <= 0
     }};
 
     // Map local 6D foot wrench columns into the 12D input block:
