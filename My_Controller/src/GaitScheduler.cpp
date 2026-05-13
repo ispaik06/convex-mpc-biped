@@ -135,7 +135,6 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
     const auto& mpc = getControllerConfig().mpc;
     const bool constrainFootRollMoment =
         contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment;
-    const bool enableCopConstraint = mpc.enableCopConstraint;
     const double resolvedLeftFootYaw_W = resolvedFootYaw(_leftFootXAxis_W, leftFootYaw_W);
     const double resolvedRightFootYaw_W = resolvedFootYaw(_rightFootXAxis_W, rightFootYaw_W);
 
@@ -173,9 +172,6 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
                                              C_left,
                                              0,
                                              6);
-            if (!enableCopConstraint) {
-                C_left.block<4, 12>(6, 0).setZero();
-            }
             Ck_bound(4) = mpc.normalForceMax;
             Ck_bound(5) = -leftNormalForceMinScale * mpc.normalForceMin;
         }
@@ -189,9 +185,6 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
                                              C_right,
                                              3,
                                              9);
-            if (!enableCopConstraint) {
-                C_right.block<4, 12>(6, 0).setZero();
-            }
             Ck_bound(16) = mpc.normalForceMax;
             Ck_bound(17) = -rightNormalForceMinScale * mpc.normalForceMin;
         }

@@ -416,7 +416,6 @@ json controllerConfigJson(const ControllerConfig& config,
     mpc["foot_half_length"] = config.mpc.footHalfLength;
     mpc["foot_half_width"] = config.mpc.footHalfWidth;
     mpc["torsional_friction_scale"] = config.mpc.torsionalFrictionScale;
-    mpc["enable_cop_constraint"] = config.mpc.enableCopConstraint;
     mpc["normal_force_max"] = config.mpc.normalForceMax;
     mpc["normal_force_min"] = config.mpc.normalForceMin;
     mpc["iterations_between_solve"] = config.mpc.iterationsBetweenSolve;

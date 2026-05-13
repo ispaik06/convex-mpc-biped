@@ -1211,10 +1211,16 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
             referenceOutput.X_ref.segment<kStateDim>(0));
 
         try {
-            gaitScheduler.buildConstraintMatrices(
-                nullptr,
-                result.leftTouchdownYaw_W,
-                result.rightTouchdownYaw_W);
+            const double leftFootYaw_W =
+                gaitScheduler.c(Side::Left, horizonClock.t0())
+                    ? footYawFromXAxis(result.leftFootXAxis_W)
+                    : result.leftTouchdownYaw_W;
+            const double rightFootYaw_W =
+                gaitScheduler.c(Side::Right, horizonClock.t0())
+                    ? footYawFromXAxis(result.rightFootXAxis_W)
+                    : result.rightTouchdownYaw_W;
+
+            gaitScheduler.buildConstraintMatrices(nullptr, leftFootYaw_W, rightFootYaw_W);
             formulation.build(referenceOutput, formulationOutput);
             mpc.updateInput(
                 gaitScheduler,

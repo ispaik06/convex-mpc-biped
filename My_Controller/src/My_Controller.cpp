@@ -164,6 +164,19 @@ double blockNormOrZero(const DMat<double>& matrix,
     return matrix.block(row, col, rows, cols).norm();
 }
 
+double footYawFromXAxisWorld(const Vec3<double>& footXAxis_W) {
+    if (!footXAxis_W.allFinite()) {
+        throw std::runtime_error("Foot x axis is non-finite");
+    }
+
+    const double planarNorm = std::hypot(footXAxis_W.x(), footXAxis_W.y());
+    if (planarNorm <= 1e-9) {
+        throw std::runtime_error("Foot x axis has no usable yaw component");
+    }
+
+    return std::atan2(footXAxis_W.y(), footXAxis_W.x());
+}
+
 double vectorValueOrNan(const DVec<double>& vector, const Eigen::Index index) {
     if (index < 0 || index >= vector.size()) {
         return std::numeric_limits<double>::quiet_NaN();
@@ -805,14 +818,14 @@ void MyController::updateSwingTrajectories(
             const double searchTrackingTime =
                 std::max(getControllerConfig().contactManager.groundSearchTrackingTime,
                          minRemainingTime);
+            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
+                currentFootPosition,
+                touchdownTarget,
+                filteredPlanarCommand_B,
+                psi_dot,
+                side,
+                fallbackYaw_W);
             if (!runtime.wasSearchMode || !runtime.swingTrajectory.active()) {
-                runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-                    currentFootPosition,
-                    touchdownTarget,
-                    filteredPlanarCommand_B,
-                    psi_dot,
-                    side,
-                    fallbackYaw_W);
                 runtime.swingTrajectory.reset(
                     currentFootPosition,
                     touchdownTarget,
@@ -831,15 +844,15 @@ void MyController::updateSwingTrajectories(
         runtime.wasSearchMode = false;
         const double timeRemaining =
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
+        runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
+            currentFootPosition,
+            touchdownTarget,
+            filteredPlanarCommand_B,
+            psi_dot,
+            side,
+            fallbackYaw_W);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
-            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-                currentFootPosition,
-                touchdownTarget,
-                filteredPlanarCommand_B,
-                psi_dot,
-                side,
-                fallbackYaw_W);
             runtime.swingTrajectory.reset(currentFootPosition,
                                           touchdownTarget,
                                           _swingHeight,
@@ -915,12 +928,21 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         {
             profiling::ScopedTimer setupTimer(_mpcSetupTime);
 
-            const auto footYawForSide = [&](const Side side) {
+            const auto mpcFootYawForSide = [&](const Side side) {
                 const int legIndex = findLegIndex(side);
                 if (legIndex < 0 || static_cast<std::size_t>(legIndex) >= _legRuntime.size()) {
                     return std::numeric_limits<double>::quiet_NaN();
                 }
-                return _legRuntime[static_cast<std::size_t>(legIndex)].touchdownYaw_W;
+                const std::size_t leg = static_cast<std::size_t>(legIndex);
+                if (activeContactForSide(side, _stateEstimate->time)) {
+                    try {
+                        return footYawFromXAxisWorld(
+                            footLocalXAxisWorld(*_stateEstimate, *_robotParams, side));
+                    } catch (const std::exception&) {
+                        return _legRuntime[leg].touchdownYaw_W;
+                    }
+                }
+                return _legRuntime[leg].touchdownYaw_W;
             };
 
             if (contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment) {
@@ -937,8 +959,8 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
                 profiling::ScopedTimer timer(_gaitConstraintTime);
                 _gaitScheduler->buildConstraintMatrices(
                     contactOverridePtr,
-                    footYawForSide(Side::Left),
-                    footYawForSide(Side::Right));
+                    mpcFootYawForSide(Side::Left),
+                    mpcFootYawForSide(Side::Right));
             }
 
             Vec13<double> referenceSeed = x0;
