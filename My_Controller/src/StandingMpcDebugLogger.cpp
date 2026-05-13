@@ -881,6 +881,9 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     json initialState = json::object();
     initialState["x0"] = vectorToJson(snapshot.x0);
     initialState["psi"] = snapshot.x0[2];
+    initialState["yaw_W_wrapped"] = snapshot.stateEstimate.yaw_W_wrapped;
+    initialState["yaw_W_unwrapped"] = snapshot.stateEstimate.yaw_W_unwrapped;
+    initialState["yawRate_W"] = snapshot.stateEstimate.yawRate_W;
     initialState["torso_pos_W"] = vectorToJson(snapshot.stateEstimate.torsoPos_W);
     initialState["torso_lin_vel_W"] = vectorToJson(snapshot.stateEstimate.torsoLinVel_W);
     initialState["torso_ang_vel_W"] = vectorToJson(snapshot.stateEstimate.torsoAngVel_W);

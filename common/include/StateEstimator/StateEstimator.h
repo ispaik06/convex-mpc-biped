@@ -15,7 +15,10 @@ struct StateEstimate {
     double time{0.0};
     Vec3<T> torsoPos_W = Vec3<T>::Zero();
     Quat<T> torsoQuat_W = Quat<T>::Identity();
-    T psi{0};
+    T psi{0};  // Legacy alias for yaw_W_unwrapped.
+    T yaw_W_wrapped{0};
+    T yaw_W_unwrapped{0};
+    T yawRate_W{0};
     Vec3<T> torsoLinVel_W = Vec3<T>::Zero();
     Vec3<T> torsoAngVel_W = Vec3<T>::Zero();
     Vec3<T> torsoLinAcc_W = Vec3<T>::Zero();
@@ -75,6 +78,10 @@ private:
                        StateEstimate<T>& state_estimate) const;
 
     StateEstimatorMode _mode{StateEstimatorMode::Cheater};
+    mutable bool _hasYawHistory{false};
+    mutable double _lastYawWrapped{0.0};
+    mutable double _lastYawUnwrapped{0.0};
+    mutable double _lastYawTime{0.0};
 };
 
 #endif  // STATE_ESTIMATOR_H

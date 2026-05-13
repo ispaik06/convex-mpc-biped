@@ -16,16 +16,13 @@
 #include "Dynamics/SwingYawTarget.h"
 #include "BodyMotionReference.h"
 #include "StandingMpcDebugLogger.h"
+#include "Utilities/AngleUtils.h"
 #include "Utilities/Timing.h"
 #include "Utilities/MatrixUtils.h"
 
 namespace {
 double clampUnit(const double value) {
     return std::clamp(value, -1.0, 1.0);
-}
-
-double wrapAngle(const double angle) {
-    return std::atan2(std::sin(angle), std::cos(angle));
 }
 
 double lowPassBlendAlpha(const double tau, const double dt) {
@@ -317,7 +314,7 @@ std::string formatTimeSeconds(const double time) {
 
 Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
                                     const RobotParams<double>& robotParams) {
-    return Rz(stateEstimate.psi) * robotParams.bodyComLocation;
+    return Rz(stateEstimate.yaw_W_unwrapped) * robotParams.bodyComLocation;
 }
 
 Vec3<double> reducedBodyComWorld(const StateEstimate<double>& stateEstimate,
@@ -527,7 +524,7 @@ void MyController::seedBodyTargetFromCurrentState() {
     _bodyTarget.nominalPosition_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
     _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
     _bodyTarget.nominalHeight_W = _bodyTarget.nominalPosition_W[2];
-    _bodyTarget.euler_W << rollPitch[0], rollPitch[1], _stateEstimate->psi;
+    _bodyTarget.euler_W << rollPitch[0], rollPitch[1], _stateEstimate->yaw_W_unwrapped;
     _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
     _bodyTarget.initialized = true;
 }
@@ -653,7 +650,7 @@ Vec13<double> MyController::buildCurrentMpcState() const {
     Vec13<double> x0 = Vec13<double>::Zero();
     x0[0] = rollPitch[0];
     x0[1] = rollPitch[1];
-    x0[2] = _stateEstimate->psi;
+    x0[2] = _stateEstimate->yaw_W_unwrapped;
     x0.template segment<3>(3) = comWorld;
     x0.template segment<3>(6) = _stateEstimate->torsoAngVel_W; //? approximate reduced-body as rigid body
     x0.template segment<3>(9) = comVelocityWorld;
@@ -895,18 +892,17 @@ double MyController::swingFootYawTargetWorld() const {
     }
 
     const double psi_dot = _filteredUserCommand.psi_dot;
-    const double baseYaw_W = _stateEstimate->psi;
+    const double baseYaw_W = _stateEstimate->yaw_W_unwrapped;
     const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
     const double previewTime =
         std::max(0.0, (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) *
                           stanceTime());
-    return wrapAngle(baseYaw_W + leadScale * psi_dot * previewTime);
+    return baseYaw_W + leadScale * psi_dot * previewTime;
 }
 
 double MyController::swingFootYawTargetWorld(const Side side) const {
-    return wrapAngle(
-        swingFootYawTargetWorld() +
-        swingyaw::swingFootYawPsiOffset(side, _filteredUserCommand.psi_dot));
+    return swingFootYawTargetWorld() +
+           swingyaw::swingFootYawPsiOffset(side, _filteredUserCommand.psi_dot);
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,
@@ -936,8 +932,9 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
                 const std::size_t leg = static_cast<std::size_t>(legIndex);
                 if (activeContactForSide(side, _stateEstimate->time)) {
                     try {
-                        return footYawFromXAxisWorld(
+                        const double measuredYaw_W = footYawFromXAxisWorld(
                             footLocalXAxisWorld(*_stateEstimate, *_robotParams, side));
+                        return liftAngleNear(measuredYaw_W, _legRuntime[leg].touchdownYaw_W);
                     } catch (const std::exception&) {
                         return _legRuntime[leg].touchdownYaw_W;
                     }

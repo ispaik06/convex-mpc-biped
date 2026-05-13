@@ -4,10 +4,6 @@
 
 namespace BodyMotionReference {
 namespace {
-double wrapAngle(const double angle) {
-    return std::atan2(std::sin(angle), std::cos(angle));
-}
-
 bool isDoubleSupport(const GaitScheduler* gaitScheduler, const double sampleTime) {
     return gaitScheduler != nullptr && gaitScheduler->bothFeetStance(sampleTime);
 }
@@ -25,7 +21,7 @@ double advanceYaw(const GaitScheduler* gaitScheduler,
     if (!(dt > 0.0) || !shouldAdvanceYaw(gaitScheduler, sampleTime)) {
         return currentYaw;
     }
-    return wrapAngle(currentYaw + psiDot * dt);
+    return currentYaw + psiDot * dt;
 }
 
 double yawRate(const GaitScheduler* gaitScheduler, const double psiDot, const double sampleTime) {

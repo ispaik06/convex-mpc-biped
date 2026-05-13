@@ -11,7 +11,7 @@ constexpr double kSwingFootTargetZ = -0.005;
 
 Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
                                     const RobotParams<double>& robotParams) {
-    return Rz(stateEstimate.psi) * robotParams.bodyComLocation;
+    return Rz(stateEstimate.yaw_W_unwrapped) * robotParams.bodyComLocation;
 }
 
 Vec3<double> reducedBodyComWorld(const StateEstimate<double>& stateEstimate,
@@ -143,7 +143,7 @@ Vec2<double> SwingFootPlanner::currentPlanarCommandBodyFrame() const {
 }
 
 double SwingFootPlanner::bodyYawTargetWorld() const {
-    return _bodyYawTargetValid ? _bodyYawTarget_W : _stateEstimate->psi;
+    return _bodyYawTargetValid ? _bodyYawTarget_W : _stateEstimate->yaw_W_unwrapped;
 }
 
 double SwingFootPlanner::touchdownPreviewTime() const {

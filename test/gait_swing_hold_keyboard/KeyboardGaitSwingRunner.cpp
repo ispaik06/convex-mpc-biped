@@ -20,10 +20,6 @@
 #include "setupRobotParams.h"
 
 namespace {
-double wrapAngle(const double angle) {
-    return std::atan2(std::sin(angle), std::cos(angle));
-}
-
 double yawFromRotation(const Mat3<double>& rotation) {
     return std::atan2(rotation(1, 0), rotation(0, 0));
 }
@@ -464,7 +460,7 @@ void KeyboardGaitSwingRunner::cachePlanarBasePose() {
                                  static_cast<double>(qpos[5]),
                                  static_cast<double>(qpos[6]));
     const Mat3<double> baseRotation_W = baseQuat_W.toRotationMatrix();
-    _planarBaseYaw = wrapAngle(yawFromRotation(baseRotation_W));
+    _planarBaseYaw = yawFromRotation(baseRotation_W);
     _planarRotationNoYaw = Rz(-_planarBaseYaw) * baseRotation_W;
 
     applyPlanarBasePose(Vec3<double>::Zero(), Vec3<double>::Zero());
@@ -489,7 +485,7 @@ void KeyboardGaitSwingRunner::advancePlanarBasePose(const double dt) {
 
     _planarBasePosition_W += worldLinearVelocity * step;
     _planarBasePosition_W.z() = _planarBaseZ;
-    _planarBaseYaw = wrapAngle(_planarBaseYaw + clampedCommand.psi_dot * step);
+    _planarBaseYaw += clampedCommand.psi_dot * step;
 
     applyPlanarBasePose(worldLinearVelocity, bodyAngularVelocity);
 }

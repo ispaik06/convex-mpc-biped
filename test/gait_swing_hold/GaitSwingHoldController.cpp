@@ -57,8 +57,7 @@ double swingFootYawTargetWorld(const StateEstimate<double>* stateEstimate,
     const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
     const double previewTime =
         (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) * stanceTime();
-    const double yaw = stateEstimate->psi + leadScale * psi_dot * previewTime;
-    return std::atan2(std::sin(yaw), std::cos(yaw));
+    return stateEstimate->yaw_W_unwrapped + leadScale * psi_dot * previewTime;
 }
 
 double swingFootYawTargetWorld(const StateEstimate<double>* stateEstimate,
@@ -67,10 +66,7 @@ double swingFootYawTargetWorld(const StateEstimate<double>* stateEstimate,
     const UserCommand clampedCommand =
         clampUserCommand((userCommand != nullptr) ? *userCommand : UserCommand{});
     const double baseYaw_W = swingFootYawTargetWorld(stateEstimate, userCommand);
-    return std::atan2(std::sin(baseYaw_W +
-                               swingyaw::swingFootYawPsiOffset(side, clampedCommand.psi_dot)),
-                      std::cos(baseYaw_W +
-                               swingyaw::swingFootYawPsiOffset(side, clampedCommand.psi_dot)));
+    return baseYaw_W + swingyaw::swingFootYawPsiOffset(side, clampedCommand.psi_dot);
 }
 }  // namespace
 
@@ -221,7 +217,7 @@ Vec3<double> GaitSwingHoldController::touchdownTargetWorld(const std::size_t leg
         throw std::runtime_error("GaitSwingHoldController requires state to compute touchdown target");
     }
 
-    const double psi = _stateEstimate->psi;
+    const double psi = _stateEstimate->yaw_W_unwrapped;
     const Mat3<double> R_WB = Rz(psi);
     const UserCommand clampedCommand =
         clampUserCommand((_userCommand != nullptr) ? *_userCommand : UserCommand{});

@@ -1095,10 +1095,6 @@ LocomotionMode locomotionModeFromLog(const json& log, const LocomotionMode fallb
     return fallback;
 }
 
-double wrapAngle(const double angle) {
-    return std::atan2(std::sin(angle), std::cos(angle));
-}
-
 Vec13<double> referenceSeedForStep(const Vec13<double>& state,
                                    const Vec13<double>& referenceTarget) {
     Vec13<double> seed = state;
@@ -1122,7 +1118,7 @@ void advanceReferenceTarget(Vec13<double>& target,
 
     const Vec3<double> vCmd_B(command.x_dot, command.y_dot, 0.0);
     target.segment<3>(3) += Rz(target[2]) * vCmd_B * dt;
-    target[2] = wrapAngle(target[2] + command.psi_dot * dt);
+    target[2] += command.psi_dot * dt;
 }
 
 RolloutRow makeRowSkeleton(const int step,
