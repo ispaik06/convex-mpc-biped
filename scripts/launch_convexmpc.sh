@@ -250,16 +250,12 @@ if [[ "${dashboard_enabled}" == false || -z "${dashboard_script}" ]]; then
     exec "${main_bin}" "${robot}" "${viewer}"
 fi
 
-main_pid=""
 dashboard_pid=""
 
 cleanup() {
     set +e
     if [[ -n "${dashboard_pid}" ]]; then
         kill "${dashboard_pid}" >/dev/null 2>&1
-    fi
-    if [[ -n "${main_pid}" ]]; then
-        kill "${main_pid}" >/dev/null 2>&1
     fi
 }
 
@@ -274,13 +270,8 @@ echo "[launch] dashboard: ${python_bin} ${dashboard_script} --host 127.0.0.1 --p
     --shared-memory "${CONVEXMPC_SHM_NAME}" &
 dashboard_pid=$!
 
-"${main_bin}" "${robot}" "${viewer}" &
-main_pid=$!
-
-set +e
-wait "${main_pid}"
+"${main_bin}" "${robot}" "${viewer}"
 main_status=$?
-set -e
 
 if [[ -n "${dashboard_pid}" ]]; then
     kill "${dashboard_pid}" >/dev/null 2>&1 || true
