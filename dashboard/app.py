@@ -76,6 +76,8 @@ DEFAULT_PORT = 8000
 DEFAULT_SHM_NAME = os.environ.get("CONVEXMPC_SHM_NAME", "convexmpc_dashboard_state")
 DEFAULT_WINDOW_SECONDS = 10.0
 WINDOW_OPTIONS = (5, 10, 20, 30)
+MAX_MAIN_PANELS = 3
+MIN_MAIN_PANELS = 1
 
 HTML_TEMPLATE = r"""<!doctype html>
 <html lang="en">
@@ -133,8 +135,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: end;
-      gap: 12px;
-      margin-bottom: 8px;
+      gap: 10px;
+      margin-bottom: 4px;
     }
     .eyebrow {
       margin: 0 0 6px;
@@ -152,11 +154,11 @@ HTML_TEMPLATE = r"""<!doctype html>
       font-weight: 780;
     }
     .subtitle {
-      margin-top: 6px;
+      margin-top: 4px;
       color: var(--muted);
       line-height: 1.45;
       max-width: 78ch;
-      font-size: 12px;
+      font-size: 11px;
     }
     .status-badge {
       display: inline-flex;
@@ -170,6 +172,36 @@ HTML_TEMPLATE = r"""<!doctype html>
       color: var(--muted);
       font-size: 12px;
       white-space: nowrap;
+    }
+    .hero-statuses {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .status-badge.controller.active {
+      color: var(--good);
+      border-color: rgba(74, 222, 128, 0.24);
+      background: rgba(74, 222, 128, 0.08);
+    }
+    .status-badge.controller.stale {
+      color: #fbbf24;
+      border-color: rgba(251, 191, 36, 0.24);
+      background: rgba(251, 191, 36, 0.08);
+    }
+    .status-badge.controller.busy {
+      color: var(--warn);
+      border-color: rgba(245, 158, 11, 0.24);
+      background: rgba(245, 158, 11, 0.08);
+    }
+    .status-badge.controller.waiting {
+      color: var(--muted);
+    }
+    .status-badge.controller.error {
+      color: var(--bad);
+      border-color: rgba(239, 68, 68, 0.24);
+      background: rgba(239, 68, 68, 0.08);
     }
     .dot {
       width: 10px;
@@ -196,10 +228,10 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .toolbar {
       display: grid;
-      grid-template-columns: minmax(0, 1fr);
-      gap: 8px;
+      grid-template-columns: minmax(0, 0.98fr) minmax(0, 1.02fr);
+      gap: 10px;
       align-items: center;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
     .toolbar-left,
     .toolbar-right {
@@ -209,7 +241,72 @@ HTML_TEMPLATE = r"""<!doctype html>
       align-items: center;
     }
     .toolbar-right {
-      display: none;
+      justify-content: flex-end;
+    }
+    .toolbar-telemetry {
+      display: grid;
+      width: min(100%, 840px);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .toolbar-chip {
+      min-width: 0;
+      padding: 8px 10px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .toolbar-chip-label {
+      color: var(--muted);
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.11em;
+      margin-bottom: 5px;
+    }
+    .toolbar-chip-value {
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .count-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+    }
+    .count-chip button {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      color: var(--muted);
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      min-width: 30px;
+      height: 28px;
+      border-radius: 10px;
+    }
+    .count-chip button:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .count-chip button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      background: transparent;
+    }
+    .count-chip-value {
+      min-width: 42px;
+      text-align: center;
+      color: var(--text);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
     }
     .segment {
       display: inline-flex;
@@ -264,13 +361,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       line-height: 1.45;
       max-width: 54ch;
     }
-    .layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1.48fr) minmax(260px, 0.52fr);
-      gap: 12px;
-      margin-bottom: 10px;
-      align-items: start;
-    }
     .panel {
       border: 1px solid var(--border);
       border-radius: 22px;
@@ -281,17 +371,22 @@ HTML_TEMPLATE = r"""<!doctype html>
       overflow: hidden;
     }
     .panel-head {
-      padding: 8px 12px;
+      padding: 4px 8px;
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 10px;
+      align-items: center;
+      gap: 8px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
     }
     .panel-head-left,
     .panel-head-right {
       min-width: 0;
+    }
+    .panel-head-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .panel-kicker {
       margin: 0 0 4px;
@@ -303,16 +398,19 @@ HTML_TEMPLATE = r"""<!doctype html>
     }
     .panel-title {
       margin: 0;
-      font-size: 17px;
-      line-height: 1.05;
+      font-size: 14px;
+      line-height: 1.02;
       letter-spacing: -0.03em;
       font-weight: 760;
     }
     .panel-sub {
-      margin-top: 3px;
+      margin-top: 1px;
       color: var(--muted);
-      font-size: 11px;
-      line-height: 1.45;
+      font-size: 9px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .panel-badge {
       display: inline-flex;
@@ -328,22 +426,27 @@ HTML_TEMPLATE = r"""<!doctype html>
       white-space: nowrap;
     }
     .panel-body {
-      padding: 10px 12px 12px;
+      padding: 6px 8px 8px;
     }
-    .focus-chart {
-      height: 166px;
+    .main-stack {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 6px;
     }
-    .focus-chart canvas,
+    .main-panel {
+      display: block;
+    }
+    .main-chart-layout {
+      display: block;
+    }
+    .main-chart {
+      height: 290px;
+    }
+    .main-chart canvas,
     .chart-plot canvas {
       width: 100%;
       height: 100%;
       display: block;
-    }
-    .focus-metrics {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 8px;
     }
     .metric,
     .side-card {
@@ -352,49 +455,19 @@ HTML_TEMPLATE = r"""<!doctype html>
       background: rgba(255, 255, 255, 0.03);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
     }
-    .metric {
-      padding: 8px 10px;
-    }
-    .metric-label,
-    .side-label {
-      color: var(--muted);
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.11em;
-      margin-bottom: 6px;
-    }
-    .metric-value,
-    .side-value {
-      font-size: 13px;
-      font-variant-numeric: tabular-nums;
-      line-height: 1.15;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .side-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 6px;
-    }
-    .side-card {
-      padding: 8px 10px;
-      min-height: 52px;
-    }
     .grid-panel {
-      margin-top: 8px;
+      margin-top: 4px;
     }
     .chart-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 8px;
-    }
-    .chart-grid[data-view="focus"] {
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-rows: repeat(3, minmax(0, auto));
+      grid-auto-flow: column;
+      gap: 10px;
     }
     .chart-card {
       position: relative;
-      min-height: 156px;
+      min-height: 202px;
       border-radius: 18px;
       border: 1px solid rgba(255, 255, 255, 0.06);
       background:
@@ -404,9 +477,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       overflow: hidden;
       cursor: pointer;
       transition: transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
-    }
-    .chart-grid[data-view="focus"] .chart-card {
-      min-height: 210px;
     }
     .chart-card:hover {
       transform: translateY(-2px);
@@ -435,7 +505,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       justify-content: space-between;
       align-items: flex-start;
       gap: 8px;
-      padding: 8px 10px 4px;
+      padding: 8px 12px 6px;
     }
     .chart-title {
       font-size: 13px;
@@ -457,20 +527,20 @@ HTML_TEMPLATE = r"""<!doctype html>
       position: absolute;
       left: 0;
       right: 0;
-      top: 38px;
-      bottom: 20px;
+      top: 40px;
+      bottom: 24px;
       padding: 0 6px 0 0;
     }
     .chart-foot {
       position: absolute;
       left: 12px;
       right: 12px;
-      bottom: 5px;
+      bottom: 8px;
       display: flex;
       justify-content: space-between;
       gap: 8px;
       color: var(--muted);
-      font-size: 9px;
+      font-size: 10px;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       font-variant-numeric: tabular-nums;
@@ -482,13 +552,17 @@ HTML_TEMPLATE = r"""<!doctype html>
       white-space: nowrap;
     }
     @media (max-width: 1240px) {
-      .layout {
+      .main-chart-layout {
+        display: block;
+      }
+      .toolbar {
         grid-template-columns: 1fr;
       }
-      .focus-metrics {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      .toolbar-right {
+        justify-content: flex-start;
       }
-      .side-grid {
+      .toolbar-telemetry {
+        width: 100%;
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
@@ -500,14 +574,10 @@ HTML_TEMPLATE = r"""<!doctype html>
       .toolbar-right {
         justify-content: flex-start;
       }
-      .focus-chart {
-        height: 220px;
+      .main-chart {
+        height: 260px;
       }
-      .focus-metrics,
-      .side-grid {
-        grid-template-columns: 1fr;
-      }
-      .chart-grid {
+      .toolbar-telemetry {
         grid-template-columns: 1fr;
       }
     }
@@ -520,12 +590,18 @@ HTML_TEMPLATE = r"""<!doctype html>
         <p class="eyebrow">ConvexMPC real-time telemetry</p>
         <h1>Live state dashboard</h1>
         <div class="subtitle" id="hero-subtitle">
-          Auto-scaled plots with stable grid ticks. Click any trace to promote it to the focus chart.
+          Auto-scaled plots with stable grid ticks. Click any trace to promote it to the first main chart.
         </div>
       </div>
-      <div class="status-badge">
-        <span class="dot" id="status-dot"></span>
-        <span id="status-text">connecting</span>
+      <div class="hero-statuses">
+        <div class="status-badge controller waiting" id="controller-status-badge">
+          <span class="dot" id="controller-status-dot"></span>
+          <span id="controller-status-text">controller waiting</span>
+        </div>
+        <div class="status-badge">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">memory waiting</span>
+        </div>
       </div>
     </header>
 
@@ -535,7 +611,6 @@ HTML_TEMPLATE = r"""<!doctype html>
           <button type="button" class="active" data-view="all">All 12</button>
           <button type="button" data-view="pose">Pose</button>
           <button type="button" data-view="motion">Motion</button>
-          <button type="button" data-view="focus">Focus</button>
         </div>
         <div class="segment" id="window-buttons" aria-label="window length">
           <button type="button" class="active" data-window="5">5s</button>
@@ -543,98 +618,39 @@ HTML_TEMPLATE = r"""<!doctype html>
           <button type="button" data-window="20">20s</button>
           <button type="button" data-window="30">30s</button>
         </div>
+        <div class="segment" id="angle-buttons" aria-label="angle units">
+          <button type="button" class="active" data-angle-unit="deg">deg</button>
+          <button type="button" data-angle-unit="rad">rad</button>
+        </div>
+        <div class="segment count-chip" id="main-count-controls" aria-label="main chart count">
+          <button type="button" id="main-count-dec" aria-label="remove main chart">-</button>
+          <div class="count-chip-value" id="main-count-label">1 / 3</div>
+          <button type="button" id="main-count-inc" aria-label="add main chart">+</button>
+        </div>
       </div>
       <div class="toolbar-right">
-        <div class="toolbar-note" id="toolbar-note">
-          Y-axis uses a nice-number grid. Symmetric traces stay zero-centered; pose traces expand and contract with hysteresis.
+        <div class="toolbar-telemetry" aria-label="telemetry summary">
+          <div class="toolbar-chip">
+            <div class="toolbar-chip-label">Robot</div>
+            <div class="toolbar-chip-value" id="toolbar-robot">--</div>
+          </div>
+          <div class="toolbar-chip">
+            <div class="toolbar-chip-label">Iteration</div>
+            <div class="toolbar-chip-value" id="toolbar-iteration">--</div>
+          </div>
+          <div class="toolbar-chip">
+            <div class="toolbar-chip-label">Sim Time</div>
+            <div class="toolbar-chip-value" id="toolbar-sim-time">--</div>
+          </div>
+          <div class="toolbar-chip">
+            <div class="toolbar-chip-label">Seq</div>
+            <div class="toolbar-chip-value" id="toolbar-sequence">--</div>
+          </div>
         </div>
       </div>
     </div>
 
-    <section class="layout">
-      <article class="panel">
-        <div class="panel-head">
-          <div class="panel-head-left">
-            <div class="panel-kicker">Focus</div>
-            <h2 class="panel-title" id="focus-title">Roll</h2>
-            <div class="panel-sub" id="focus-subtitle">Pose • rad</div>
-          </div>
-          <div class="panel-head-right">
-            <div class="panel-badge" id="focus-index">01 / 12</div>
-            <div style="display:flex; gap:8px; margin-top:10px; justify-content:flex-end;">
-              <button type="button" class="nav-button" id="focus-prev">Prev</button>
-              <button type="button" class="nav-button" id="focus-next">Next</button>
-            </div>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="focus-chart">
-            <canvas id="focus-canvas"></canvas>
-          </div>
-          <div class="focus-metrics">
-            <div class="metric">
-              <div class="metric-label">Current</div>
-              <div class="metric-value" id="focus-current">--</div>
-            </div>
-            <div class="metric">
-              <div class="metric-label">Span</div>
-              <div class="metric-value" id="focus-span">--</div>
-            </div>
-            <div class="metric">
-              <div class="metric-label">Grid Step</div>
-              <div class="metric-value" id="focus-step">--</div>
-            </div>
-            <div class="metric">
-              <div class="metric-label">Samples</div>
-              <div class="metric-value" id="focus-samples">--</div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <aside class="panel">
-        <div class="panel-head">
-          <div class="panel-head-left">
-            <div class="panel-kicker">Connection</div>
-            <h2 class="panel-title">Telemetry</h2>
-            <div class="panel-sub" id="connection-subtitle">
-              Waiting for the controller to publish data.
-            </div>
-          </div>
-          <div class="panel-head-right">
-            <div class="panel-badge" id="sequence-text">seq --</div>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="side-grid">
-            <div class="side-card">
-              <div class="side-label">Robot</div>
-              <div class="side-value" id="robot-name">--</div>
-            </div>
-            <div class="side-card">
-              <div class="side-label">Iteration</div>
-              <div class="side-value" id="iteration">--</div>
-            </div>
-            <div class="side-card">
-              <div class="side-label">Sim Time</div>
-              <div class="side-value" id="sim-time">--</div>
-            </div>
-            <div class="side-card">
-              <div class="side-label">Shared Memory</div>
-              <div class="side-value" id="shm-name">--</div>
-            </div>
-            <div class="side-card">
-              <div class="side-label">Layout Version</div>
-              <div class="side-value" id="layout-version">--</div>
-            </div>
-            <div class="side-card">
-              <div class="side-label">State Dim</div>
-              <div class="side-value" id="state-dim">--</div>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </section>
+    <section class="main-stack" id="main-panels"></section>
 
     <section class="panel grid-panel">
       <div class="panel-head">
@@ -655,26 +671,39 @@ HTML_TEMPLATE = r"""<!doctype html>
     </section>
   </div>
 
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/static/vendor/three/three.module.js"
+      }
+    }
+  </script>
+
   <script>
     const CHART_CONFIGS = %CHART_CONFIG%;
     const STATE_LABELS = %STATE_LABELS%;
     const CHART_ORDER = CHART_CONFIGS.map((config, index) => ({ config, index }));
     const DEFAULT_WINDOW_SECONDS = 10;
     const WINDOW_OPTIONS = [5, 10, 20, 30];
+    const MAX_MAIN_PANELS = 3;
+    const MIN_MAIN_PANELS = 1;
     const VIEW_LABELS = {
       all: "All 12 channels",
       pose: "Pose channels",
       motion: "Motion channels",
-      focus: "Focus channel",
     };
 
     const appState = {
       view: "all",
       windowSeconds: DEFAULT_WINDOW_SECONDS,
-      focusLabel: CHART_CONFIGS[0]?.label ?? "roll",
+      angleUnit: "deg",
+      mainLabels: [CHART_CONFIGS[0]?.label ?? "roll"],
       latestSnapshot: null,
       lastSequence: null,
+      controllerLastSequence: null,
+      controllerLastChangeAt: null,
       history: [],
+      mainRuntime: [],
       chartRuntime: new Map(
         CHART_CONFIGS.map((config, index) => [
           config.label,
@@ -692,6 +721,13 @@ HTML_TEMPLATE = r"""<!doctype html>
       ),
       polling: false,
     };
+
+    function setTextContent(id, value) {
+      const node = document.getElementById(id);
+      if (node) {
+        node.textContent = value;
+      }
+    }
 
     function escapeHtml(value) {
       return String(value)
@@ -728,6 +764,69 @@ HTML_TEMPLATE = r"""<!doctype html>
         return "--";
       }
       return `${formatNumber(value, precision)} ${unit}`;
+    }
+
+    function isAngularUnit(unit) {
+      return unit === "rad" || unit === "rad/s";
+    }
+
+    function displayScale(config) {
+      if (appState.angleUnit === "deg" && isAngularUnit(config.unit)) {
+        return 180 / Math.PI;
+      }
+      return 1;
+    }
+
+    function displayUnit(config) {
+      if (appState.angleUnit === "deg") {
+        if (config.unit === "rad") {
+          return "deg";
+        }
+        if (config.unit === "rad/s") {
+          return "deg/s";
+        }
+      }
+      return config.unit;
+    }
+
+    function displayPrecision(config) {
+      if (appState.angleUnit === "deg" && isAngularUnit(config.unit)) {
+        return 1;
+      }
+      return config.precision;
+    }
+
+    function displayConfig(config) {
+      const scale = displayScale(config);
+      return {
+        ...config,
+        unit: displayUnit(config),
+        min_span: config.min_span * scale,
+        precision: displayPrecision(config),
+        __scale: scale,
+      };
+    }
+
+    function toDisplayValue(value, config) {
+      if (!Number.isFinite(value)) {
+        return value;
+      }
+      return value * displayScale(config);
+    }
+
+    function toDisplayStats(stats, config) {
+      if (!stats) {
+        return null;
+      }
+      const scale = displayScale(config);
+      return {
+        ...stats,
+        min: stats.min * scale,
+        max: stats.max * scale,
+        mean: stats.mean * scale,
+        latest: stats.latest * scale,
+        span: stats.span * scale,
+      };
     }
 
     function hexToRgba(hex, alpha) {
@@ -784,9 +883,6 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (appState.view === "motion") {
         return CHART_CONFIGS.filter((config) => config.group === "motion");
       }
-      if (appState.view === "focus") {
-        return CHART_CONFIGS.filter((config) => config.label === appState.focusLabel);
-      }
       return CHART_CONFIGS;
     }
 
@@ -794,16 +890,67 @@ HTML_TEMPLATE = r"""<!doctype html>
       return appState.chartRuntime.get(label) || null;
     }
 
-    function ensureFocusVisible() {
-      const visible = visibleChartsForView();
-      if (!visible.some((config) => config.label === appState.focusLabel) && visible.length > 0) {
-        appState.focusLabel = visible[0].label;
+    function getMainLabel(index) {
+      return appState.mainLabels[index] || CHART_CONFIGS[0].label;
+    }
+
+    function syncPrimaryMainLabel() {
+      appState.mainLabels = appState.mainLabels.slice(0, MAX_MAIN_PANELS);
+      while (appState.mainLabels.length < MIN_MAIN_PANELS) {
+        appState.mainLabels.push(CHART_CONFIGS[0].label);
       }
+      appState.mainLabels[0] = appState.mainLabels[0] || CHART_CONFIGS[0].label;
+    }
+
+    function ensureMainLabelsVisible() {
+      const visible = visibleChartsForView();
+      if (visible.length === 0) {
+        return;
+      }
+      appState.mainLabels = appState.mainLabels.map((label) =>
+        visible.some((config) => config.label === label) ? label : visible[0].label
+      );
+      syncPrimaryMainLabel();
+    }
+
+    function advanceChartLabel(label, delta) {
+      const index = CHART_CONFIGS.findIndex((config) => config.label === label);
+      const nextIndex = (index + delta + CHART_CONFIGS.length) % CHART_CONFIGS.length;
+      return CHART_CONFIGS[nextIndex].label;
+    }
+
+    function setMainPanelCount(nextCount) {
+      const clamped = Math.max(MIN_MAIN_PANELS, Math.min(MAX_MAIN_PANELS, nextCount));
+      while (appState.mainLabels.length < clamped) {
+        const seed = appState.mainLabels[appState.mainLabels.length - 1] || CHART_CONFIGS[0].label;
+        appState.mainLabels.push(advanceChartLabel(seed, 1));
+      }
+      appState.mainLabels = appState.mainLabels.slice(0, clamped);
+      syncPrimaryMainLabel();
+      ensureMainLabelsVisible();
+      updateButtonStates();
+      render();
+    }
+
+    function setMainPanelLabel(index, label) {
+      if (!CHART_CONFIGS.some((config) => config.label === label)) {
+        return;
+      }
+      appState.mainLabels[index] = label;
+      syncPrimaryMainLabel();
+      ensureMainLabelsVisible();
+      updateButtonStates();
+      render();
+    }
+
+    function stepMainPanel(index, delta) {
+      const currentLabel = getMainLabel(index);
+      setMainPanelLabel(index, advanceChartLabel(currentLabel, delta));
     }
 
     function setView(view) {
       appState.view = view;
-      ensureFocusVisible();
+      ensureMainLabelsVisible();
       updateButtonStates();
       render();
     }
@@ -815,23 +962,17 @@ HTML_TEMPLATE = r"""<!doctype html>
       render();
     }
 
-    function setFocus(label) {
-      if (!CHART_CONFIGS.some((config) => config.label === label)) {
+    function setAngleUnit(unit) {
+      if (unit !== "deg" && unit !== "rad") {
         return;
       }
-      appState.focusLabel = label;
-      ensureFocusVisible();
+      appState.angleUnit = unit;
       updateButtonStates();
       render();
     }
 
-    function stepFocus(delta) {
-      const currentIndex = CHART_CONFIGS.findIndex((config) => config.label === appState.focusLabel);
-      const nextIndex = (currentIndex + delta + CHART_CONFIGS.length) % CHART_CONFIGS.length;
-      appState.focusLabel = CHART_CONFIGS[nextIndex].label;
-      ensureFocusVisible();
-      updateButtonStates();
-      render();
+    function promoteToMainPanel(label) {
+      setMainPanelLabel(0, label);
     }
 
     function updateButtonStates() {
@@ -841,22 +982,33 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.querySelectorAll("#window-buttons button").forEach((button) => {
         button.classList.toggle("active", Number(button.dataset.window) === appState.windowSeconds);
       });
+      document.querySelectorAll("#angle-buttons button").forEach((button) => {
+        button.classList.toggle("active", button.dataset.angleUnit === appState.angleUnit);
+      });
+
+      const count = appState.mainLabels.length;
+      const decButton = document.getElementById("main-count-dec");
+      const incButton = document.getElementById("main-count-inc");
+      const countLabel = document.getElementById("main-count-label");
+      if (decButton) {
+        decButton.disabled = count <= MIN_MAIN_PANELS;
+      }
+      if (incButton) {
+        incButton.disabled = count >= MAX_MAIN_PANELS;
+      }
+      if (countLabel) {
+        countLabel.textContent = `${count} / ${MAX_MAIN_PANELS}`;
+      }
 
       const visible = visibleChartsForView();
       document.getElementById("grid-title").textContent = VIEW_LABELS[appState.view] || "All 12 channels";
       document.getElementById("grid-subtitle").textContent =
-        appState.view === "focus"
-          ? "A single chart window with auto-scaled axes and stable tick spacing."
-          : appState.view === "pose"
-            ? "Orientation and position traces, grouped together for quick inspection."
-            : appState.view === "motion"
-              ? "Angular and linear velocities, centered around zero when appropriate."
-              : "Pose and motion states across the trailing window.";
+        appState.view === "pose"
+          ? "Orientation and position traces, grouped together for quick inspection."
+          : appState.view === "motion"
+            ? "Angular and linear velocities, centered around zero when appropriate."
+            : "Pose and motion states across the trailing window.";
       document.getElementById("chart-grid").dataset.view = appState.view;
-      document.getElementById("focus-index").textContent =
-        `${String(CHART_CONFIGS.findIndex((config) => config.label === appState.focusLabel) + 1).padStart(2, "0")} / ${String(CHART_CONFIGS.length).padStart(2, "0")}`;
-      document.getElementById("focus-prev").textContent = "Prev";
-      document.getElementById("focus-next").textContent = "Next";
 
       visible.forEach((config) => {
         const entry = getChartEntry(config.label);
@@ -902,13 +1054,55 @@ HTML_TEMPLATE = r"""<!doctype html>
         entry.valueNode = card.querySelector("[data-role='value']");
         entry.rangeNode = card.querySelector("[data-role='range']");
         entry.gridNode = card.querySelector("[data-role='grid']");
-        card.addEventListener("click", () => setFocus(label));
+        card.addEventListener("click", () => promoteToMainPanel(label));
         card.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            setFocus(label);
+            promoteToMainPanel(label);
           }
         });
+      });
+    }
+
+    function buildMainPanels() {
+      const container = document.getElementById("main-panels");
+      container.innerHTML = Array.from({ length: MAX_MAIN_PANELS }, (_, index) => `
+        <article class="panel main-panel" data-main-index="${index}">
+          <div class="panel-head">
+            <div class="panel-head-left">
+              <div class="panel-kicker" data-role="main-kicker">Main ${index + 1}</div>
+              <h2 class="panel-title" data-role="main-title">--</h2>
+              <div class="panel-sub" data-role="main-subtitle">--</div>
+            </div>
+            <div class="panel-head-right">
+              <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button type="button" class="nav-button" data-action="prev">Prev</button>
+                <button type="button" class="nav-button" data-action="next">Next</button>
+              </div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="main-chart-layout">
+              <div class="main-chart">
+                <canvas data-role="main-canvas"></canvas>
+              </div>
+            </div>
+          </div>
+        </article>
+      `).join("");
+
+      appState.mainRuntime = Array.from(container.querySelectorAll(".main-panel")).map((panel, index) => {
+        const canvas = panel.querySelector("[data-role='main-canvas']");
+        const titleNode = panel.querySelector("[data-role='main-title']");
+        const subtitleNode = panel.querySelector("[data-role='main-subtitle']");
+        panel.querySelector("[data-action='prev']").addEventListener("click", () => stepMainPanel(index, -1));
+        panel.querySelector("[data-action='next']").addEventListener("click", () => stepMainPanel(index, 1));
+        return {
+          panel,
+          canvas,
+          titleNode,
+          subtitleNode,
+        };
       });
     }
 
@@ -1010,10 +1204,6 @@ HTML_TEMPLATE = r"""<!doctype html>
         }
       }
 
-      if (focused) {
-        return document.getElementById("focus-canvas");
-      }
-
       return null;
     }
 
@@ -1022,6 +1212,8 @@ HTML_TEMPLATE = r"""<!doctype html>
       if (!resolvedCanvas) {
         return null;
       }
+
+      const renderedConfig = displayConfig(config);
 
       const rect = resolvedCanvas.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -1064,9 +1256,10 @@ HTML_TEMPLATE = r"""<!doctype html>
       const latestTime = samples.length > 0 ? samples[samples.length - 1].t : 0;
       const startTime = latestTime - appState.windowSeconds;
       const stats = computeStats(samples, state.index);
-      const targetDomain = buildTargetDomain(stats, config);
-      state.domain = settleDomain(state.domain, targetDomain, config);
-      const niceDomain = buildNiceDomain(state.domain, config, focused ? 6 : 5);
+      const displayStats = toDisplayStats(stats, config);
+      const targetDomain = buildTargetDomain(displayStats, renderedConfig);
+      state.domain = settleDomain(state.domain, targetDomain, renderedConfig);
+      const niceDomain = buildNiceDomain(state.domain, renderedConfig, focused ? 6 : 5);
 
       const xStep = niceStep(appState.windowSeconds, focused ? 6 : 4);
       const xTicks = buildTicks(-appState.windowSeconds, 0, xStep);
@@ -1111,7 +1304,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 
       const points = [];
       for (const sample of samples) {
-        const value = sample.values[state.index];
+        const value = toDisplayValue(sample.values[state.index], config);
         if (!Number.isFinite(value)) {
           continue;
         }
@@ -1179,11 +1372,13 @@ HTML_TEMPLATE = r"""<!doctype html>
       ctx.font = "600 12px Avenir Next, SF Pro Text, Segoe UI, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      const renderedConfig = displayConfig(config);
       ctx.fillText(`Waiting for ${config.title.toLowerCase()} samples`, plot.x + plot.w / 2, plot.y + plot.h / 2);
       ctx.restore();
     }
 
     function drawAxes(ctx, plot, yDomain, xTicks, yTicks, config, focused) {
+      const renderedConfig = displayConfig(config);
       ctx.save();
       ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
       ctx.font = focused
@@ -1207,21 +1402,23 @@ HTML_TEMPLATE = r"""<!doctype html>
       ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
       ctx.font = "11px Avenir Next, SF Pro Text, Segoe UI, sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(config.unit, plot.x, plot.y - 12);
+      ctx.fillText(renderedConfig.unit, plot.x, plot.y - 12);
       ctx.restore();
     }
 
     function updateChartCard(entry, stats, drawResult, visible) {
       const { config, card } = entry;
+      const renderedConfig = displayConfig(config);
       if (!card) {
         return;
       }
       card.style.display = visible ? "" : "none";
-      card.classList.toggle("active", config.label === appState.focusLabel);
-      if (stats) {
-        entry.valueNode.textContent = formatValue(stats.latest, config.unit, config.precision);
-        entry.rangeNode.textContent = `range ${formatTick(stats.min, drawResult.niceDomain.step)} … ${formatTick(stats.max, drawResult.niceDomain.step)} ${config.unit}`;
-        entry.gridNode.textContent = `grid ${formatTick(drawResult.niceDomain.step, drawResult.niceDomain.step)} ${config.unit}`;
+      card.classList.toggle("active", appState.mainLabels.includes(config.label));
+      const displayStats = toDisplayStats(stats, config);
+      if (displayStats) {
+        entry.valueNode.textContent = formatValue(displayStats.latest, renderedConfig.unit, renderedConfig.precision);
+        entry.rangeNode.textContent = `range ${formatTick(displayStats.min, drawResult.niceDomain.step)} … ${formatTick(displayStats.max, drawResult.niceDomain.step)} ${renderedConfig.unit}`;
+        entry.gridNode.textContent = `grid ${formatTick(drawResult.niceDomain.step, drawResult.niceDomain.step)} ${renderedConfig.unit}`;
       } else {
         entry.valueNode.textContent = "--";
         entry.rangeNode.textContent = "range --";
@@ -1229,19 +1426,19 @@ HTML_TEMPLATE = r"""<!doctype html>
       }
     }
 
-    function updateFocusPanel(focusEntry, stats, drawResult, historyWindow) {
-      const { config } = focusEntry;
-      document.getElementById("focus-title").textContent = config.title;
-      document.getElementById("focus-subtitle").textContent = `${config.group_label} • ${config.unit}`;
-      document.getElementById("focus-index").textContent =
-        `${String(focusEntry.index + 1).padStart(2, "0")} / ${String(CHART_CONFIGS.length).padStart(2, "0")}`;
-      document.getElementById("focus-current").textContent =
-        stats ? formatValue(stats.latest, config.unit, config.precision) : "--";
-      document.getElementById("focus-span").textContent =
-        stats ? `${formatNumber(stats.span, config.precision)} ${config.unit}` : "--";
-      document.getElementById("focus-step").textContent =
-        drawResult ? `${formatTick(drawResult.niceDomain.step, drawResult.niceDomain.step)} ${config.unit}` : "--";
-      document.getElementById("focus-samples").textContent = String(historyWindow.length);
+    function updateMainPanel(panelEntry, label, stats, drawResult, historyWindow, panelIndex) {
+      const config = CHART_CONFIGS.find((entry) => entry.label === label) || CHART_CONFIGS[0];
+      const renderedConfig = displayConfig(config);
+      if (!panelEntry) {
+        return;
+      }
+
+      panelEntry.panel.style.display = "";
+      panelEntry.titleNode.textContent = config.title;
+      const displayStats = toDisplayStats(stats, config);
+      panelEntry.subtitleNode.textContent = displayStats
+        ? `${config.group_label} • ${renderedConfig.unit} • Current ${formatValue(displayStats.latest, renderedConfig.unit, renderedConfig.precision)}`
+        : `${config.group_label} • ${renderedConfig.unit} • Current --`;
     }
 
     function updateConnectionPanel() {
@@ -1250,44 +1447,90 @@ HTML_TEMPLATE = r"""<!doctype html>
       const status = connected ? (data.status || "connected") : (data?.status || "waiting");
       const dot = document.getElementById("status-dot");
       const statusText = document.getElementById("status-text");
+      const controllerBadge = document.getElementById("controller-status-badge");
+      const controllerDot = document.getElementById("controller-status-dot");
+      const controllerText = document.getElementById("controller-status-text");
       const heroSubtitle = document.getElementById("hero-subtitle");
-      const connectionSubtitle = document.getElementById("connection-subtitle");
+      const nowSeconds = Number(data?.server_time ?? (performance.now() / 1000));
 
       dot.className = "dot";
       if (connected && status === "live") {
         dot.classList.add("live");
-        statusText.textContent = "live";
+        statusText.textContent = "memory live";
         heroSubtitle.textContent = `Receiving live samples from ${data.robot_name || "the controller"} through ${data.shared_memory_name}.`;
-        connectionSubtitle.textContent = data.message || "Live data is arriving.";
       } else if (connected && status === "busy") {
         dot.classList.add("busy");
-        statusText.textContent = "busy";
+        statusText.textContent = "memory busy";
         heroSubtitle.textContent = data.message || "Controller is updating the shared buffer.";
-        connectionSubtitle.textContent = data.message || "Controller is updating the shared buffer.";
       } else if (connected) {
         dot.classList.add("live");
-        statusText.textContent = status;
+        statusText.textContent = `memory ${status}`;
         heroSubtitle.textContent = data.message || "Connected to the shared memory segment.";
-        connectionSubtitle.textContent = data.message || "Connected.";
       } else if (status === "error") {
         dot.classList.add("error");
-        statusText.textContent = "error";
+        statusText.textContent = "memory error";
         heroSubtitle.textContent = data.message || "Unable to connect to the dashboard shared memory.";
-        connectionSubtitle.textContent = data.message || "Unable to connect.";
       } else {
         dot.classList.add("busy");
-        statusText.textContent = "waiting";
+        statusText.textContent = "memory waiting";
         heroSubtitle.textContent = data.message || "Waiting for the controller to publish samples.";
-        connectionSubtitle.textContent = data.message || "Waiting for the controller to publish samples.";
       }
 
-      document.getElementById("robot-name").textContent = connected ? (data.robot_name || "--") : "--";
-      document.getElementById("iteration").textContent = connected ? String(data.iteration ?? "--") : "--";
-      document.getElementById("sim-time").textContent = connected ? formatNumber(data.sim_time, 3) : "--";
-      document.getElementById("shm-name").textContent = data.shared_memory_name || "--";
-      document.getElementById("sequence-text").textContent = connected ? `seq ${data.sequence}` : "seq --";
-      document.getElementById("layout-version").textContent = data.version ?? "--";
-      document.getElementById("state-dim").textContent = data.state_dim ?? "--";
+      if (controllerBadge && controllerDot && controllerText) {
+        const sequence = Number(data?.sequence ?? 0);
+        const activeThresholdSeconds = 0.35;
+        let controllerState = "waiting";
+        let controllerLabel = "controller waiting";
+
+        if (status === "error") {
+          controllerState = "error";
+          controllerLabel = "controller offline";
+        } else if (connected && status === "busy") {
+          controllerState = "busy";
+          controllerLabel = "controller busy";
+        } else if (!connected) {
+          controllerState = "waiting";
+          controllerLabel = "controller waiting";
+        } else if (sequence <= 0) {
+          appState.controllerLastSequence = 0;
+          appState.controllerLastChangeAt = null;
+          controllerState = "waiting";
+          controllerLabel = "controller starting";
+        } else {
+          if (appState.controllerLastSequence !== sequence) {
+            appState.controllerLastSequence = sequence;
+            appState.controllerLastChangeAt = nowSeconds;
+          }
+          const lastChangeAt = appState.controllerLastChangeAt;
+          const ageSeconds =
+            Number.isFinite(lastChangeAt) ? Math.max(0, nowSeconds - lastChangeAt) : Number.POSITIVE_INFINITY;
+          if (ageSeconds <= activeThresholdSeconds) {
+            controllerState = "active";
+            controllerLabel = "controller active";
+          } else {
+            controllerState = "stale";
+            controllerLabel = "controller idle";
+          }
+        }
+
+        controllerBadge.className = `status-badge controller ${controllerState}`;
+        controllerDot.className = "dot";
+        if (controllerState === "active") {
+          controllerDot.classList.add("live");
+        } else if (controllerState === "stale") {
+          controllerDot.classList.add("busy");
+        } else if (controllerState === "error") {
+          controllerDot.classList.add("error");
+        } else {
+          controllerDot.classList.add("busy");
+        }
+        controllerText.textContent = controllerLabel;
+      }
+
+      setTextContent("toolbar-robot", connected ? (data.robot_name || "--") : "--");
+      setTextContent("toolbar-iteration", connected ? String(data.iteration ?? "--") : "--");
+      setTextContent("toolbar-sim-time", connected ? formatNumber(data.sim_time, 3) : "--");
+      setTextContent("toolbar-sequence", connected ? `seq ${data.sequence}` : "seq --");
       document.getElementById("history-label").textContent = `history ${appState.history.length}`;
     }
 
@@ -1339,10 +1582,7 @@ HTML_TEMPLATE = r"""<!doctype html>
       const visibleConfigs = visibleChartsForView();
       const visibleLabels = new Set(visibleConfigs.map((config) => config.label));
       const historyWindow = appState.history.filter((sample) => sample.t >= (appState.history.length > 0 ? appState.history[appState.history.length - 1].t - appState.windowSeconds : 0));
-      const focusEntry = getChartEntry(appState.focusLabel) || getChartEntry(CHART_CONFIGS[0].label);
-      if (!focusEntry) {
-        return;
-      }
+      const mainLabels = appState.mainLabels.slice(0, MAX_MAIN_PANELS);
 
       document.getElementById("chart-grid").dataset.view = appState.view;
 
@@ -1350,7 +1590,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 
       for (const orderEntry of CHART_ORDER) {
         const runtimeEntry = getChartEntry(orderEntry.config.label);
-        if (!runtimeEntry || orderEntry.config.label === appState.focusLabel) {
+        if (!runtimeEntry) {
           continue;
         }
         const stats = statsByIndex[orderEntry.index];
@@ -1363,21 +1603,37 @@ HTML_TEMPLATE = r"""<!doctype html>
         );
       }
 
-      const focusStats = statsByIndex[focusEntry.index];
-      const focusDraw = drawChart(document.getElementById("focus-canvas"), historyWindow, focusEntry.config, focusEntry, true) || { niceDomain: { step: 1 } };
-      updateFocusPanel(focusEntry, focusStats, focusDraw, historyWindow);
-      updateChartCard(focusEntry, focusStats, focusDraw, visibleLabels.has(focusEntry.config.label));
+      appState.mainRuntime.forEach((panelEntry, index) => {
+        const label = mainLabels[index];
+        if (!panelEntry || !label) {
+          if (panelEntry) {
+            panelEntry.panel.style.display = "none";
+          }
+          return;
+        }
+        const config = CHART_CONFIGS.find((entry) => entry.label === label) || CHART_CONFIGS[0];
+        const chartEntry = getChartEntry(label);
+        if (!chartEntry) {
+          panelEntry.panel.style.display = "none";
+          return;
+        }
+        panelEntry.panel.style.display = "";
+        panelEntry.titleNode.textContent = config.title;
+        panelEntry.subtitleNode.textContent = `${config.group_label} • ${displayConfig(config).unit}`;
+        const stats = statsByIndex[chartEntry.index];
+        const cardDraw =
+          drawChart(chartEntry.canvas, historyWindow, config, chartEntry, false) || { niceDomain: { step: 1 } };
+        const mainDraw =
+          drawChart(panelEntry.canvas, historyWindow, config, chartEntry, true) || cardDraw;
+        updateMainPanel(panelEntry, label, stats, mainDraw, historyWindow, index);
+      });
 
       for (const orderEntry of CHART_ORDER) {
         const runtimeEntry = getChartEntry(orderEntry.config.label);
         const card = runtimeEntry?.card;
         if (!card) continue;
-        card.classList.toggle("active", orderEntry.config.label === appState.focusLabel);
-        if (appState.view === "focus") {
-          card.style.display = orderEntry.config.label === appState.focusLabel ? "" : "none";
-        } else {
-          card.style.display = visibleLabels.has(orderEntry.config.label) ? "" : "none";
-        }
+        card.classList.toggle("active", mainLabels.includes(orderEntry.config.label));
+        card.style.display = visibleLabels.has(orderEntry.config.label) ? "" : "none";
       }
     }
 
@@ -1396,6 +1652,7 @@ HTML_TEMPLATE = r"""<!doctype html>
 
     function ingestSnapshot(data) {
       const changed = pushSnapshot(data);
+      updateConnectionPanel();
       if (changed || data?.status === "busy" || data?.status === "error" || data?.status === "waiting") {
         safeRender();
       }
@@ -1438,15 +1695,26 @@ HTML_TEMPLATE = r"""<!doctype html>
       document.querySelectorAll("#window-buttons button").forEach((button) => {
         button.addEventListener("click", () => setWindow(Number(button.dataset.window)));
       });
-      document.getElementById("focus-prev").addEventListener("click", () => stepFocus(-1));
-      document.getElementById("focus-next").addEventListener("click", () => stepFocus(1));
+      document.querySelectorAll("#angle-buttons button").forEach((button) => {
+        button.addEventListener("click", () => setAngleUnit(button.dataset.angleUnit));
+      });
+      const decButton = document.getElementById("main-count-dec");
+      const incButton = document.getElementById("main-count-inc");
+      if (decButton) {
+        decButton.addEventListener("click", () => setMainPanelCount(appState.mainLabels.length - 1));
+      }
+      if (incButton) {
+        incButton.addEventListener("click", () => setMainPanelCount(appState.mainLabels.length + 1));
+      }
       window.addEventListener("resize", render);
     }
 
+    buildMainPanels();
     buildChartCards();
     bindControls();
     updateButtonStates();
     safeRender();
+    window.requestAnimationFrame(() => safeRender());
     void pollSnapshot();
   </script>
 </body>
@@ -1577,9 +1845,9 @@ class DashboardSharedMemoryClient:
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
-    def __init__(self, server_address, RequestHandlerClass, reader: DashboardSharedMemoryClient):
+    def __init__(self, server_address, RequestHandlerClass, state_reader: DashboardSharedMemoryClient):
         super().__init__(server_address, RequestHandlerClass)
-        self.reader = reader
+        self.state_reader = state_reader
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -1592,12 +1860,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def _snapshot_payload(self) -> dict[str, object]:
-        payload = self.server.reader.snapshot()
+        payload = self.server.state_reader.snapshot()
         payload["server_time"] = time.time()
         return payload
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path in {"/", "/index.html"}:
+        request_path = self.path.split("?", 1)[0]
+
+        if request_path in {"/", "/index.html"}:
             html = HTML_TEMPLATE.replace("%CHART_CONFIG%", json.dumps(CHART_CONFIGS, ensure_ascii=False)).replace(
                 "%STATE_LABELS%",
                 json.dumps(list(STATE_LABELS)),
@@ -1605,7 +1875,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(html.encode("utf-8"), "text/html; charset=utf-8")
             return
 
-        if self.path == "/api/state":
+        if request_path == "/api/state":
             payload = self._snapshot_payload()
             self._send_bytes(
                 json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"),
@@ -1613,7 +1883,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if self.path == "/api/health":
+        if request_path == "/api/health":
             self._send_bytes(b"ok", "text/plain; charset=utf-8")
             return
 
@@ -1641,7 +1911,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Do not open the browser automatically",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    return args
 
 
 def main(argv: list[str]) -> int:
@@ -1649,6 +1920,7 @@ def main(argv: list[str]) -> int:
     reader = DashboardSharedMemoryClient(args.shared_memory)
     server = DashboardHTTPServer((args.host, args.port), DashboardHandler, reader)
     url = f"http://{args.host}:{args.port}"
+    start_url = url
 
     if not args.no_browser and os.environ.get("CONVEXMPC_DASHBOARD_OPEN_BROWSER", "0") not in {
         "0",
@@ -1656,7 +1928,7 @@ def main(argv: list[str]) -> int:
         "False",
         "",
     }:
-        webbrowser.open(url, new=2)
+        webbrowser.open(start_url, new=2)
 
     print(f"[dashboard] listening on {url}")
     print(f"[dashboard] shared memory: {args.shared_memory}")

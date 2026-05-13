@@ -7,6 +7,7 @@ add_library(sim
 	src/models/UnitreeG1Spec.cpp
 	src/models/UnitreeH1Spec.cpp
 	src/main_thread.cpp
+	src/SharedMemoryTelemetryPublisher.cpp
 	src/SharedMemoryPublisher.cpp
 	src/SimulationRunner.cpp
 	src/setupRobotParams.cpp
