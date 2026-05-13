@@ -7,3 +7,11 @@ target_link_libraries(main PRIVATE
 	sim
 	My_Controller
 )
+
+add_executable(main_zero
+	main_zero.cpp
+)
+
+target_link_libraries(main_zero PRIVATE
+	sim
+)

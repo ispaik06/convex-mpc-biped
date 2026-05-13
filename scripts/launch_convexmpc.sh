@@ -6,17 +6,34 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 
 default_main_bin="${repo_root}/build/apps/main"
+default_zero_main_bin="${repo_root}/build/apps/main_zero"
 default_dashboard_script="${repo_root}/dashboard/app.py"
 default_dashboard_port=8001
 
 main_bin="${default_main_bin}"
-python_bin="${CONVEXMPC_PYTHON:-${PYTHON:-python3}}"
+zero_command=false
+if [[ -n "${CONVEXMPC_PYTHON:-}" ]]; then
+    python_bin="${CONVEXMPC_PYTHON}"
+elif [[ -x "/opt/anaconda3/envs/convexmpc/bin/python" ]]; then
+    python_bin="/opt/anaconda3/envs/convexmpc/bin/python"
+elif [[ -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/envs/convexmpc/bin/python" ]]; then
+    python_bin="${CONDA_PREFIX}/envs/convexmpc/bin/python"
+elif [[ -n "${CONDA_PREFIX:-}" && -x "${CONDA_PREFIX}/bin/python" ]]; then
+    python_bin="${CONDA_PREFIX}/bin/python"
+elif [[ -n "${PYTHON:-}" ]]; then
+    python_bin="${PYTHON}"
+else
+    python_bin="python3"
+fi
 dashboard_script=""
 dashboard_port="${CONVEXMPC_DASHBOARD_PORT:-${default_dashboard_port}}"
 dashboard_explicit=false
 dashboard_enabled=true
 robot=""
 viewer=""
+
+: "${CONVEXMPC_DASHBOARD_QPOS_HZ:=60}"
+export CONVEXMPC_DASHBOARD_QPOS_HZ
 
 usage() {
     cat <<'EOF'
@@ -30,6 +47,7 @@ Positional arguments:
 
 Options:
   --main-bin PATH          Override the C++ executable path.
+  --zero-command           Use the MIT humanoid zero-command binary.
   --dashboard-script PATH   Python dashboard entrypoint to run.
   --dashboard-port PORT    Dashboard port to use, or the first free port at/above it.
   --python PYTHON          Python interpreter for the dashboard.
@@ -40,6 +58,7 @@ Environment:
   CONVEXMPC_PYTHON         Default Python interpreter if --python is not provided.
   CONVEXMPC_DASHBOARD_SCRIPT  Default dashboard entrypoint if --dashboard-script is not provided.
   CONVEXMPC_DASHBOARD_PORT   Default dashboard port if --dashboard-port is not provided.
+  CONVEXMPC_QPOS_SHM_NAME    Shared memory name for the qpos telemetry stream.
 EOF
 }
 
@@ -52,7 +71,8 @@ pick_free_port() {
 }
 
 clear_stale_shared_memory() {
-    "${python_bin}" - "${CONVEXMPC_SHM_NAME}" <<'PY'
+    local shm_name="$1"
+    "${python_bin}" - "${shm_name}" <<'PY'
 import sys
 from multiprocessing import shared_memory
 
@@ -81,6 +101,10 @@ while [[ $# -gt 0 ]]; do
             fi
             main_bin="$2"
             shift 2
+            ;;
+        --zero-command)
+            zero_command=true
+            shift
             ;;
         --dashboard-script)
             if [[ $# -lt 2 ]]; then
@@ -148,6 +172,10 @@ if [[ -z "${dashboard_script}" && -n "${CONVEXMPC_DASHBOARD_SCRIPT:-}" ]]; then
     dashboard_explicit=true
 fi
 
+if [[ "${zero_command}" == true && "${main_bin}" == "${default_main_bin}" ]]; then
+    main_bin="${default_zero_main_bin}"
+fi
+
 if ! [[ "${dashboard_port}" =~ ^[0-9]+$ ]]; then
     echo "Error: dashboard port must be a number: ${dashboard_port}" >&2
     exit 1
@@ -160,7 +188,9 @@ if ! command -v "${python_bin}" >/dev/null 2>&1; then
 fi
 
 export CONVEXMPC_SHM_NAME="${CONVEXMPC_SHM_NAME:-convexmpc_dashboard_state}"
-clear_stale_shared_memory
+export CONVEXMPC_QPOS_SHM_NAME="${CONVEXMPC_QPOS_SHM_NAME:-convexmpc_dashboard_qpos}"
+clear_stale_shared_memory "${CONVEXMPC_SHM_NAME}"
+clear_stale_shared_memory "${CONVEXMPC_QPOS_SHM_NAME}"
 
 if [[ -z "${robot}" || -z "${viewer}" ]]; then
     usage >&2
@@ -191,6 +221,7 @@ if [[ ! -x "${main_bin}" ]]; then
 fi
 
 export CONVEXMPC_SHM_NAME="${CONVEXMPC_SHM_NAME:-convexmpc_dashboard_state}"
+export CONVEXMPC_QPOS_SHM_NAME="${CONVEXMPC_QPOS_SHM_NAME:-convexmpc_dashboard_qpos}"
 export CONVEXMPC_ROBOT="${robot}"
 export CONVEXMPC_VIEWER="${viewer}"
 export CONVEXMPC_DASHBOARD_PORT="${dashboard_port}"
@@ -235,9 +266,12 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "[launch] main: ${main_bin} ${robot} ${viewer}"
-echo "[launch] dashboard: ${python_bin} ${dashboard_script} --host 127.0.0.1 --port ${dashboard_port}"
+echo "[launch] dashboard: ${python_bin} ${dashboard_script} --host 127.0.0.1 --port ${dashboard_port} --shared-memory ${CONVEXMPC_SHM_NAME}"
 
-"${python_bin}" "${dashboard_script}" --host 127.0.0.1 --port "${dashboard_port}" &
+"${python_bin}" "${dashboard_script}" \
+    --host 127.0.0.1 \
+    --port "${dashboard_port}" \
+    --shared-memory "${CONVEXMPC_SHM_NAME}" &
 dashboard_pid=$!
 
 "${main_bin}" "${robot}" "${viewer}" &
