@@ -818,14 +818,14 @@ void MyController::updateSwingTrajectories(
             const double searchTrackingTime =
                 std::max(getControllerConfig().contactManager.groundSearchTrackingTime,
                          minRemainingTime);
-            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-                currentFootPosition,
-                touchdownTarget,
-                filteredPlanarCommand_B,
-                psi_dot,
-                side,
-                fallbackYaw_W);
             if (!runtime.wasSearchMode || !runtime.swingTrajectory.active()) {
+                runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
+                    currentFootPosition,
+                    touchdownTarget,
+                    filteredPlanarCommand_B,
+                    psi_dot,
+                    side,
+                    fallbackYaw_W);
                 runtime.swingTrajectory.reset(
                     currentFootPosition,
                     touchdownTarget,
@@ -844,15 +844,15 @@ void MyController::updateSwingTrajectories(
         runtime.wasSearchMode = false;
         const double timeRemaining =
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
-        runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-            currentFootPosition,
-            touchdownTarget,
-            filteredPlanarCommand_B,
-            psi_dot,
-            side,
-            fallbackYaw_W);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
+            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
+                currentFootPosition,
+                touchdownTarget,
+                filteredPlanarCommand_B,
+                psi_dot,
+                side,
+                fallbackYaw_W);
             runtime.swingTrajectory.reset(currentFootPosition,
                                           touchdownTarget,
                                           _swingHeight,
