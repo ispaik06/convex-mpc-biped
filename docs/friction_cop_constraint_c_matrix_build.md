@@ -5,7 +5,7 @@ This document explains the **contact wrench inequality constraints** used in the
 The correct implementation is:
 
 $$
-C_W = C_F \cdot \text{blkdiag}(R_{WF}^{T}, R_{WF}^{T})
+C_W = C_F \cdot \mathrm{blkdiag}(R_{WF}^{T}, R_{WF}^{T})
 $$
 
 where $C_F$ is the foot-frame contact constraint matrix and $C_W$ is the matrix applied directly to the world-frame MPC input.

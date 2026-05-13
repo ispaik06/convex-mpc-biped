@@ -62,11 +62,12 @@ Install MuJoCo into `~/.local/mujoco`:
 cd /path/to/workdir
 git clone https://github.com/google-deepmind/mujoco.git
 cd mujoco
-git checkout 3.7.0
 cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local/mujoco"
 cmake --build build -j
 cmake --install build
 ```
+
+If you need a specific MuJoCo version, check out the tag you want before configuring, for example `git checkout 3.7.0`.
 
 Then configure and build:
 
