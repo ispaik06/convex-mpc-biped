@@ -1,0 +1,9 @@
+name: convexmpc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pillow
+  - mujoco-python>=3.3,<4
