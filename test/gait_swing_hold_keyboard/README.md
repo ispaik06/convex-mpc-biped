@@ -39,11 +39,12 @@ The runner uses `KeyboardCommand`.
 | `w` / `s` | Increase/decrease body-frame `x_dot` |
 | `a` / `d` | Increase/decrease body-frame `y_dot` |
 | `q` / `e` | Increase/decrease yaw rate `psi_dot` |
+| `+` / `-` | Increase/decrease body-height command `z_dot` |
 | Space | Reset velocity commands |
 
 Only the planar `x_dot`, `y_dot`, and `psi_dot` commands are applied to the base motion in this runner.
-The shared keyboard layer also accepts `up/down` and `i/j/k/l`, but this runner does not use those
-fields when moving the base.
+The shared keyboard layer also accepts `i/j/k/l` for standing orientation, and `+/-` for the shared
+`z_dot` command.
 
 ## Build
 

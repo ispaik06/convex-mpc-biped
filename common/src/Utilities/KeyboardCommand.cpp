@@ -82,14 +82,14 @@ void printCommand(const UserCommand& command, const bool standingControls) {
 
 void printActiveControls(const bool standingControls) {
     if (standingControls) {
-        std::cout << "[KeyboardCommand] standing controls active: up/down z_dot, "
+        std::cout << "[KeyboardCommand] standing controls active: +/- z_dot, "
                   << "i/k pitch, j/l roll, t toggle stand/walk, Shift+L log, "
                   << "space reset\n";
         return;
     }
 
     std::cout << "[KeyboardCommand] walking controls active: w/s x_dot, a/d y_dot, "
-              << "q/e psi_dot, up/down z_dot, i/k pitch, j/l roll, t toggle stand/walk, "
+              << "q/e psi_dot, +/- z_dot, i/k pitch, j/l roll, t toggle stand/walk, "
               << "Shift+L log, space reset\n";
 }
 
@@ -272,11 +272,6 @@ void KeyboardCommand::inputLoop() {
                     escapeState = EscapeState::None;
                     break;
                 case EscapeState::SawEscapeBracket:
-                    if (key == 'A') {
-                        applyVerticalKey(true);
-                    } else if (key == 'B') {
-                        applyVerticalKey(false);
-                    }
                     escapeState = EscapeState::None;
                     break;
             }
@@ -373,6 +368,14 @@ void KeyboardCommand::applyKey(char key) {
             case 'l':
                 applyStandingOrientationKey(lowerKey);
                 return;
+            case '+':
+            case '=':
+                applyVerticalKey(true);
+                return;
+            case '-':
+            case '_':
+                applyVerticalKey(false);
+                return;
             case 'w':
             case 's':
             case 'a':
@@ -391,6 +394,14 @@ void KeyboardCommand::applyKey(char key) {
         case 'j':
         case 'l':
             applyStandingOrientationKey(lowerKey);
+            return;
+        case '+':
+        case '=':
+            applyVerticalKey(true);
+            return;
+        case '-':
+        case '_':
+            applyVerticalKey(false);
             return;
         case 'w':
         case 's':
