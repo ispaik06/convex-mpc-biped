@@ -20,8 +20,6 @@
 #include "setupRobotParams.h"
 
 namespace {
-constexpr const char* kInitialKeyframeName = "copied_state";
-
 double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
 }
@@ -93,6 +91,7 @@ void KeyboardGaitSwingRunner::init() {
     const std::string xmlPath = controllerConfig.gaitSwingHoldTest.xmlPath.empty()
                                     ? runtimeConfig.modelXmlPath
                                     : controllerConfig.gaitSwingHoldTest.xmlPath;
+    const std::string keyframeName = controllerConfig.gaitSwingHoldTest.keyframeName;
     _modelPath = resolveProjectPath(xmlPath);
 
     if (mjVERSION_HEADER != mj_version()) {
@@ -115,7 +114,7 @@ void KeyboardGaitSwingRunner::init() {
     configureSimulationModel(_model);
 
     locateFloatingBase();
-    applyCopiedStateKeyframe();
+    applyCopiedStateKeyframe(keyframeName);
     cachePlanarBasePose();
     cacheFrozenQpos();
     _planarMotionEnabled = true;
@@ -124,13 +123,12 @@ void KeyboardGaitSwingRunner::init() {
     std::cout << "nq=" << _model->nq
               << ", nv=" << _model->nv
               << ", nu=" << _model->nu << '\n';
-    std::cout << "[KeyboardGaitSwingHoldTest] initial keyframe: " << kInitialKeyframeName
+    std::cout << "[KeyboardGaitSwingHoldTest] initial keyframe: " << keyframeName
               << ", torso z offset=" << _torsoZOffset << " m" << std::endl;
 }
 
 void KeyboardGaitSwingRunner::run() {
     _stopRequested = false;
-    _keyboardCommand.start();
 
     if (_headless) {
         runPhysicsLoop(false, false);
@@ -172,6 +170,7 @@ void KeyboardGaitSwingRunner::runPhysicsLoop(const bool throttleRealtime, const 
     }
 
     while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
+        _keyboardCommand.start();
         _userCommand = _keyboardCommand.getUserCommand();
 
         clampFrozenQpos();
@@ -369,11 +368,11 @@ void KeyboardGaitSwingRunner::updateDebugVisualization() {
     }
 }
 
-void KeyboardGaitSwingRunner::applyCopiedStateKeyframe() {
-    const int keyId = mj_name2id(_model, mjOBJ_KEY, kInitialKeyframeName);
+void KeyboardGaitSwingRunner::applyCopiedStateKeyframe(const std::string& keyframeName) {
+    const int keyId = mj_name2id(_model, mjOBJ_KEY, keyframeName.c_str());
     if (keyId < 0) {
         throw std::runtime_error(std::string("Failed to find MuJoCo keyframe: ") +
-                                 kInitialKeyframeName);
+                                 keyframeName);
     }
 
     mj_resetData(_model, _data);

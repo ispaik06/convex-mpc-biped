@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <cctype>
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -11,9 +12,25 @@
 namespace {
 void printUsage() {
     std::cout << "Usage: main_gait_swing_hold_test [robot-id] Viewer [y/n] [torso-z-offset-m]\n"
-              << "\t robot-id: m for MIT humanoid\n"
+              << "\t robot-id: m for MIT humanoid, g for Unitree G1, h for Unitree H1\n"
               << "\t Viewer: y for GUI, n for headless\n"
               << "\t torso-z-offset-m: optional base height offset in meters, default 0.0\n";
+}
+
+bool robotTypeFromId(const char robotId, RobotType& robotType) {
+    switch (std::tolower(static_cast<unsigned char>(robotId))) {
+        case 'm':
+            robotType = RobotType::MIT_HUMANOID;
+            return true;
+        case 'g':
+            robotType = RobotType::UNITREE_G1;
+            return true;
+        case 'h':
+            robotType = RobotType::UNITREE_H1;
+            return true;
+        default:
+            return false;
+    }
 }
 }  // namespace
 
@@ -23,7 +40,8 @@ int main(int argc, char** argv) {
         return EXIT_FAILURE;
     }
 
-    if (argv[1][0] != 'm') {
+    RobotType robotType = RobotType::MIT_HUMANOID;
+    if (!robotTypeFromId(argv[1][0], robotType)) {
         printUsage();
         return EXIT_FAILURE;
     }
@@ -50,10 +68,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    setActiveRobotType(RobotType::MIT_HUMANOID);
+    setActiveRobotType(robotType);
 
     auto controller = std::make_unique<GaitSwingHoldController>();
-    GaitSwingHoldTestRunner runner(RobotType::MIT_HUMANOID, controller.get(), headless, torsoZOffset);
+    GaitSwingHoldTestRunner runner(robotType, controller.get(), headless, torsoZOffset);
     runner.init();
     runner.run();
     return EXIT_SUCCESS;

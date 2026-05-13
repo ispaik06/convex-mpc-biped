@@ -173,18 +173,22 @@ KeyboardCommand::~KeyboardCommand() {
     stop();
 }
 
-void KeyboardCommand::start() {
+bool KeyboardCommand::start() {
     if (_running.load()) {
-        return;
+        return true;
     }
 
     if (!configureTerminalRawMode(_terminalConfigured)) {
-        return;
+        return false;
     }
 
     _running.store(true);
+    if (tcflush(STDIN_FILENO, TCIFLUSH) != 0) {
+        std::cerr << "[KeyboardCommand] warning: failed to flush pending keyboard input\n";
+    }
     std::cout << "[KeyboardCommand] input thread started\n";
     _inputThread = std::thread(&KeyboardCommand::inputLoop, this);
+    return true;
 }
 
 void KeyboardCommand::stop() {

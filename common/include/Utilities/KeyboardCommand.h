@@ -13,7 +13,7 @@ public:
     ~KeyboardCommand();
 
     void setWalkingLimits(double xDotLimit, double yDotLimit, double psiDotLimit);
-    void start();
+    bool start();
     void stop();
     void setStandingControls(bool standingControls, bool announce = false);
     UserCommand getUserCommand() const;

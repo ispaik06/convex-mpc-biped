@@ -4,12 +4,12 @@
 
 `gait_swing_hold_keyboard` is the moving-base variant of `test/gait_swing_hold`.
 
-It starts from the `copied_state` keyframe, freezes every non-leg joint coordinate, and then moves the floating base directly in planar `x/y/yaw` from keyboard velocity commands. The normal `RobotRunner` joint-position initializer is not used.
+It starts from the configured `gait_swing_hold_test.keyframe_name`, freezes every non-leg joint coordinate, and then moves the floating base directly in planar `x/y/yaw` from keyboard velocity commands. The normal `RobotRunner` joint-position initializer is not used.
 
 ## What It Exercises
 
-- Robot: MIT humanoid only (`m`).
-- Model: loaded from `gait_swing_hold_test.xml_path` in `config/mit_humanoid/my_controller.yaml`, falling back to `model.xml_path` if unset.
+- Robot: MIT humanoid (`m`), Unitree G1 (`g`), or Unitree H1 (`h`).
+- Model: loaded from `gait_swing_hold_test.xml_path` in the active robot's `my_controller.yaml`, falling back to `model.xml_path` if unset.
 - Runner: `KeyboardGaitSwingRunner`.
 - Controller: `GaitSwingHoldController` from `test/gait_swing_hold`.
 - Frozen state: arms and other non-leg non-base coordinates.
@@ -27,7 +27,7 @@ This is useful when debugging:
 
 | Folder | Torso/base behavior | Main use |
 | --- | --- | --- |
-| `gait_swing_hold` | Floating base is frozen at `copied_state` plus optional z offset | Isolate swing tracking with a fixed torso |
+| `gait_swing_hold` | Floating base is frozen at the configured keyframe plus optional z offset | Isolate swing tracking with a fixed torso |
 | `gait_swing_hold_keyboard` | Floating base follows keyboard planar commands | Inspect touchdown and swing tracking under base motion |
 
 ## Keyboard Controls
@@ -61,6 +61,18 @@ GUI:
 ./build/test/gait_swing_hold_keyboard/main_gait_swing_hold_keyboard_test m y
 ```
 
+G1:
+
+```sh
+./build/test/gait_swing_hold_keyboard/main_gait_swing_hold_keyboard_test g y
+```
+
+H1:
+
+```sh
+./build/test/gait_swing_hold_keyboard/main_gait_swing_hold_keyboard_test h y
+```
+
 Headless:
 
 ```sh
@@ -75,10 +87,12 @@ With torso height offset:
 
 Arguments:
 
-- `m`: MIT humanoid. This test rejects other robot IDs.
+- `m`: MIT humanoid.
+- `g`: Unitree G1.
+- `h`: Unitree H1.
 - `y`: GUI viewer.
 - `n`: headless.
-- Optional third argument: torso base `z` offset in meters, applied immediately after loading `copied_state`.
+- Optional third argument: torso base `z` offset in meters, applied immediately after loading the configured keyframe.
 
 For keyboard input, run from an interactive terminal. If stdin is not a TTY, keyboard input is disabled.
 
@@ -100,15 +114,18 @@ The file is overwritten each run.
 
 ## Relevant Config
 
-This test explicitly activates the MIT humanoid config before constructing the controller:
+This test explicitly activates the selected robot config before constructing the controller:
 
 ```text
 config/mit_humanoid/my_controller.yaml
+config/unitree_robots/g1/my_controller.yaml
+config/unitree_robots/h1/my_controller.yaml
 ```
 
 Important sections:
 
 - `gait_swing_hold_test.xml_path`: MuJoCo scene XML loaded by `KeyboardGaitSwingRunner`.
+- `gait_swing_hold_test.keyframe_name`: scene keyframe used to seed the frozen initial state.
 - `model.xml_path`: fallback MuJoCo scene XML if the test-specific path is empty.
 - `timing`: swing/stance durations.
 - `swing`: swing height and Cartesian gains.

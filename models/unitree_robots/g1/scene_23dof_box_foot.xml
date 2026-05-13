@@ -1,5 +1,5 @@
-<mujoco model="g1_23dof scene">
-  <include file="g1_23dof.xml"/>
+<mujoco model="g1_23dof box-foot scene">
+  <include file="g1_23dof_box_foot.xml"/>
 
   <statistic center="0 0 0.5" extent="2.0"/>
 

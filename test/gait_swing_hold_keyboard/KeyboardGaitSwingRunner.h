@@ -42,7 +42,7 @@ private:
     void applyRobotCommand();
     void updateDebugVisualization();
     void initializeControllerRuntime();
-    void applyCopiedStateKeyframe();
+    void applyCopiedStateKeyframe(const std::string& keyframeName);
     void locateFloatingBase();
     void cacheFrozenQpos();
     void clampFrozenQpos();

@@ -18,8 +18,6 @@
 #include "setupRobotParams.h"
 
 namespace {
-constexpr const char* kInitialKeyframeName = "copied_state";
-
 void applyMarkerColor(mjModel* model, const int bodyId, const DebugVizMarker<double>& marker) {
     if (model == nullptr || bodyId < 0 || !marker.hasRgba) {
         return;
@@ -80,6 +78,7 @@ void GaitSwingHoldTestRunner::init() {
     const std::string xmlPath = controllerConfig.gaitSwingHoldTest.xmlPath.empty()
                                     ? runtimeConfig.modelXmlPath
                                     : controllerConfig.gaitSwingHoldTest.xmlPath;
+    const std::string keyframeName = controllerConfig.gaitSwingHoldTest.keyframeName;
     _modelPath = resolveProjectPath(xmlPath);
 
     if (mjVERSION_HEADER != mj_version()) {
@@ -102,7 +101,7 @@ void GaitSwingHoldTestRunner::init() {
     configureSimulationModel(_model);
 
     locateFloatingBase();
-    applyCopiedStateKeyframe();
+    applyCopiedStateKeyframe(keyframeName);
     cacheFrozenQpos();
     clampFrozenQpos();
 
@@ -110,7 +109,7 @@ void GaitSwingHoldTestRunner::init() {
     std::cout << "nq=" << _model->nq
               << ", nv=" << _model->nv
               << ", nu=" << _model->nu << '\n';
-    std::cout << "[GaitSwingHoldTest] initial keyframe: " << kInitialKeyframeName
+    std::cout << "[GaitSwingHoldTest] initial keyframe: " << keyframeName
               << ", torso z offset=" << _torsoZOffset << " m" << std::endl;
 }
 
@@ -342,11 +341,11 @@ void GaitSwingHoldTestRunner::updateDebugVisualization() {
     }
 }
 
-void GaitSwingHoldTestRunner::applyCopiedStateKeyframe() {
-    const int keyId = mj_name2id(_model, mjOBJ_KEY, kInitialKeyframeName);
+void GaitSwingHoldTestRunner::applyCopiedStateKeyframe(const std::string& keyframeName) {
+    const int keyId = mj_name2id(_model, mjOBJ_KEY, keyframeName.c_str());
     if (keyId < 0) {
         throw std::runtime_error(std::string("Failed to find MuJoCo keyframe: ") +
-                                 kInitialKeyframeName);
+                                 keyframeName);
     }
 
     mj_resetData(_model, _data);

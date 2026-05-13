@@ -628,6 +628,12 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.swing.stopBrakingLatchClearTicks =
                 swing.at("stop_braking_latch_clear_ticks").get<int>();
         }
+        if (swing.contains("roll_kp")) {
+            out.swing.rollKp = swing.at("roll_kp").get<double>();
+        }
+        if (swing.contains("roll_kd")) {
+            out.swing.rollKd = swing.at("roll_kd").get<double>();
+        }
         if (swing.contains("pitch_kp")) {
             out.swing.pitchKp = swing.at("pitch_kp").get<double>();
         }
@@ -752,6 +758,18 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (initialPose.contains("arm_initialization_time")) {
             out.initialPose.armInitializationTime =
                 initialPose.at("arm_initialization_time").get<double>();
+        }
+    }
+
+    if (cfg.contains("gait_swing_hold_test") && cfg.at("gait_swing_hold_test").is_object()) {
+        const json& gaitSwingHoldTest = cfg.at("gait_swing_hold_test");
+        if (gaitSwingHoldTest.contains("xml_path") && gaitSwingHoldTest.at("xml_path").is_string()) {
+            out.gaitSwingHoldTest.xmlPath = gaitSwingHoldTest.at("xml_path").get<std::string>();
+        }
+        if (gaitSwingHoldTest.contains("keyframe_name") &&
+            gaitSwingHoldTest.at("keyframe_name").is_string()) {
+            out.gaitSwingHoldTest.keyframeName =
+                gaitSwingHoldTest.at("keyframe_name").get<std::string>();
         }
     }
 
