@@ -62,12 +62,7 @@ or, in scalar column order:
 
 $$
  u_k =
- \begin{bmatrix}
- F_{Lx} & F_{Ly} & F_{Lz} &
- F_{Rx} & F_{Ry} & F_{Rz} &
- M_{Lx} & M_{Ly} & M_{Lz} &
- M_{Rx} & M_{Ry} & M_{Rz}
- \end{bmatrix}^T_W
+ \begin{bmatrix} F_{Lx} & F_{Ly} & F_{Lz} & F_{Rx} & F_{Ry} & F_{Rz} & M_{Lx} & M_{Ly} & M_{Lz} & M_{Rx} & M_{Ry} & M_{Rz} \end{bmatrix}^T_W
 $$
 
 Therefore the local-to-global column maps are:
