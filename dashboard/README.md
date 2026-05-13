@@ -4,6 +4,12 @@ This directory contains the graph-only telemetry dashboard for ConvexMPC.
 It shows the live controller state, recent traces, and one to three main charts
 from the shared-memory telemetry buffer.
 
+The server entry point is `dashboard/app.py`, which serves:
+
+- `dashboard/index.html`
+- `dashboard/static/dashboard.css`
+- `dashboard/static/dashboard.js`
+
 ## What It Does
 
 - Displays the 12 controller state channels as time-series plots
