@@ -55,9 +55,9 @@ struct StateEstimate {
 
 Most yaw extraction functions return yaw in:
 
-\[
+$$
 \psi \in [-\pi, \pi]
-\]
+$$
 
 That representation is fine for display, but it is **not continuous**. During a smooth rotation, the measured yaw may jump like this:
 
@@ -67,15 +67,15 @@ That representation is fine for display, but it is **not continuous**. During a 
 
 Physically, the robot turned smoothly. Numerically, however, the raw yaw difference becomes:
 
-\[
+$$
 \Delta \psi_{\text{raw}} = -3.13 - 3.14 \approx -6.27
-\]
+$$
 
 This creates a fake jump of almost:
 
-\[
+$$
 -2\pi
-\]
+$$
 
 If this raw difference enters the controller, the controller may generate a huge yaw rate, huge yaw error, wrong footstep yaw, wrong capture-point offset, or an unstable MPC solution.
 
@@ -91,9 +91,9 @@ If this raw difference enters the controller, the controller may generate a huge
 
 Wrapped yaw is bounded:
 
-\[
+$$
 \psi_{w} \in [-\pi, \pi]
-\]
+$$
 
 Use:
 
@@ -105,9 +105,9 @@ double wrapToPi(double x) {
 
 Then:
 
-\[
+$$
 \psi_w = \mathrm{wrapToPi}(\psi)
-\]
+$$
 
 Wrapped yaw is good for:
 
@@ -125,9 +125,9 @@ It is **bad** as a continuous MPC state.
 
 Unwrapped yaw is continuous:
 
-\[
+$$
 \psi_u \in \mathbb{R}
-\]
+$$
 
 It can go beyond \(\pi\):
 
@@ -156,33 +156,33 @@ More concretely:
 
 ### Use unwrapped yaw for subtraction across time
 
-\[
+$$
 \dot{\psi} \approx \frac{\psi_u[k] - \psi_u[k-1]}{\Delta t}
-\]
+$$
 
 ### Use wrapped difference for shortest angular error
 
-\[
+$$
 e_{\psi} = \mathrm{wrapToPi}(\psi_{target} - \psi_{current})
-\]
+$$
 
 ### Use either for rotation matrices
 
 Because:
 
-\[
+$$
 \cos(\psi) = \cos(\psi + 2\pi n)
-\]
+$$
 
-\[
+$$
 \sin(\psi) = \sin(\psi + 2\pi n)
-\]
+$$
 
 Therefore:
 
-\[
+$$
 R_z(\psi_w) = R_z(\psi_u)
-\]
+$$
 
 up to numerical precision.
 
@@ -250,35 +250,35 @@ state.yaw_W_wrapped = yawWrappedNow;
 
 Mathematically:
 
-\[
+$$
 \Delta \psi[k] = \mathrm{wrapToPi}(\psi_w[k] - \psi_w[k-1])
-\]
+$$
 
-\[
+$$
 \psi_u[k] = \psi_u[k-1] + \Delta \psi[k]
-\]
+$$
 
-\[
+$$
 \dot{\psi}[k] = \frac{\Delta \psi[k]}{\Delta t}
-\]
+$$
 
 This prevents the fake jump:
 
-\[
+$$
 3.14 \rightarrow -3.13
-\]
+$$
 
 from becoming:
 
-\[
+$$
 \Delta\psi \approx -6.27
-\]
+$$
 
 Instead it becomes:
 
-\[
+$$
 \Delta\psi \approx +0.01
-\]
+$$
 
 ---
 
@@ -286,9 +286,9 @@ Instead it becomes:
 
 The user command is not an absolute heading target. It is:
 
-\[
+$$
 \dot{\psi}_{cmd}
-\]
+$$
 
 This simplifies the policy a lot.
 
@@ -299,27 +299,27 @@ This simplifies the policy a lot.
 
 Given current unwrapped yaw:
 
-\[
+$$
 \psi_u[0]
-\]
+$$
 
 and yaw-rate command:
 
-\[
+$$
 \dot{\psi}_{cmd}
-\]
+$$
 
 The MPC horizon reference should be:
 
-\[
+$$
 \psi_{ref}[k] = \psi_u[0] + \dot{\psi}_{cmd} t_k
-\]
+$$
 
 where:
 
-\[
+$$
 t_k = k \Delta t_{mpc}
-\]
+$$
 
 Code:
 
@@ -349,15 +349,15 @@ If the horizon crosses \(\pi\), wrapping produces:
 
 The MPC cost sees a huge discontinuity:
 
-\[
+$$
 3.13 \rightarrow -3.12
-\]
+$$
 
 which looks like a jump of about:
 
-\[
+$$
 -2\pi
-\]
+$$
 
 The correct unwrapped reference is:
 
@@ -401,27 +401,27 @@ xRef[k](yawIndex) = wrapToPi(state.yaw_W_unwrapped + yawRateCmd * t);
 
 If the MPC cost contains:
 
-\[
+$$
 (\psi - \psi_{ref})^2
-\]
+$$
 
 then both \(\psi\) and \(\psi_{ref}\) must live on the same continuous branch.
 
 Therefore:
 
-\[
+$$
 \psi = \psi_u
-\]
+$$
 
-\[
+$$
 \psi_{ref} = \psi_{u,ref}
-\]
+$$
 
 Then:
 
-\[
+$$
 \psi - \psi_{ref}
-\]
+$$
 
 is continuous.
 
@@ -431,20 +431,20 @@ is continuous.
 
 Many parts of the controller use:
 
-\[
+$$
 R_z(\psi)
-\]
+$$
 
 For example:
 
-\[
+$$
 R_z(\psi) =
 \begin{bmatrix}
 \cos\psi & -\sin\psi & 0 \\
 \sin\psi & \cos\psi & 0 \\
 0 & 0 & 1
 \end{bmatrix}
-\]
+$$
 
 Since `sin` and `cos` are periodic, both of these are acceptable:
 
@@ -468,9 +468,9 @@ For normal walking tests this is usually irrelevant.
 
 If needed later, use a global yaw offset/rebasing method:
 
-\[
+$$
 \psi_u \leftarrow \psi_u - 2\pi n
-\]
+$$
 
 and apply the same offset consistently to all stored yaw references. Do **not** rebase only one part of the controller.
 
@@ -482,52 +482,52 @@ The friction cone and CoP constraints use the stance foot yaw to rotate foot-loc
 
 For one foot:
 
-\[
+$$
 u_W =
 \begin{bmatrix}
 F_{x,W} & F_{y,W} & F_{z,W} & M_{x,W} & M_{y,W} & M_{z,W}
 \end{bmatrix}^T
-\]
+$$
 
 Foot yaw:
 
-\[
+$$
 \psi_f
-\]
+$$
 
 Define:
 
-\[
+$$
 c = \cos\psi_f
-\]
+$$
 
-\[
+$$
 s = \sin\psi_f
-\]
+$$
 
 Then:
 
-\[
+$$
 F_{x,F} = cF_{x,W} + sF_{y,W}
-\]
+$$
 
-\[
+$$
 F_{y,F} = -sF_{x,W} + cF_{y,W}
-\]
+$$
 
-\[
+$$
 M_{x,F} = cM_{x,W} + sM_{y,W}
-\]
+$$
 
-\[
+$$
 M_{y,F} = -sM_{x,W} + cM_{y,W}
-\]
+$$
 
 Because only \(\sin\) and \(\cos\) are used:
 
-\[
+$$
 \psi_{f,w}\quad \text{and}\quad \psi_{f,u}
-\]
+$$
 
 produce the same constraint matrix.
 
@@ -562,9 +562,9 @@ fillYawRotatedFootConstraintBlock(C_unit, footYawWrapped, C_leg, ...);
 
 because:
 
-\[
+$$
 R_z(\psi_f) = R_z(\mathrm{wrapToPi}(\psi_f))
-\]
+$$
 
 ### 10.2 If foot yaw is used for planning
 
@@ -607,9 +607,9 @@ During in-place turning, touchdown yaw should be continuous.
 
 If command is yaw-rate only:
 
-\[
+$$
 \psi_{td} = \psi_u + \dot{\psi}_{cmd} T_{td} + \psi_{foot,offset}
-\]
+$$
 
 Code:
 
@@ -638,9 +638,9 @@ double s = std::sin(touchdownYawLeft_W);
 
 For yaw-aware nominal foot placement:
 
-\[
+$$
 p_{foot,W}^{nom} = p_{body,W} + R_z(\psi_{td}) p_{foot,B}^{nom}
-\]
+$$
 
 Use:
 
@@ -677,9 +677,9 @@ double yawError = wrapToPi(yawDesiredWrapped - yawCurrentWrapped);
 
 Mathematically:
 
-\[
+$$
 e_{\psi} = \mathrm{wrapToPi}(\psi_d - \psi)
-\]
+$$
 
 If a continuous target yaw is needed near the current unwrapped yaw:
 
@@ -692,7 +692,7 @@ double liftAngleNear(double targetWrapped, double currentUnwrapped) {
 
 Mathematically:
 
-\[
+$$
 \psi_{target,u}
 =
 \psi_{current,u}
@@ -701,7 +701,7 @@ Mathematically:
 \left(
 \psi_{target,w} - \mathrm{wrapToPi}(\psi_{current,u})
 \right)
-\]
+$$
 
 ---
 
@@ -1088,13 +1088,13 @@ Expected:
 
 Expected constraint rows remain finite:
 
-\[
+$$
 c = \cos \pi = -1
-\]
+$$
 
-\[
+$$
 s = \sin \pi = 0
-\]
+$$
 
 No singularity should appear in friction or CoP constraints.
 
@@ -1121,13 +1121,13 @@ The CoP/Friction constraint matrix itself should not become invalid at 180 degre
 
 At \(\psi_f = \pi\):
 
-\[
+$$
 \cos\psi_f = -1
-\]
+$$
 
-\[
+$$
 \sin\psi_f = 0
-\]
+$$
 
 The constraint rows simply flip direction. The feasible region remains physically valid.
 
@@ -1275,17 +1275,17 @@ For every occurrence, classify it as one of:
 
 Use:
 
-\[
+$$
 \psi_u
-\]
+$$
 
 for all MPC/control/planning calculations.
 
 Use:
 
-\[
+$$
 \psi_w = \mathrm{wrapToPi}(\psi_u)
-\]
+$$
 
 only when bounded angle representation is explicitly needed.
 
@@ -1299,16 +1299,16 @@ state.yawRate_W;        // wrap-safe yaw rate
 
 For yaw-rate command:
 
-\[
+$$
 \psi_{ref}[k] = \psi_u[0] + \dot{\psi}_{cmd} t_k
-\]
+$$
 
 with no wrapping.
 
 For friction/CoP constraints:
 
-\[
+$$
 c = \cos \psi_f, \qquad s = \sin \psi_f
-\]
+$$
 
 so wrapped and unwrapped yaw produce the same rotation, but using unwrapped yaw consistently reduces the chance of future branch mistakes.

@@ -5,11 +5,7 @@ This document explains the **contact wrench inequality constraints** used in the
 The correct implementation is:
 
 $$
-C_W = C_F
-\begin{bmatrix}
-R_{WF}^{T} & 0 \\
-0 & R_{WF}^{T}
-\end{bmatrix}
+C_W = C_F \cdot \text{blkdiag}(R_{WF}^{T}, R_{WF}^{T})
 $$
 
 where $C_F$ is the foot-frame contact constraint matrix and $C_W$ is the matrix applied directly to the world-frame MPC input.
@@ -21,20 +17,8 @@ where $C_F$ is the foot-frame contact constraint matrix and $C_W$ is the matrix 
 For each foot, the MPC input is assumed to be a **world-frame contact wrench**:
 
 $$
-u_i =
-\begin{bmatrix}
-F_{x,W} \\
-F_{y,W} \\
-F_{z,W} \\
-M_{x,W} \\
-M_{y,W} \\
-M_{z,W}
-\end{bmatrix}
-=
-\begin{bmatrix}
-F_W \\
-M_W
-\end{bmatrix}
+u_i = [F_{x,W}, F_{y,W}, F_{z,W}, M_{x,W}, M_{y,W}, M_{z,W}]^{T}
+= [F_W, M_W]^{T}
 \in \mathbb{R}^{6}
 $$
 
@@ -98,59 +82,38 @@ For a yaw-only foot frame, the rotation from foot frame to world frame is:
 
 $$
 R_{WF} = R_z(\psi_f)
-=
-\begin{bmatrix}
-\cos\psi_f & -\sin\psi_f & 0 \\
-\sin\psi_f & \cos\psi_f & 0 \\
-0 & 0 & 1
-\end{bmatrix}
 $$
 
 Define:
 
 $$
-c = \cos\psi_f, \qquad s = \sin\psi_f
+c = \cos\psi_f,\qquad s = \sin\psi_f
 $$
 
 Then:
 
 $$
-R_{WF} =
-\begin{bmatrix}
-c & -s & 0 \\
-s & c & 0 \\
-0 & 0 & 1
-\end{bmatrix}
+F_{x,F} = cF_{x,W} + sF_{y,W}
 $$
 
-A vector expressed in the foot frame maps to the world frame by:
-
 $$
-v_W = R_{WF}v_F
+F_{y,F} = -sF_{x,W} + cF_{y,W}
 $$
 
-Therefore a world-frame vector maps into the foot frame by:
-
 $$
-v_F = R_{WF}^{T}v_W
+F_{z,F} = F_{z,W}
 $$
 
-Since force and moment are both vectors, the wrench transform is:
+$$
+M_{x,F} = cM_{x,W} + sM_{y,W}
+$$
 
 $$
-\begin{bmatrix}
-F_F \\
-M_F
-\end{bmatrix}
-=
-\begin{bmatrix}
-R_{WF}^{T} & 0 \\
-0 & R_{WF}^{T}
-\end{bmatrix}
-\begin{bmatrix}
-F_W \\
-M_W
-\end{bmatrix}
+M_{y,F} = -sM_{x,W} + cM_{y,W}
+$$
+
+$$
+M_{z,F} = M_{z,W}
 $$
 
 Explicitly:

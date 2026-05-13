@@ -147,7 +147,15 @@ $$
 $$
 
 $$
-\Delta p_W = R_z(\psi_{\text{trans}})\begin{bmatrix}\dot{x}\\\dot{y}\\0\end{bmatrix} T_{\text{preview}}
+\Delta x_W = \left(\cos\psi_{\text{trans}}\,\dot{x} - \sin\psi_{\text{trans}}\,\dot{y}\right) T_{\text{preview}}
+$$
+
+$$
+\Delta y_W = \left(\sin\psi_{\text{trans}}\,\dot{x} + \cos\psi_{\text{trans}}\,\dot{y}\right) T_{\text{preview}}
+$$
+
+$$
+\Delta z_W = 0
 $$
 
 Why the `0.5`?
@@ -156,7 +164,7 @@ During the preview window, the body yaw changes from `yaw0` to `yaw0 + psi_dot *
 
 $$
 \Delta p_W = \int_0^{T_{\text{preview}}} R_z(\psi_0 + \dot{\psi} t)
-\begin{bmatrix}\dot{x}\\\dot{y}\\0\end{bmatrix}\, dt
+(\dot{x}, \dot{y}, 0)^T\, dt
 $$
 
 For short preview intervals, the midpoint approximation is easier to reason about and is usually sufficient.
@@ -193,11 +201,7 @@ body-frame `x` direction:
 
 $$
 p_{\text{turn}}^B[\text{leg}] =
-\begin{bmatrix}
--k_{\text{turn}} \, \dot{\psi} \, (p_{\text{nom}}^B[\text{leg}])_y \, T_{\text{preview}} \\
-0 \\
-0
-\end{bmatrix}
+\left(-k_{\text{turn}} \, \dot{\psi} \, (p_{\text{nom}}^B[\text{leg}])_y \, T_{\text{preview}},\ 0,\ 0\right)^T
 $$
 
 The full touchdown target then uses the combined body-frame offset:
@@ -221,13 +225,13 @@ When the robot is slowing down, the planner can add an extra body-frame offset t
 Let the planar braking offset be
 
 $$
-p_{\text{brake}}^B = \begin{bmatrix} b_x \\ b_y \end{bmatrix}.
+p_{\text{brake}}^B = (b_x, b_y)^T.
 $$
 
 It enters the touchdown target as
 
 $$
-p_{\text{td}}^W \leftarrow p_{\text{td}}^W + R_z(\psi_0)\begin{bmatrix}b_x\\b_y\\0\end{bmatrix}.
+p_{\text{td}}^W \leftarrow p_{\text{td}}^W + R_z(\psi_0)\,(b_x, b_y, 0)^T.
 $$
 
 Only the planar `x/y` components are used by the current planner. If `swing.stop_braking_offset_B` is set in YAML, that value is used directly and the capture-point estimate is skipped.
@@ -240,9 +244,9 @@ Only the planar `x/y` components are used by the current planner. If `swing.stop
 The planner watches the filtered planar command
 
 $$
-c_B = \begin{bmatrix}\dot{x}\\\dot{y}\end{bmatrix},
+c_B = (\dot{x}, \dot{y})^T,
 \qquad
-c_{B,\text{prev}} = \begin{bmatrix}\dot{x}_{\text{prev}}\\\dot{y}_{\text{prev}}\end{bmatrix}.
+c_{B,\text{prev}} = (\dot{x}_{\text{prev}}, \dot{y}_{\text{prev}})^T.
 $$
 
 Let $\epsilon_c$ denote the deadband threshold used by the planner.
@@ -327,7 +331,7 @@ The first case controls when the latch may be refreshed or released. The second 
 If
 
 $$
-\left\|\begin{bmatrix}v_{\text{com},x}^B \\ v_{\text{com},y}^B\end{bmatrix}\right\|
+\left\|(v_{\text{com},x}^B, v_{\text{com},y}^B)^T\right\|
 \le \epsilon_c,
 $$
 
@@ -355,7 +359,7 @@ In words: once a braking offset has been latched, it stays live while the comman
 When the estimate is recomputed directly from COM velocity, the planner still returns zero if the reduced-body planar COM velocity is already negligible:
 
 $$
-\left\|\begin{bmatrix}v_{\text{com},x}^B \\ v_{\text{com},y}^B\end{bmatrix}\right\|
+\left\|(v_{\text{com},x}^B, v_{\text{com},y}^B)^T\right\|
 \le \epsilon_c
 \quad\Rightarrow\quad
 p_{\text{brake}}^B = 0.
@@ -396,7 +400,7 @@ The planner may then add a braking offset. That offset is only latched when the 
 ### 10.2 Forward motion: `x_dot > 0`, `y_dot = 0`, `psi_dot = 0`
 
 $$
-\Delta p_W = R_z(\psi_0)\begin{bmatrix}\dot{x}\\0\\0\end{bmatrix} T_{\text{preview}}
+\Delta p_W = R_z(\psi_0)\,(\dot{x}, 0, 0)^T\, T_{\text{preview}}
 $$
 
 $$
@@ -411,7 +415,7 @@ Result:
 ### 10.3 Backward motion: `x_dot < 0`, `y_dot = 0`, `psi_dot = 0`
 
 $$
-\Delta p_W = R_z(\psi_0)\begin{bmatrix}\dot{x}\\0\\0\end{bmatrix} T_{\text{preview}}
+\Delta p_W = R_z(\psi_0)\,(\dot{x}, 0, 0)^T\, T_{\text{preview}}
 $$
 
 $$
@@ -426,7 +430,7 @@ Result:
 ### 10.4 Lateral motion: `y_dot != 0`
 
 $$
-\Delta p_W = R_z(\psi_0)\begin{bmatrix}0\\\dot{y}\\0\end{bmatrix} T_{\text{preview}}
+\Delta p_W = R_z(\psi_0)\,(0, \dot{y}, 0)^T\, T_{\text{preview}}
 $$
 
 $$
@@ -442,7 +446,7 @@ Result:
 ### 10.5 In-place turning: `x_dot = 0`, `y_dot = 0`, `psi_dot != 0`
 
 $$
-\mathbf{v}_{\text{cmd}}^B = \begin{bmatrix}0\\0\\0\end{bmatrix}
+\mathbf{v}_{\text{cmd}}^B = \mathbf{0}
 $$
 
 $$
@@ -469,7 +473,7 @@ Result:
 
 $$
 \Delta p_W = R_z\!\left(\psi_0 + \frac{1}{2}\dot{\psi} T_{\text{preview}}\right)
-\begin{bmatrix}\dot{x}\\\dot{y}\\0\end{bmatrix} T_{\text{preview}}
+(\dot{x}, \dot{y}, 0)^T T_{\text{preview}}
 $$
 
 $$
