@@ -211,6 +211,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(mpc, "foot_half_length", params.mpc.footHalfLength);
     readScalarIfPresent(mpc, "foot_half_width", params.mpc.footHalfWidth);
     readScalarIfPresent(mpc, "torsional_friction_scale", params.mpc.torsionalFrictionScale);
+    readScalarIfPresent(mpc, "enable_cop_constraint", params.mpc.enableCopConstraint);
     readScalarIfPresent(mpc, "normal_force_max", params.mpc.normalForceMax);
     readScalarIfPresent(mpc, "normal_force_min", params.mpc.normalForceMin);
     readScalarIfPresent(mpc, "iterations_between_solve", params.mpc.iterationsBetweenSolve);

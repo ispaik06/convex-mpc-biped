@@ -18,6 +18,7 @@ mpc:
   foot_half_length: 0.09
   foot_half_width: 0.04
   torsional_friction_scale: 0.08
+  enable_cop_constraint: true  # set false to disable the foot COP box entirely
   normal_force_max: 1000.0
   normal_force_min: 5.0
   iterations_between_solve: 10

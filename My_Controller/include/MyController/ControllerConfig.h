@@ -42,6 +42,7 @@ struct MPCParameters {
     double footHalfLength{0.065};
     double footHalfWidth{0.01};
     double torsionalFrictionScale{0.0657};
+    bool enableCopConstraint{true};
     double normalForceMax{200.0};
     double normalForceMin{10.0};
     StateWeightMat walkingStateWeight = StateWeightMat::Identity();
