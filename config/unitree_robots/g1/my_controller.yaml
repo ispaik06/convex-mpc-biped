@@ -1,31 +1,32 @@
-requested_locomotion_mode: walking  # requested startup mode: walking or standing
+requested_locomotion_mode: walking  # requested startup mode: walking / standing / interactive
 
 timing:
-  cycle: 1.0
-  swing: 0.4
-  stance: 0.6
+  cycle: 0.5
+  swing: 0.15
+  stance: 0.35
   horizon: 0.5
-  horizon_steps: 20
+  horizon_steps: 25
 
 model:
-  xml_path: models/unitree_robots/g1/scene_23dof.xml
-  auxiliary_xml_path: models/unitree_robots/g1/g1_23dof.xml
+  xml_path: models/unitree_robots/g1/scene_23dof.xml  # scene_23dof_box_foot.xml
+  auxiliary_xml_path: models/unitree_robots/g1/g1_23dof_box_foot.xml
   foot_end_effector_source: site  # site or collision_geom_center
   gravity: -9.81
 
 mpc:
-  friction_coefficient: 0.8
+  friction_coefficient: 1.0
   foot_half_length: 0.09
   foot_half_width: 0.04
   torsional_friction_scale: 0.08
-  normal_force_max: 1000.0
+  normal_force_max: 1200.0
   normal_force_min: 5.0
   iterations_between_solve: 10
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   theta  psi  px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [100,  500,   10,    5000,  5000,  50000,      10,     10,     10,     10,    10,    5,   1 ]
-    input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
+    state_weight_diag: [9000,  9000,  9000,   30000,  12000,  50000,      10,     10,     10,    100,   100,  900,   1 ]
+    input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
+    # [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     # Keep the same baseline for now; tune this separately from walking later.
@@ -34,21 +35,27 @@ mpc:
     input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
 
 swing:
-  natural_frequency: [600.0, 600.0, 900.0]
-  kd_diag: [25.0, 25.0, 10.0]
+  natural_frequency: [100.0, 100.0, 40.0]
+  kd_diag: [20.0, 20.0, 23.0]
   height: 0.06
   min_remaining_time: 0.001
   body_velocity_half_stance_offset: 0.0
   swing_foot_yaw_lead_scale: 1.0
   turn_tangential_lead_scale: 0.0
-  stop_capture_point_gain: 1.0
-  stop_capture_point_max_offset: 0.20
+  enable_stance_foot_yaw_hold: true
+  stop_capture_point_gain: 0.2
+  stop_capture_point_max_offset: 0.08
   stop_velocity_deadband: 0.02
   stop_braking_latch_clear_ticks: 5
-  pitch_kp: 20.0
-  pitch_kd: 2.0
-  yaw_kp: 20.0
-  yaw_kd: 2.0
+  # G1 has 6-DOF at the leg, so enable swing roll leveling with a tunable gain.
+  roll_kp: 0.0
+  roll_kd: 0.0
+  pitch_kp: 50.0
+  pitch_kd: 8.0
+  yaw_kp: 100.0
+  yaw_kd: 10.0
+  stance_yaw_kp: 0.0
+  stance_yaw_kd: 0.0
 
 user_command_filter:
   x_dot_tau: 0.20
@@ -59,14 +66,29 @@ user_command_filter:
   standing_pitch_offset_tau: 0.20
   x_dot_max: 1.0
   y_dot_max: 1.0
-  psi_dot_max: 1.5
+  psi_dot_max: 1.0
+
+contact_manager:
+  contact_force_on_threshold: 10.0
+  contact_force_off_threshold: 0.5
+  contact_on_confirm_ticks: 1
+  contact_off_confirm_ticks: 4
+  contact_ramp_duration: 0.02
+  contact_lock_steps: 1
+  late_contact_timeout: 0.20
+  ground_search_velocity: 0.40
+  ground_search_max_depth: 0.15
+  ground_search_tracking_time: 0.08
+  stance_contact_loss_foot_height: 0.060
+  enable_early_contact_handling: true
+  enable_late_contact_handling: false
 
 logging:
   standing_mpc_debug_trigger_times: []
 
 startup:
   # If requested_locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
-  post_init_standing_settle_time: 1.0
+  post_init_standing_settle_time: 2.0
 
 joint_tracking:
   leg:
@@ -88,3 +110,7 @@ initial_pose:
   leg_joint_offsets: [-0.09, 0.0, 0.0, 0.42, -0.12, 0.0]
   # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]
   arm_joint_offsets: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+gait_swing_hold_test:
+  xml_path: models/unitree_robots/g1/scene_23dof_box_foot.xml
+  keyframe_name: nominal_stance

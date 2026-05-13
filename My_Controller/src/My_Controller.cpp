@@ -12,6 +12,8 @@
 
 #include "Controllers/LegController.h"
 #include "Dynamics/OperationalSpaceDynamics.h"
+#include "Dynamics/SwingAttitudeControl.h"
+#include "Dynamics/SwingYawTarget.h"
 #include "BodyMotionReference.h"
 #include "StandingMpcDebugLogger.h"
 #include "Utilities/Timing.h"
@@ -24,72 +26,6 @@ double clampUnit(const double value) {
 
 double wrapAngle(const double angle) {
     return std::atan2(std::sin(angle), std::cos(angle));
-}
-
-double swingFootYawPsiOffset(const Side side, const double psi_dot) {
-    constexpr double kPsiYawGainDegPerRad = 100.0;
-    constexpr double kPsiYawMaxOffsetDeg = 20.0;
-    constexpr double kDegToRad = 3.141592653589793238462643383279502884 / 180.0;
-
-    const double offsetMagDeg =
-        std::clamp(kPsiYawGainDegPerRad * std::abs(psi_dot), 0.0, kPsiYawMaxOffsetDeg);
-    // Keep the sign rule explicit: left-foot bias for +psi_dot, right-foot bias for -psi_dot.
-    // Backward motion no longer flips the bias sign.
-    if (psi_dot > 0.0 && side == Side::Left) {
-        return offsetMagDeg * kDegToRad;
-    }
-    if (psi_dot < 0.0 && side == Side::Right) {
-        return -offsetMagDeg * kDegToRad;
-    }
-    return 0.0;
-}
-
-double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFootPosition_W,
-                                           const Vec3<double>& touchdownTarget_W,
-                                           const Vec2<double>& filteredPlanarCommand_B,
-                                           const double psi_dot,
-                                           const Side side,
-                                           const double fallbackYaw_W) {
-    constexpr double kDiagonalCommandDeadband = 1e-3;
-    constexpr double kFilteredLateralSpeedThreshold = 0.1;
-    constexpr double kHalfPi = 1.570796326794896619231321691639751442;
-    const double psiBias_W = swingFootYawPsiOffset(side, psi_dot);
-    if (std::abs(filteredPlanarCommand_B.y()) < kFilteredLateralSpeedThreshold) {
-        return wrapAngle(fallbackYaw_W + psiBias_W);
-    }
-
-    if (std::abs(filteredPlanarCommand_B.x()) <= kDiagonalCommandDeadband) {
-        return wrapAngle(fallbackYaw_W + psiBias_W);
-    }
-
-    const bool sideMatchesLateralDirection =
-        (filteredPlanarCommand_B.y() > 0.0 && side == Side::Left) ||
-        (filteredPlanarCommand_B.y() < 0.0 && side == Side::Right);
-    if (!sideMatchesLateralDirection) {
-        return wrapAngle(fallbackYaw_W + psiBias_W);
-    }
-
-    const double xDot = filteredPlanarCommand_B.x();
-    const double yDot = filteredPlanarCommand_B.y();
-    // Only treat the command as diagonal when the forward/back component dominates in the
-    // same-sign case; otherwise keep the simpler fallback heading.
-    const bool diagonalHeadingDominates =
-        (xDot > 0.0 && xDot >= yDot) || (xDot < 0.0 && xDot <= yDot);
-    if (!diagonalHeadingDominates) {
-        return wrapAngle(fallbackYaw_W + psiBias_W);
-    }
-
-    const Vec2<double> stepXY_W =
-        (touchdownTarget_W - currentFootPosition_W).template head<2>();
-    if (stepXY_W.squaredNorm() <= 1e-8) {
-        return wrapAngle(fallbackYaw_W + psiBias_W);
-    }
-
-    double yaw_W = std::atan2(stepXY_W.y(), stepXY_W.x());
-    if (xDot < 0.0) {
-        yaw_W += (side == Side::Right) ? kHalfPi : -kHalfPi;
-    }
-    return wrapAngle(yaw_W + psiBias_W);
 }
 
 double lowPassBlendAlpha(const double tau, const double dt) {
@@ -136,71 +72,6 @@ Quat<double> rollPitchYawToQuaternion(const Vec3<double>& euler_W) {
     Quat<double> quat = q_yaw * q_pitch * q_roll;
     quat.normalize();
     return quat;
-}
-
-DVec<double> computeSwingAttitudeLevelTorque(const RobotLegState<double>& legState,
-                                             const LegControllerData<double>& legData,
-                                             const double desiredYaw_W,
-                                             const double pitchKp,
-                                             const double pitchKd,
-                                             const double yawKp,
-                                             const double yawKd) {
-    const Eigen::Index dof = legData.dof();
-    DVec<double> torque = DVec<double>::Zero(dof);
-    const bool pitchEnabled = pitchKp > 0.0 || pitchKd > 0.0;
-    const bool yawEnabled = yawKp > 0.0 || yawKd > 0.0;
-    if (!pitchEnabled && !yawEnabled) {
-        return torque;
-    }
-    if (!legState.hasFootFrame) {
-        throw std::runtime_error("Swing attitude control requires foot frame data");
-    }
-    if (!legData.hasFootData) {
-        throw std::runtime_error("Swing attitude control requires foot angular Jacobian data");
-    }
-    if (legData.Jw_W.rows() != 3 || legData.Jw_W.cols() != dof || legData.qd.size() != dof) {
-        throw std::runtime_error("Swing attitude control received inconsistent leg angular data");
-    }
-
-    Vec3<double> footX_W = legState.R_WF.col(0);
-    Vec3<double> footY_W = legState.R_WF.col(1);
-    Vec3<double> footZ_W = legState.R_WF.col(2);
-    if (!footX_W.allFinite() || !footY_W.allFinite() || !footZ_W.allFinite() ||
-        footX_W.norm() <= 1e-9 || footY_W.norm() <= 1e-9 || footZ_W.norm() <= 1e-9) {
-        throw std::runtime_error("Swing attitude control received invalid foot frame axes");
-    }
-    footX_W.normalize();
-    footY_W.normalize();
-    footZ_W.normalize();
-
-    const Vec3<double> worldUp = Vec3<double>::UnitZ();
-    const Vec3<double> omegaFoot_W = legData.Jw_W * legData.qd;
-    Vec3<double> moment_W = Vec3<double>::Zero();
-
-    if (pitchEnabled) {
-        const double sinPitchError = footY_W.dot(footZ_W.cross(worldUp));
-        const double cosPitchError = footZ_W.dot(worldUp);
-        const double pitchError = std::atan2(sinPitchError, cosPitchError);
-        const double pitchRate = footY_W.dot(omegaFoot_W);
-        moment_W += (pitchKp * pitchError - pitchKd * pitchRate) * footY_W;
-    }
-
-    if (yawEnabled) {
-        Vec3<double> footXProj_W = footX_W - footX_W.dot(worldUp) * worldUp;
-        if (footXProj_W.norm() <= 1e-9) {
-            throw std::runtime_error("Swing attitude control received degenerate yaw axis");
-        }
-        footXProj_W.normalize();
-        const Vec3<double> desiredX_W(std::cos(desiredYaw_W), std::sin(desiredYaw_W), 0.0);
-        const double sinYawError = worldUp.dot(footXProj_W.cross(desiredX_W));
-        const double cosYawError = footXProj_W.dot(desiredX_W);
-        const double yawError = std::atan2(sinYawError, cosYawError);
-        const double yawRate = worldUp.dot(omegaFoot_W);
-        moment_W += (yawKp * yawError - yawKd * yawRate) * worldUp;
-    }
-
-    torque = legData.Jw_W.transpose() * moment_W;
-    return torque;
 }
 
 Vec3<double> computeStanceYawHoldMomentWorld(const RobotLegState<double>& legState,
@@ -935,7 +806,7 @@ void MyController::updateSwingTrajectories(
                 std::max(getControllerConfig().contactManager.groundSearchTrackingTime,
                          minRemainingTime);
             if (!runtime.wasSearchMode || !runtime.swingTrajectory.active()) {
-                runtime.touchdownYaw_W = swingFootYawFromDiagonalStepHeading(
+                runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
                     currentFootPosition,
                     touchdownTarget,
                     filteredPlanarCommand_B,
@@ -962,7 +833,7 @@ void MyController::updateSwingTrajectories(
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
-            runtime.touchdownYaw_W = swingFootYawFromDiagonalStepHeading(
+            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
                 currentFootPosition,
                 touchdownTarget,
                 filteredPlanarCommand_B,
@@ -1022,7 +893,7 @@ double MyController::swingFootYawTargetWorld() const {
 double MyController::swingFootYawTargetWorld(const Side side) const {
     return wrapAngle(
         swingFootYawTargetWorld() +
-        swingFootYawPsiOffset(side, _filteredUserCommand.psi_dot));
+        swingyaw::swingFootYawPsiOffset(side, _filteredUserCommand.psi_dot));
 }
 
 void MyController::maybeUpdateMpc(const Vec13<double>& x0,
@@ -1438,6 +1309,8 @@ void MyController::writeLegCommands() {
             _stateEstimate->legs[leg],
             _legController->datas[leg],
             _legRuntime[leg].touchdownYaw_W,
+            getControllerConfig().swing.rollKp,
+            getControllerConfig().swing.rollKd,
             getControllerConfig().swing.pitchKp,
             getControllerConfig().swing.pitchKd,
             getControllerConfig().swing.yawKp,

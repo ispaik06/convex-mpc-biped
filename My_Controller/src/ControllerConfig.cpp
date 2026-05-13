@@ -277,6 +277,8 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(swing,
                         "stop_braking_latch_clear_ticks",
                         params.swing.stopBrakingLatchClearTicks);
+    readScalarIfPresent(swing, "roll_kp", params.swing.rollKp);
+    readScalarIfPresent(swing, "roll_kd", params.swing.rollKd);
     readScalarIfPresent(swing, "pitch_kp", params.swing.pitchKp);
     readScalarIfPresent(swing, "pitch_kd", params.swing.pitchKd);
     readScalarIfPresent(swing, "yaw_kp", params.swing.yawKp);
@@ -425,6 +427,12 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(gaitSwingHoldTest,
                         "xml_path",
                         params.gaitSwingHoldTest.xmlPath);
+    readScalarIfPresent(gaitSwingHoldTest,
+                        "keyframe_name",
+                        params.gaitSwingHoldTest.keyframeName);
+    if (params.gaitSwingHoldTest.keyframeName.empty()) {
+        throw std::runtime_error("gait_swing_hold_test.keyframe_name must not be empty");
+    }
 
     if (params.timing.cycle <= 0.0 || params.timing.swing <= 0.0 || params.timing.stance <= 0.0 ||
         params.timing.horizon <= 0.0 || params.timing.horizonSteps <= 0) {
@@ -456,6 +464,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.xDotMax) ||
         !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.yDotMax) ||
         !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.psiDotMax) ||
+        !std::isfinite(params.swing.rollKp) || !std::isfinite(params.swing.rollKd) ||
         !std::isfinite(params.swing.pitchKp) || !std::isfinite(params.swing.pitchKd) ||
         !std::isfinite(params.swing.yawKp) || !std::isfinite(params.swing.yawKd) ||
         !std::isfinite(params.swing.stanceYawKp) ||
@@ -473,6 +482,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.userCommandFilter.zDotTau < 0.0 ||
         params.userCommandFilter.standingRollOffsetTau < 0.0 ||
         params.userCommandFilter.standingPitchOffsetTau < 0.0 ||
+        params.swing.rollKp < 0.0 || params.swing.rollKd < 0.0 ||
         params.swing.pitchKp < 0.0 || params.swing.pitchKd < 0.0 ||
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0 ||
         params.swing.stanceYawKp < 0.0 || params.swing.stanceYawKd < 0.0) {
@@ -481,8 +491,9 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "swing.turn_tangential_lead_scale, swing.nominal_foot_offsets_B, "
             "swing.stop_braking_offset_B, swing.stop_capture_point_gain, "
             "swing.stop_capture_point_max_offset, swing.stop_velocity_deadband, "
-            "swing.stop_braking_latch_clear_ticks, swing.pitch_kp, swing.pitch_kd, "
-            "swing.yaw_kp, swing.yaw_kd, swing.stance_yaw_kp, swing.stance_yaw_kd, "
+            "swing.stop_braking_latch_clear_ticks, swing.roll_kp, swing.roll_kd, "
+            "swing.pitch_kp, swing.pitch_kd, swing.yaw_kp, swing.yaw_kd, "
+            "swing.stance_yaw_kp, swing.stance_yaw_kd, "
             "user_command_filter.x_dot_tau, "
             "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
             "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "

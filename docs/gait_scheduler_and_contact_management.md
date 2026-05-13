@@ -349,8 +349,10 @@ The important part is the placement:
 - it is scaled by `contactRampAlpha`,
 - it is **not** an MPC constraint.
 
-The swing and stance yaw gains are intentionally separate:
+The swing-foot attitude gains are intentionally separate:
 
+- `swing.roll_kp` / `swing.roll_kd` keep swing-foot roll level,
+- `swing.pitch_kp` / `swing.pitch_kd` keep swing-foot pitch level,
 - `swing.yaw_kp` / `swing.yaw_kd` track yaw while the foot is swinging,
 - `swing.stance_yaw_kp` / `swing.stance_yaw_kd` hold yaw while the foot is in stance.
 

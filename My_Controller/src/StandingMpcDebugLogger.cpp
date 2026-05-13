@@ -452,6 +452,8 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["stop_capture_point_max_offset"] = config.swing.stopCapturePointMaxOffset;
     swing["stop_velocity_deadband"] = config.swing.stopVelocityDeadband;
     swing["stop_braking_latch_clear_ticks"] = config.swing.stopBrakingLatchClearTicks;
+    swing["roll_kp"] = config.swing.rollKp;
+    swing["roll_kd"] = config.swing.rollKd;
     swing["pitch_kp"] = config.swing.pitchKp;
     swing["pitch_kd"] = config.swing.pitchKd;
     swing["yaw_kp"] = config.swing.yawKp;
@@ -537,6 +539,7 @@ json controllerConfigJson(const ControllerConfig& config,
     if (!config.gaitSwingHoldTest.xmlPath.empty()) {
         gaitSwingHoldTest["xml_path"] = config.gaitSwingHoldTest.xmlPath;
     }
+    gaitSwingHoldTest["keyframe_name"] = config.gaitSwingHoldTest.keyframeName;
     root["gait_swing_hold_test"] = std::move(gaitSwingHoldTest);
 
     return root;

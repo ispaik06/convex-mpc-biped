@@ -133,7 +133,9 @@ $$
 This is intentionally a small correction. It adjusts the swing-foot heading, not the touchdown position.
 
 > [!NOTE]
-> The swing-foot yaw PD uses `swing.yaw_kp` and `swing.yaw_kd`.
+> The swing-foot attitude PD uses `swing.roll_kp` / `swing.roll_kd`,
+> `swing.pitch_kp` / `swing.pitch_kd`, and `swing.yaw_kp` / `swing.yaw_kd`.
+> On 5-DOF robots, keep the roll gains at zero.
 > Stance yaw hold uses separate gains, `swing.stance_yaw_kp` and `swing.stance_yaw_kd`, and lives in the stance wrench feedforward path rather than the touchdown planner.
 
 ## 6. Translation Yaw

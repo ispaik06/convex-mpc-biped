@@ -69,6 +69,8 @@ struct SwingParameters {
     double stopCapturePointMaxOffset{0.20};
     double stopVelocityDeadband{0.02};
     int stopBrakingLatchClearTicks{5};
+    double rollKp{0.0};
+    double rollKd{0.0};
     double pitchKp{0.0};
     double pitchKd{0.0};
     double yawKp{0.0};
@@ -133,6 +135,7 @@ struct InitialPoseParameters {
 
 struct GaitSwingHoldTestParameters {
     std::string xmlPath;
+    std::string keyframeName{"copied_state"};
 };
 
 struct ControllerConfig {

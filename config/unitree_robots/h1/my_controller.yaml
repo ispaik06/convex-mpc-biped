@@ -45,6 +45,9 @@ swing:
   stop_capture_point_max_offset: 0.20
   stop_velocity_deadband: 0.02
   stop_braking_latch_clear_ticks: 5
+  # H1 is 5-DOF at the leg, so keep swing roll control disabled.
+  roll_kp: 0.0
+  roll_kd: 0.0
   pitch_kp: 20.0
   pitch_kd: 2.0
   yaw_kp: 20.0
@@ -88,3 +91,7 @@ initial_pose:
   leg_joint_offsets: [0.0, 0.0, -0.5, 0.9, -1.0]
   # H1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow]
   arm_joint_offsets: [0.0, 0.0, 0.0, 0.0]
+
+gait_swing_hold_test:
+  xml_path: models/unitree_robots/h1/scene.xml
+  keyframe_name: nominal_stance
