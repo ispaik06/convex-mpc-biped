@@ -666,16 +666,17 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
             _bodyTarget.euler_W.template segment<3>(0) << 0, 0, x0[2];
         }
         _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
+        _bodyTarget.nominalHeight_W = _bodyTarget.nominalPosition_W[2];
         _bodyTarget.initialized = true;
     }
 
-    const double z_dot = _filteredUserCommand.z_dot;
+    const double bodyHeightOffset = _filteredUserCommand.body_height_offset_m;
     const double standingRollOffset = _filteredUserCommand.standing_roll_offset_rad;
     const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
     const auto applyPoseOffsets = [&]() {
         _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
         _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
-        _bodyTarget.nominalPosition_W[2] += z_dot * dt;
+        _bodyTarget.nominalPosition_W[2] = _bodyTarget.nominalHeight_W + bodyHeightOffset;
         _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
     };
 
@@ -914,6 +915,14 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
         {
             profiling::ScopedTimer setupTimer(_mpcSetupTime);
 
+            const auto footYawForSide = [&](const Side side) {
+                const int legIndex = findLegIndex(side);
+                if (legIndex < 0 || static_cast<std::size_t>(legIndex) >= _legRuntime.size()) {
+                    return std::numeric_limits<double>::quiet_NaN();
+                }
+                return _legRuntime[static_cast<std::size_t>(legIndex)].touchdownYaw_W;
+            };
+
             if (contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment) {
                 _gaitScheduler->setFootLocalXAxesWorld(
                     footLocalXAxisWorld(*_stateEstimate, *_robotParams, Side::Left),
@@ -926,7 +935,10 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
 
             {
                 profiling::ScopedTimer timer(_gaitConstraintTime);
-                _gaitScheduler->buildConstraintMatrices(contactOverridePtr);
+                _gaitScheduler->buildConstraintMatrices(
+                    contactOverridePtr,
+                    footYawForSide(Side::Left),
+                    footYawForSide(Side::Right));
             }
 
             Vec13<double> referenceSeed = x0;
@@ -1093,6 +1105,14 @@ void MyController::maybeWriteStandingMpcDebugLog(
     }
 
     try {
+        const auto touchdownYawForSide = [&](const Side side) {
+            const int legIndex = findLegIndex(side);
+            if (legIndex < 0 || static_cast<std::size_t>(legIndex) >= _legRuntime.size()) {
+                return std::numeric_limits<double>::quiet_NaN();
+            }
+            return _legRuntime[static_cast<std::size_t>(legIndex)].touchdownYaw_W;
+        };
+
         const StandingMpcDebugSnapshot snapshot{
             *_stateEstimate,
             *_robotParams,
@@ -1113,6 +1133,8 @@ void MyController::maybeWriteStandingMpcDebugLog(
             _standingMpcDebugTriggerTime,
             _contactManager != nullptr ? _contactManager->legStates()
                                        : vectorAligned<ContactManagerLegState>{},
+            touchdownYawForSide(Side::Left),
+            touchdownYawForSide(Side::Right),
         };
 
         const std::string logPath = writeStandingMpcDebugLog(snapshot);

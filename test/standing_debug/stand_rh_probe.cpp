@@ -90,6 +90,8 @@ struct RolloutResult {
     DesiredFootPositions desiredFootPositions;
     Vec3<double> leftFootXAxis_W = Vec3<double>::UnitX();
     Vec3<double> rightFootXAxis_W = Vec3<double>::UnitX();
+    double leftTouchdownYaw_W{std::numeric_limits<double>::quiet_NaN()};
+    double rightTouchdownYaw_W{std::numeric_limits<double>::quiet_NaN()};
     UserCommand userCommand;
     LocomotionMode locomotionMode{LocomotionMode::Standing};
     double sourceControllerTime{0.0};
@@ -1003,6 +1005,21 @@ void readFootLocalXAxesFromLog(const json& log,
     }
 }
 
+double footYawFromXAxis(const Vec3<double>& xAxis_W) {
+    const double planarNorm = std::hypot(xAxis_W.x(), xAxis_W.y());
+    if (!(planarNorm > 1e-9)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return std::atan2(xAxis_W.y(), xAxis_W.x());
+}
+
+double touchdownYawFromLegJson(const json& leg, const Vec3<double>& xAxisFallback_W) {
+    if (leg.contains("touchdown_yaw_W") && !leg.at("touchdown_yaw_W").is_null()) {
+        return leg.at("touchdown_yaw_W").get<double>();
+    }
+    return footYawFromXAxis(xAxisFallback_W);
+}
+
 Vec13<double> fixedReferenceFromLog(const json& log) {
     const DMat<double> xRefByStep =
         readJsonMatrix(log.at("reference_trajectory").at("X_ref_by_step"),
@@ -1135,6 +1152,21 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     result.fixedReference = fixedReferenceFromLog(log);
     result.desiredFootPositions = desiredFootPositionsFromLog(log);
     readFootLocalXAxesFromLog(log, result.leftFootXAxis_W, result.rightFootXAxis_W);
+    if (log.contains("feet") && log.at("feet").contains("legs")) {
+        for (const auto& leg : log.at("feet").at("legs")) {
+            if (!leg.contains("side") || !leg.at("side").is_string()) {
+                continue;
+            }
+            const std::string side = leg.at("side").get<std::string>();
+            if (side == "left") {
+                result.leftTouchdownYaw_W =
+                    touchdownYawFromLegJson(leg, result.leftFootXAxis_W);
+            } else if (side == "right") {
+                result.rightTouchdownYaw_W =
+                    touchdownYawFromLegJson(leg, result.rightFootXAxis_W);
+            }
+        }
+    }
     result.userCommand = userCommandFromLog(log);
     result.locomotionMode = locomotionModeFromLog(log, config.requestedLocomotionMode);
     result.sourceControllerTime = metadataDoubleOr(metadata, "controller_time", 0.0);
@@ -1179,7 +1211,10 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
             referenceOutput.X_ref.segment<kStateDim>(0));
 
         try {
-            gaitScheduler.buildConstraintMatrices();
+            gaitScheduler.buildConstraintMatrices(
+                nullptr,
+                result.leftTouchdownYaw_W,
+                result.rightTouchdownYaw_W);
             formulation.build(referenceOutput, formulationOutput);
             mpc.updateInput(
                 gaitScheduler,

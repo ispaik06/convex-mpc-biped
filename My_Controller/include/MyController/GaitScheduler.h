@@ -5,6 +5,7 @@
 #include "ControllerConfig.h"
 #include "HorizonClock.h"
 #include "Robot/RobotParams.h"
+#include <limits>
 
 class GaitScheduler {
 public:
@@ -22,7 +23,9 @@ public:
     bool c(Side, double) const;
     bool bothFeetStance(double t) const;
 
-    void buildConstraintMatrices(const ContactScheduleOverride* contactOverride = nullptr);
+    void buildConstraintMatrices(const ContactScheduleOverride* contactOverride = nullptr,
+                                 double leftFootYaw_W = std::numeric_limits<double>::quiet_NaN(),
+                                 double rightFootYaw_W = std::numeric_limits<double>::quiet_NaN());
 
     DMat<double> D;
     DMat<double> C;

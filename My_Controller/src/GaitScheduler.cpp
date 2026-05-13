@@ -1,12 +1,60 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 
 #include "GaitScheduler.h"
+#include "Utilities/MatrixUtils.h"
 
 namespace {
+double footYawFromXAxisWorld(const Vec3<double>& xAxis_W) {
+    if (!xAxis_W.allFinite()) {
+        throw std::runtime_error("Foot axis is non-finite");
+    }
+
+    const double planarNorm = std::hypot(xAxis_W.x(), xAxis_W.y());
+    if (planarNorm <= 1e-9) {
+        throw std::runtime_error("Foot axis has no usable yaw component");
+    }
+
+    return std::atan2(xAxis_W.y(), xAxis_W.x());
+}
+
+double resolvedFootYaw(const Vec3<double>& xAxis_W, const double yaw_W) {
+    if (std::isfinite(yaw_W)) {
+        return yaw_W;
+    }
+    return footYawFromXAxisWorld(xAxis_W);
+}
+
+void fillYawRotatedFootConstraintBlock(const Eigen::Matrix<double, 12, 6>& localBlock,
+                                      const double yaw_W,
+                                      Eigen::Matrix<double, 12, 12>& worldBlock,
+                                      const int forceColOffset,
+                                      const int momentColOffset) {
+    const double c = std::cos(yaw_W);
+    const double s = std::sin(yaw_W);
+
+    worldBlock.setZero();
+    for (int row = 0; row < 12; ++row) {
+        const double fx = localBlock(row, 0);
+        const double fy = localBlock(row, 1);
+        const double fz = localBlock(row, 2);
+        const double mx = localBlock(row, 3);
+        const double my = localBlock(row, 4);
+        const double mz = localBlock(row, 5);
+
+        worldBlock(row, forceColOffset + 0) = c * fx - s * fy;
+        worldBlock(row, forceColOffset + 1) = s * fx + c * fy;
+        worldBlock(row, forceColOffset + 2) = fz;
+        worldBlock(row, momentColOffset + 0) = c * mx - s * my;
+        worldBlock(row, momentColOffset + 1) = s * mx + c * my;
+        worldBlock(row, momentColOffset + 2) = mz;
+    }
+}
+
 Vec3<double> normalizedAxisOrThrow(const Vec3<double>& axis, const char* name) {
     if (!axis.allFinite()) {
         throw std::runtime_error(std::string("Non-finite ") + name);
@@ -75,7 +123,9 @@ bool GaitScheduler::bothFeetStance(const double t) const {
     return c(Side::Left, t) && c(Side::Right, t);
 }
 
-void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* contactOverride) {
+void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* contactOverride,
+                                            const double leftFootYaw_W,
+                                            const double rightFootYaw_W) {
     if (_horizonClock == nullptr) {
         throw std::runtime_error(
             "GaitScheduler::buildConstraintMatrices requires initialized HorizonClock");
@@ -85,6 +135,8 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
     const auto& mpc = getControllerConfig().mpc;
     const bool constrainFootRollMoment =
         contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment;
+    const double resolvedLeftFootYaw_W = resolvedFootYaw(_leftFootXAxis_W, leftFootYaw_W);
+    const double resolvedRightFootYaw_W = resolvedFootYaw(_rightFootXAxis_W, rightFootYaw_W);
 
     D.setZero(12 * steps, 12 * steps);
     C.setZero(24 * steps, 12 * steps);
@@ -115,8 +167,11 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
             S_left = Mat3<double>::Identity();
         }
         else {  // stance
-            C_left.block<12, 3>(0, 0) = C_unit.block<12, 3>(0, 0);
-            C_left.block<12, 3>(0, 6) = C_unit.block<12, 3>(0, 3);
+            fillYawRotatedFootConstraintBlock(C_unit,
+                                             resolvedLeftFootYaw_W,
+                                             C_left,
+                                             0,
+                                             6);
             Ck_bound(4) = mpc.normalForceMax;
             Ck_bound(5) = -leftNormalForceMinScale * mpc.normalForceMin;
         }
@@ -125,8 +180,11 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
             S_right = Mat3<double>::Identity();
         }
         else {  // stance
-            C_right.block<12, 3>(0, 3) = C_unit.block<12, 3>(0, 0);
-            C_right.block<12, 3>(0, 9) = C_unit.block<12, 3>(0, 3);
+            fillYawRotatedFootConstraintBlock(C_unit,
+                                             resolvedRightFootYaw_W,
+                                             C_right,
+                                             3,
+                                             9);
             Ck_bound(16) = mpc.normalForceMax;
             Ck_bound(17) = -rightNormalForceMinScale * mpc.normalForceMin;
         }

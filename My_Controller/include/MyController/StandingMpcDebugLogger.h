@@ -1,6 +1,7 @@
 #ifndef STANDING_MPC_DEBUG_LOGGER_H
 #define STANDING_MPC_DEBUG_LOGGER_H
 
+#include <limits>
 #include <string>
 
 #include "Controllers/ArmController.h"
@@ -31,6 +32,8 @@ struct StandingMpcDebugSnapshot {
     double debugRequestTime{0.0};
     double debugTriggerTime{0.0};
     vectorAligned<ContactManagerLegState> contactManagerLegs;
+    double leftTouchdownYaw_W{std::numeric_limits<double>::quiet_NaN()};
+    double rightTouchdownYaw_W{std::numeric_limits<double>::quiet_NaN()};
 };
 
 std::string writeStandingMpcDebugLog(const StandingMpcDebugSnapshot& snapshot);

@@ -931,6 +931,9 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
         legJson["v_des_W"] = vectorToJson(legCommand.vDes_W);
         legJson["a_des_W"] = vectorToJson(legCommand.aDes_W);
         legJson["tau_feedforward_command"] = vectorToJson(legCommand.tauFeedForward);
+        legJson["touchdown_yaw_W"] =
+            (legParams.side == Side::Left) ? scalarToJson(snapshot.leftTouchdownYaw_W)
+                                           : scalarToJson(snapshot.rightTouchdownYaw_W);
         legs.push_back(std::move(legJson));
     }
     feet["legs"] = std::move(legs);
@@ -985,6 +988,10 @@ json buildSnapshotJson(const StandingMpcDebugSnapshot& snapshot,
     solution["wrench_horizon"] = vectorByStepToFlatJson(snapshot.wrenchHorizon, steps, kInputDim);
     solution["wrench_horizon_vector"] = vectorToJson(snapshot.wrenchHorizon);
     solution["first_wrench"] = vectorToJson(snapshot.wrenchHorizon.head(kInputDim));
+    solution["touchdown_yaw_W"] = json::object({
+        {"left", scalarToJson(snapshot.leftTouchdownYaw_W)},
+        {"right", scalarToJson(snapshot.rightTouchdownYaw_W)},
+    });
     solution["predicted_state_horizon"] =
         vectorByStepToFlatJson(predictedState, steps, kStateDim);
     solution["predicted_state_horizon_vector"] = vectorToJson(predictedState);
