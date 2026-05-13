@@ -1,6 +1,8 @@
 #include "ConvexMPC.h"
 
+#include <array>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -77,6 +79,179 @@ Eigen::SparseMatrix<c_float> makeFullPattern(const int rows, const int cols) {
     return sparse;
 }
 
+Eigen::SparseMatrix<c_float> makeBlockLocalConstraintPattern(const int steps) {
+    constexpr int kVarsPerStep = 12;
+    constexpr int kIneqPerStep = 24;
+    constexpr int kEqPerStep = 12;
+    constexpr int kConsPerStep = kIneqPerStep + kEqPerStep;
+
+    const int vars = kVarsPerStep * steps;
+    const int ineqRows = kIneqPerStep * steps;
+    const int cons = kConsPerStep * steps;
+
+    std::vector<Eigen::Triplet<c_float>> triplets;
+
+    // Conservative block-local superset:
+    // For each horizon step k, only constraints at step k may depend on u_k.
+    //
+    // A_osqp = [ C ]
+    //          [ D ]
+    //
+    // C block for step k: rows [24k, 24k+23], cols [12k, 12k+11]
+    // D block for step k: rows [24N+12k, 24N+12k+11], cols [12k, 12k+11]
+    triplets.reserve(static_cast<size_t>(steps) * kConsPerStep * kVarsPerStep);
+
+    for (int k = 0; k < steps; ++k) {
+        const int col0 = kVarsPerStep * k;
+        const int cRow0 = kIneqPerStep * k;
+        const int dRow0 = ineqRows + kEqPerStep * k;
+
+        for (int localCol = 0; localCol < kVarsPerStep; ++localCol) {
+            const int col = col0 + localCol;
+
+            for (int localRow = 0; localRow < kIneqPerStep; ++localRow) {
+                triplets.emplace_back(cRow0 + localRow, col, c_float(0));
+            }
+
+            for (int localRow = 0; localRow < kEqPerStep; ++localRow) {
+                triplets.emplace_back(dRow0 + localRow, col, c_float(0));
+            }
+        }
+    }
+
+    Eigen::SparseMatrix<c_float> sparse(cons, vars);
+    sparse.setFromTriplets(triplets.begin(), triplets.end());
+    sparse.makeCompressed();
+    return sparse;
+}
+
+Eigen::SparseMatrix<c_float> makeRowLevelConstraintPattern(const int steps) {
+    constexpr int kInputDim = 12;
+    constexpr int kIneqPerStep = 24;
+    constexpr int kEqPerStep = 12;
+
+    const int vars = kInputDim * steps;
+    const int ineqRows = kIneqPerStep * steps;
+    const int eqRows = kEqPerStep * steps;
+    const int cons = ineqRows + eqRows;
+
+    std::vector<Eigen::Triplet<c_float>> triplets;
+
+    // Current GaitScheduler pattern:
+    //
+    // Per step:
+    //   C: 44 entries
+    //   D: 16 entries
+    //   total: 60 entries
+    triplets.reserve(static_cast<std::size_t>(steps) * 60);
+
+    auto add = [&triplets](const int row, const int col) {
+        triplets.emplace_back(row, col, c_float(0));
+    };
+
+    // C_unit row-level pattern in local 6D foot wrench coordinates:
+    // local foot wrench = [Fx, Fy, Fz, Mx, My, Mz]
+    const std::array<std::vector<int>, 12> cUnitCols = {{
+        {0, 2},  // +Fx - mu Fz <= 0
+        {0, 2},  // -Fx - mu Fz <= 0
+        {1, 2},  // +Fy - mu Fz <= 0
+        {1, 2},  // -Fy - mu Fz <= 0
+        {2},     // +Fz <= Fz_max
+        {2},     // -Fz <= -Fz_min
+        {2, 3},  // +Mx - w Fz <= 0
+        {2, 3},  // -Mx - w Fz <= 0
+        {2, 4},  // +My - l Fz <= 0
+        {2, 4},  // -My - l Fz <= 0
+        {2, 5},  // +Mz - mu_t Fz <= 0
+        {2, 5},  // -Mz - mu_t Fz <= 0
+    }};
+
+    // Map local 6D foot wrench columns into the 12D input block:
+    //
+    // u_k = [
+    //   left force  0,1,2,
+    //   right force 3,4,5,
+    //   left torque 6,7,8,
+    //   right torque 9,10,11
+    // ]
+    const std::array<int, 6> leftMap  = {0, 1, 2, 6, 7, 8};
+    const std::array<int, 6> rightMap = {3, 4, 5, 9, 10, 11};
+
+    for (int k = 0; k < steps; ++k) {
+        const int u0 = kInputDim * k;
+        const int cRow0 = kIneqPerStep * k;
+        const int dRow0 = ineqRows + kEqPerStep * k;
+
+        // ------------------------------------------------------------
+        // C rows.
+        // Left foot inequality rows: local rows 0..11.
+        // Right foot inequality rows: local rows 12..23.
+        // ------------------------------------------------------------
+        for (int r = 0; r < 12; ++r) {
+            for (const int localCol : cUnitCols[r]) {
+                add(cRow0 + r, u0 + leftMap[localCol]);
+            }
+        }
+
+        for (int r = 0; r < 12; ++r) {
+            for (const int localCol : cUnitCols[r]) {
+                add(cRow0 + 12 + r, u0 + rightMap[localCol]);
+            }
+        }
+
+        // ------------------------------------------------------------
+        // D rows.
+        //
+        // Force zero equality in swing:
+        //   left force rows 0..2, right force rows 3..5
+        //
+        // Torque zero equality in swing:
+        //   left torque rows 6..8, right torque rows 9..11
+        //
+        // NoRollMoment stance constraint can overwrite:
+        //   left D row 6 with foot x-axis dot left torque = 0
+        //   right D row 9 with foot x-axis dot right torque = 0
+        //
+        // Therefore row 6 and row 9 need 3 torque columns each.
+        // ------------------------------------------------------------
+
+        // Left force swing zero: diagonal only.
+        add(dRow0 + 0, u0 + 0);
+        add(dRow0 + 1, u0 + 1);
+        add(dRow0 + 2, u0 + 2);
+
+        // Right force swing zero: diagonal only.
+        add(dRow0 + 3, u0 + 3);
+        add(dRow0 + 4, u0 + 4);
+        add(dRow0 + 5, u0 + 5);
+
+        // Left torque:
+        // row 6 may be either identity col 6 or roll axis cols 6,7,8.
+        add(dRow0 + 6, u0 + 6);
+        add(dRow0 + 6, u0 + 7);
+        add(dRow0 + 6, u0 + 8);
+
+        // rows 7,8 are only swing torque zero diagonal.
+        add(dRow0 + 7, u0 + 7);
+        add(dRow0 + 8, u0 + 8);
+
+        // Right torque:
+        // row 9 may be either identity col 9 or roll axis cols 9,10,11.
+        add(dRow0 + 9, u0 + 9);
+        add(dRow0 + 9, u0 + 10);
+        add(dRow0 + 9, u0 + 11);
+
+        // rows 10,11 are only swing torque zero diagonal.
+        add(dRow0 + 10, u0 + 10);
+        add(dRow0 + 11, u0 + 11);
+    }
+
+    Eigen::SparseMatrix<c_float> sparse(cons, vars);
+    sparse.setFromTriplets(triplets.begin(), triplets.end());
+    sparse.makeCompressed();
+    return sparse;
+}
+
 void fillUpperTriangularValues(const DMat<double>& dense, Eigen::SparseMatrix<c_float>& sparse) {
     if (dense.rows() != sparse.rows() || dense.cols() != sparse.cols()) {
         throw std::runtime_error("fillUpperTriangularValues received mismatched dimensions");
@@ -91,23 +266,125 @@ void fillUpperTriangularValues(const DMat<double>& dense, Eigen::SparseMatrix<c_
     }
 }
 
+// void fillConstraintValues(const DMat<double>& C, const DMat<double>& D, Eigen::SparseMatrix<c_float>& sparse) {
+//     constexpr int kVarsPerStep = 12;
+//     constexpr int kIneqPerStep = 24;
+//     constexpr int kEqPerStep = 12;
+
+//     if (C.rows() + D.rows() != sparse.rows() ||
+//         C.cols() != sparse.cols() ||
+//         D.cols() != sparse.cols()) {
+//         throw std::runtime_error("fillConstraintValues received mismatched dimensions");
+//     }
+
+//     if (C.rows() % kIneqPerStep != 0 ||
+//         D.rows() % kEqPerStep != 0 ||
+//         sparse.cols() % kVarsPerStep != 0) {
+//         throw std::runtime_error("fillConstraintValues received invalid MPC block dimensions");
+//     }
+
+//     const int steps = static_cast<int>(sparse.cols() / kVarsPerStep);
+
+//     if (C.rows() != kIneqPerStep * steps ||
+//         D.rows() != kEqPerStep * steps) {
+//         throw std::runtime_error("fillConstraintValues received inconsistent horizon dimensions");
+//     }
+
+//     c_float* values = sparse.valuePtr();
+//     Eigen::Index idx = 0;
+
+//     // This must match makeBlockLocalConstraintPattern().
+//     // Eigen's compressed sparse matrix is column-major by default.
+//     for (int k = 0; k < steps; ++k) {
+//         const Eigen::Index col0 = static_cast<Eigen::Index>(kVarsPerStep * k);
+//         const Eigen::Index cRow0 = static_cast<Eigen::Index>(kIneqPerStep * k);
+//         const Eigen::Index dRow0 = static_cast<Eigen::Index>(kEqPerStep * k);
+
+//         for (int localCol = 0; localCol < kVarsPerStep; ++localCol) {
+//             const Eigen::Index col = col0 + localCol;
+
+//             for (int localRow = 0; localRow < kIneqPerStep; ++localRow) {
+//                 values[idx++] = static_cast<c_float>(C(cRow0 + localRow, col));
+//             }
+
+//             for (int localRow = 0; localRow < kEqPerStep; ++localRow) {
+//                 values[idx++] = static_cast<c_float>(D(dRow0 + localRow, col));
+//             }
+//         }
+//     }
+
+//     if (idx != sparse.nonZeros()) {
+//         throw std::runtime_error("fillConstraintValues did not fill the expected number of sparse entries");
+//     }
+// }
+
 void fillConstraintValues(const DMat<double>& C,
                           const DMat<double>& D,
                           Eigen::SparseMatrix<c_float>& sparse) {
-    if (C.rows() + D.rows() != sparse.rows() || C.cols() != sparse.cols() ||
+    if (C.rows() + D.rows() != sparse.rows() ||
+        C.cols() != sparse.cols() ||
         D.cols() != sparse.cols()) {
         throw std::runtime_error("fillConstraintValues received mismatched dimensions");
     }
 
+#ifndef NDEBUG
+    // Safety check:
+    // If future constraints are added to C or D outside the row-level pattern,
+    // this detects it instead of silently dropping those entries.
+    constexpr double kPatternTolerance = 1e-12;
+
+    auto hasSlot = [&sparse](const Eigen::Index row, const Eigen::Index col) {
+        for (Eigen::SparseMatrix<c_float>::InnerIterator it(sparse, static_cast<int>(col)); it; ++it) {
+            if (it.row() == row) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (Eigen::Index col = 0; col < C.cols(); ++col) {
+        for (Eigen::Index row = 0; row < C.rows(); ++row) {
+            if (std::abs(C(row, col)) > kPatternTolerance && !hasSlot(row, col)) {
+                std::ostringstream oss;
+                oss << "Constraint sparse pattern missing C entry at row="
+                    << row << ", col=" << col << ", value=" << C(row, col);
+                throw std::runtime_error(oss.str());
+            }
+        }
+
+        for (Eigen::Index row = 0; row < D.rows(); ++row) {
+            const Eigen::Index sparseRow = C.rows() + row;
+            if (std::abs(D(row, col)) > kPatternTolerance && !hasSlot(sparseRow, col)) {
+                std::ostringstream oss;
+                oss << "Constraint sparse pattern missing D entry at row="
+                    << row << ", col=" << col << ", value=" << D(row, col);
+                throw std::runtime_error(oss.str());
+            }
+        }
+    }
+#endif
+
     c_float* values = sparse.valuePtr();
     Eigen::Index idx = 0;
-    for (Eigen::Index col = 0; col < sparse.cols(); ++col) {
-        for (Eigen::Index row = 0; row < C.rows(); ++row) {
-            values[idx++] = static_cast<c_float>(C(row, col));
+
+    // Eigen SparseMatrix is column-major by default.
+    // This fills values in the actual compressed sparse storage order,
+    // so it does not depend on triplet insertion order.
+    for (int outer = 0; outer < sparse.outerSize(); ++outer) {
+        for (Eigen::SparseMatrix<c_float>::InnerIterator it(sparse, outer); it; ++it) {
+            const Eigen::Index row = it.row();
+            const Eigen::Index col = it.col();
+
+            if (row < C.rows()) {
+                values[idx++] = static_cast<c_float>(C(row, col));
+            } else {
+                values[idx++] = static_cast<c_float>(D(row - C.rows(), col));
+            }
         }
-        for (Eigen::Index row = 0; row < D.rows(); ++row) {
-            values[idx++] = static_cast<c_float>(D(row, col));
-        }
+    }
+
+    if (idx != sparse.nonZeros()) {
+        throw std::runtime_error("fillConstraintValues did not fill all sparse entries");
     }
 }
 
@@ -193,7 +470,7 @@ StateWeightMat bodyYawStateCost(const StateWeightMat& stateWeight,
 
 ConvexMPC::ConvexMPC()
     : _hessian(makeUpperTriangularPattern(12 * horizonSteps())),
-      _constraintMatrix(makeFullPattern(36 * horizonSteps(), 12 * horizonSteps())),
+      _constraintMatrix(makeRowLevelConstraintPattern(horizonSteps())),
       _gradient(12 * horizonSteps()),
       _lowerBound(36 * horizonSteps()),
       _upperBound(36 * horizonSteps()),
