@@ -17,6 +17,7 @@ The server entry point is `dashboard/app.py`, which serves:
 - Lets you switch between all channels, pose channels, and motion channels
 - Lets you toggle angle display between `deg` and `rad` with `deg` as the default
 - Lets you stack up to three main canvases and switch each one with Prev/Next
+- Lets each main canvas switch between raw, mean, and moving-average display modes
 - Opens in a browser and refreshes automatically while the controller is running
 
 The dashboard is intentionally limited to graphs and status. It does not include a

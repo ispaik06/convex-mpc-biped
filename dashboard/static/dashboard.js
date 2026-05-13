@@ -6,6 +6,15 @@
     const WINDOW_OPTIONS = DASHBOARD_CONFIG.windowOptions || [5, 10, 20, 30];
     const MAX_MAIN_PANELS = DASHBOARD_CONFIG.maxMainPanels ?? 3;
     const MIN_MAIN_PANELS = DASHBOARD_CONFIG.minMainPanels ?? 1;
+    const MAIN_PANEL_MODES = {
+      raw: "Raw",
+      mean: "Mean",
+      ma: "MA",
+    };
+    const DEFAULT_MAIN_MA_SECONDS = 1.0;
+    const MAIN_MA_MIN_SECONDS = 0.25;
+    const MAIN_MA_MAX_SECONDS = 10.0;
+    const MAIN_MA_STEP_SECONDS = 0.25;
     const VIEW_LABELS = {
       all: "All 12 channels",
       pose: "Pose channels",
@@ -17,6 +26,7 @@
       windowSeconds: DEFAULT_WINDOW_SECONDS,
       angleUnit: "deg",
       mainLabels: [CHART_CONFIGS[0]?.label ?? "roll"],
+      mainPanelStates: [{ mode: "raw", movingAverageSeconds: DEFAULT_MAIN_MA_SECONDS }],
       latestSnapshot: null,
       lastSequence: null,
       controllerLastSequence: null,
@@ -83,6 +93,10 @@
         return "--";
       }
       return `${formatNumber(value, precision)} ${unit}`;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
     }
 
     function isAngularUnit(unit) {
@@ -183,6 +197,59 @@
       return formatNumber(value, decimalsForStep(step));
     }
 
+    function formatDurationSeconds(seconds) {
+      return `${formatNumber(seconds, seconds >= 1 ? 1 : 2)}s`;
+    }
+
+    function normalizeMainPanelState(state) {
+      const mode = MAIN_PANEL_MODES[state?.mode] ? state.mode : "raw";
+      const movingAverageSeconds = clamp(
+        Number.isFinite(state?.movingAverageSeconds) ? state.movingAverageSeconds : DEFAULT_MAIN_MA_SECONDS,
+        MAIN_MA_MIN_SECONDS,
+        MAIN_MA_MAX_SECONDS
+      );
+      return { mode, movingAverageSeconds };
+    }
+
+    function getMainPanelState(index) {
+      const existing = appState.mainPanelStates[index];
+      if (existing) {
+        const normalized = normalizeMainPanelState(existing);
+        appState.mainPanelStates[index] = normalized;
+        return normalized;
+      }
+      const next = normalizeMainPanelState();
+      appState.mainPanelStates[index] = next;
+      return next;
+    }
+
+    function setMainPanelState(index, updater) {
+      const current = getMainPanelState(index);
+      const next = normalizeMainPanelState(updater({ ...current }));
+      appState.mainPanelStates[index] = next;
+      updateButtonStates();
+      render();
+    }
+
+    function setMainPanelMode(index, mode) {
+      if (!MAIN_PANEL_MODES[mode]) {
+        return;
+      }
+      setMainPanelState(index, (state) => ({ ...state, mode }));
+    }
+
+    function adjustMainPanelMovingAverage(index, delta) {
+      setMainPanelState(index, (state) => ({
+        ...state,
+        mode: "ma",
+        movingAverageSeconds: clamp(
+          state.movingAverageSeconds + delta,
+          MAIN_MA_MIN_SECONDS,
+          MAIN_MA_MAX_SECONDS
+        ),
+      }));
+    }
+
     function buildTicks(min, max, step) {
       const ticks = [];
       if (!(step > 0)) {
@@ -243,8 +310,13 @@
       while (appState.mainLabels.length < clamped) {
         const seed = appState.mainLabels[appState.mainLabels.length - 1] || CHART_CONFIGS[0].label;
         appState.mainLabels.push(advanceChartLabel(seed, 1));
+        appState.mainPanelStates.push(normalizeMainPanelState());
       }
       appState.mainLabels = appState.mainLabels.slice(0, clamped);
+      appState.mainPanelStates = appState.mainPanelStates.slice(0, clamped);
+      while (appState.mainPanelStates.length < clamped) {
+        appState.mainPanelStates.push(normalizeMainPanelState());
+      }
       syncPrimaryMainLabel();
       ensureMainLabelsVisible();
       updateButtonStates();
@@ -391,14 +463,26 @@
             <div class="panel-head-left">
               <div class="panel-kicker" data-role="main-kicker">Main ${index + 1}</div>
               <h2 class="panel-title" data-role="main-title">--</h2>
-              <div class="panel-sub" data-role="main-subtitle">--</div>
+              <div class="main-panel-controls">
+                <div class="segment main-mode-segment" data-role="main-mode-segment" aria-label="main display mode">
+                  <button type="button" data-mode="raw">Raw</button>
+                  <button type="button" data-mode="mean">Mean</button>
+                  <button type="button" data-mode="ma">MA</button>
+                </div>
+                <div class="ma-stepper" data-role="main-ma-control" aria-label="moving average window">
+                  <button type="button" data-action="ma-dec" aria-label="decrease moving average window">-</button>
+                  <div class="ma-stepper-value" data-role="main-ma-value">1.0s</div>
+                  <button type="button" data-action="ma-inc" aria-label="increase moving average window">+</button>
+                </div>
+              </div>
             </div>
             <div class="panel-head-right">
+              <div class="panel-mode-badge" data-role="main-mode-badge">Raw</div>
               <div class="panel-current" data-role="main-current">
                 <span class="panel-current-label">Current</span>
                 <span data-role="main-current-value">--</span>
               </div>
-              <div style="display:flex; gap:8px; justify-content:flex-end;">
+              <div class="main-nav-buttons">
                 <button type="button" class="nav-button" data-action="prev">Prev</button>
                 <button type="button" class="nav-button" data-action="next">Next</button>
               </div>
@@ -417,16 +501,33 @@
       appState.mainRuntime = Array.from(container.querySelectorAll(".main-panel")).map((panel, index) => {
         const canvas = panel.querySelector("[data-role='main-canvas']");
         const titleNode = panel.querySelector("[data-role='main-title']");
-        const subtitleNode = panel.querySelector("[data-role='main-subtitle']");
         const currentNode = panel.querySelector("[data-role='main-current-value']");
+        const modeBadgeNode = panel.querySelector("[data-role='main-mode-badge']");
+        const modeButtons = Array.from(panel.querySelectorAll("[data-role='main-mode-segment'] button"));
+        const maControl = panel.querySelector("[data-role='main-ma-control']");
+        const maValueNode = panel.querySelector("[data-role='main-ma-value']");
         panel.querySelector("[data-action='prev']").addEventListener("click", () => stepMainPanel(index, -1));
         panel.querySelector("[data-action='next']").addEventListener("click", () => stepMainPanel(index, 1));
+        modeButtons.forEach((button) => {
+          button.addEventListener("click", () => setMainPanelMode(index, button.dataset.mode));
+        });
+        panel.querySelector("[data-action='ma-dec']").addEventListener("click", () =>
+          adjustMainPanelMovingAverage(index, -MAIN_MA_STEP_SECONDS)
+        );
+        panel.querySelector("[data-action='ma-inc']").addEventListener("click", () =>
+          adjustMainPanelMovingAverage(index, MAIN_MA_STEP_SECONDS)
+        );
         return {
           panel,
           canvas,
           titleNode,
-          subtitleNode,
           currentNode,
+          modeBadgeNode,
+          modeButtons,
+          maControl,
+          maValueNode,
+          domain: null,
+          signature: null,
         };
       });
     }
@@ -459,6 +560,87 @@
         latest,
         span: max - min,
       };
+    }
+
+    function computeSeriesStats(series) {
+      if (!Array.isArray(series) || series.length === 0) {
+        return null;
+      }
+      let min = Infinity;
+      let max = -Infinity;
+      let sum = 0;
+      let count = 0;
+      let latest = NaN;
+      for (const sample of series) {
+        if (!Number.isFinite(sample?.value)) {
+          continue;
+        }
+        if (sample.value < min) min = sample.value;
+        if (sample.value > max) max = sample.value;
+        sum += sample.value;
+        latest = sample.value;
+        count += 1;
+      }
+      if (count === 0) {
+        return null;
+      }
+      return {
+        count,
+        min,
+        max,
+        mean: sum / count,
+        latest,
+        span: max - min,
+      };
+    }
+
+    function buildSeries(samples, config, chartIndex, mode, movingAverageSeconds) {
+      const sourceValues = [];
+      for (const sample of samples) {
+        const value = toDisplayValue(sample.values[chartIndex], config);
+        if (!Number.isFinite(value)) {
+          continue;
+        }
+        sourceValues.push({ t: sample.t, value });
+      }
+
+      if (sourceValues.length === 0) {
+        return { series: [], stats: null };
+      }
+
+      if (mode === "mean") {
+        const sum = sourceValues.reduce((acc, sample) => acc + sample.value, 0);
+        const mean = sum / sourceValues.length;
+        const series = sourceValues.map((sample) => ({ t: sample.t, value: mean }));
+        return { series, stats: computeSeriesStats(series) };
+      }
+
+      if (mode === "ma") {
+        const windowSeconds = clamp(
+          Number.isFinite(movingAverageSeconds) ? movingAverageSeconds : DEFAULT_MAIN_MA_SECONDS,
+          MAIN_MA_MIN_SECONDS,
+          MAIN_MA_MAX_SECONDS
+        );
+        const series = [];
+        let left = 0;
+        let sum = 0;
+        let count = 0;
+        for (let right = 0; right < sourceValues.length; right += 1) {
+          const sample = sourceValues[right];
+          sum += sample.value;
+          count += 1;
+          while (sourceValues[right].t - sourceValues[left].t > windowSeconds) {
+            sum -= sourceValues[left].value;
+            count -= 1;
+            left += 1;
+          }
+          series.push({ t: sample.t, value: sum / Math.max(count, 1) });
+        }
+        return { series, stats: computeSeriesStats(series) };
+      }
+
+      const series = sourceValues.map((sample) => ({ t: sample.t, value: sample.value }));
+      return { series, stats: computeSeriesStats(series) };
     }
 
     function buildTargetDomain(stats, config) {
@@ -532,7 +714,7 @@
       return null;
     }
 
-    function drawChart(canvas, samples, config, state, focused) {
+    function drawChart(canvas, samples, config, state, focused, mode = "raw", movingAverageSeconds = DEFAULT_MAIN_MA_SECONDS) {
       const resolvedCanvas = resolveCanvas(canvas, state, focused);
       if (!resolvedCanvas) {
         return null;
@@ -578,11 +760,14 @@
         return;
       }
 
+      const chartIndex = Number.isInteger(state?.index)
+        ? state.index
+        : CHART_CONFIGS.findIndex((entry) => entry.label === config.label);
       const latestTime = samples.length > 0 ? samples[samples.length - 1].t : 0;
       const startTime = latestTime - appState.windowSeconds;
-      const stats = computeStats(samples, state.index);
-      const displayStats = toDisplayStats(stats, config);
-      const targetDomain = buildTargetDomain(displayStats, renderedConfig);
+      const seriesInfo = buildSeries(samples, config, chartIndex, mode, movingAverageSeconds);
+      const stats = seriesInfo.stats;
+      const targetDomain = buildTargetDomain(stats, renderedConfig);
       state.domain = settleDomain(state.domain, targetDomain, renderedConfig);
       const niceDomain = buildNiceDomain(state.domain, renderedConfig, focused ? 6 : 5);
 
@@ -628,14 +813,10 @@
       ctx.restore();
 
       const points = [];
-      for (const sample of samples) {
-        const value = toDisplayValue(sample.values[state.index], config);
-        if (!Number.isFinite(value)) {
-          continue;
-        }
+      for (const sample of seriesInfo.series) {
         const x = plot.x + ((sample.t - startTime) / appState.windowSeconds) * plot.w;
-        const y = plot.y + plot.h - ((value - niceDomain.min) / (niceDomain.max - niceDomain.min)) * plot.h;
-        points.push({ x, y, value });
+        const y = plot.y + plot.h - ((sample.value - niceDomain.min) / (niceDomain.max - niceDomain.min)) * plot.h;
+        points.push({ x, y, value: sample.value });
       }
 
       if (points.length === 0) {
@@ -751,21 +932,39 @@
       }
     }
 
-    function updateMainPanel(panelEntry, label, stats, drawResult, historyWindow, panelIndex) {
+    function updateMainPanel(panelEntry, label, drawResult, panelState, panelIndex) {
       const config = CHART_CONFIGS.find((entry) => entry.label === label) || CHART_CONFIGS[0];
       const renderedConfig = displayConfig(config);
       if (!panelEntry) {
         return;
       }
 
+      const signature = `${label}:${panelState.mode}:${panelState.mode === "ma" ? panelState.movingAverageSeconds : ""}`;
+      if (panelEntry.signature !== signature) {
+        panelEntry.signature = signature;
+        panelEntry.domain = null;
+      }
+
       panelEntry.panel.style.display = "";
       panelEntry.titleNode.textContent = config.title;
-      const displayStats = toDisplayStats(stats, config);
-      panelEntry.subtitleNode.textContent = "";
-      panelEntry.subtitleNode.classList.add("empty");
+      if (panelEntry.modeBadgeNode) {
+        panelEntry.modeBadgeNode.textContent =
+          panelState.mode === "ma"
+            ? `${MAIN_PANEL_MODES[panelState.mode]} ${formatDurationSeconds(panelState.movingAverageSeconds)}`
+            : MAIN_PANEL_MODES[panelState.mode];
+      }
+      panelEntry.modeButtons?.forEach((button) => {
+        button.classList.toggle("active", button.dataset.mode === panelState.mode);
+      });
+      if (panelEntry.maControl) {
+        panelEntry.maControl.classList.toggle("hidden", panelState.mode !== "ma");
+      }
+      if (panelEntry.maValueNode) {
+        panelEntry.maValueNode.textContent = formatDurationSeconds(panelState.movingAverageSeconds);
+      }
       if (panelEntry.currentNode) {
-        panelEntry.currentNode.textContent = displayStats
-          ? formatValue(displayStats.latest, renderedConfig.unit, renderedConfig.precision)
+        panelEntry.currentNode.textContent = drawResult.stats
+          ? formatValue(drawResult.stats.latest, renderedConfig.unit, renderedConfig.precision)
           : "--";
       }
     }
@@ -942,19 +1141,20 @@
         }
         const config = CHART_CONFIGS.find((entry) => entry.label === label) || CHART_CONFIGS[0];
         const chartEntry = getChartEntry(label);
+        const panelState = getMainPanelState(index);
         if (!chartEntry) {
           panelEntry.panel.style.display = "none";
           return;
         }
         panelEntry.panel.style.display = "";
         panelEntry.titleNode.textContent = config.title;
-        panelEntry.subtitleNode.textContent = `${config.group_label} • ${displayConfig(config).unit}`;
-        const stats = statsByIndex[chartEntry.index];
+        const mode = panelState.mode;
+        const movingAverageSeconds = panelState.movingAverageSeconds;
         const cardDraw =
           drawChart(chartEntry.canvas, historyWindow, config, chartEntry, false) || { niceDomain: { step: 1 } };
         const mainDraw =
-          drawChart(panelEntry.canvas, historyWindow, config, chartEntry, true) || cardDraw;
-        updateMainPanel(panelEntry, label, stats, mainDraw, historyWindow, index);
+          drawChart(panelEntry.canvas, historyWindow, config, panelEntry, true, mode, movingAverageSeconds) || cardDraw;
+        updateMainPanel(panelEntry, label, mainDraw, panelState, index);
       });
 
       for (const orderEntry of CHART_ORDER) {

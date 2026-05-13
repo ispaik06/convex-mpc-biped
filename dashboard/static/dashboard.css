@@ -263,6 +263,14 @@
       border-color: rgba(125, 211, 252, 0.26);
       background: rgba(125, 211, 252, 0.12);
     }
+    .main-panel .segment button {
+      padding: 8px 11px;
+      font-size: 12px;
+    }
+    .main-panel .nav-button {
+      padding: 8px 10px;
+      font-size: 12px;
+    }
     .toolbar-note {
       padding: 9px 12px;
       border-radius: 14px;
@@ -286,7 +294,7 @@
       padding: 3px 8px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       gap: 6px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
@@ -295,10 +303,17 @@
     .panel-head-right {
       min-width: 0;
     }
+    .panel-head-left {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
     .panel-head-right {
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
     .panel-current {
       display: inline-flex;
@@ -355,8 +370,71 @@
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
+    .panel-mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
     .panel-body {
       padding: 5px 8px 8px;
+    }
+    .main-panel-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 3px;
+    }
+    .ma-stepper {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.03);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .ma-stepper.hidden {
+      display: none;
+    }
+    .ma-stepper button {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      color: var(--muted);
+      background: transparent;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      min-width: 28px;
+      height: 26px;
+      border-radius: 9px;
+    }
+    .ma-stepper button:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .ma-stepper-value {
+      min-width: 44px;
+      text-align: center;
+      color: var(--text);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .main-nav-buttons {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
     }
     .main-stack {
       display: grid;
