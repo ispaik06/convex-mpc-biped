@@ -106,7 +106,7 @@ double wrapToPi(double x) {
 Then:
 
 \[
-\psi_w = \operatorname{wrapToPi}(\psi)
+\psi_w = \mathrm{wrapToPi}(\psi)
 \]
 
 Wrapped yaw is good for:
@@ -163,7 +163,7 @@ More concretely:
 ### Use wrapped difference for shortest angular error
 
 \[
-e_{\psi} = \operatorname{wrapToPi}(\psi_{target} - \psi_{current})
+e_{\psi} = \mathrm{wrapToPi}(\psi_{target} - \psi_{current})
 \]
 
 ### Use either for rotation matrices
@@ -251,7 +251,7 @@ state.yaw_W_wrapped = yawWrappedNow;
 Mathematically:
 
 \[
-\Delta \psi[k] = \operatorname{wrapToPi}(\psi_w[k] - \psi_w[k-1])
+\Delta \psi[k] = \mathrm{wrapToPi}(\psi_w[k] - \psi_w[k-1])
 \]
 
 \[
@@ -563,7 +563,7 @@ fillYawRotatedFootConstraintBlock(C_unit, footYawWrapped, C_leg, ...);
 because:
 
 \[
-R_z(\psi_f) = R_z(\operatorname{wrapToPi}(\psi_f))
+R_z(\psi_f) = R_z(\mathrm{wrapToPi}(\psi_f))
 \]
 
 ### 10.2 If foot yaw is used for planning
@@ -678,7 +678,7 @@ double yawError = wrapToPi(yawDesiredWrapped - yawCurrentWrapped);
 Mathematically:
 
 \[
-e_{\psi} = \operatorname{wrapToPi}(\psi_d - \psi)
+e_{\psi} = \mathrm{wrapToPi}(\psi_d - \psi)
 \]
 
 If a continuous target yaw is needed near the current unwrapped yaw:
@@ -697,9 +697,9 @@ Mathematically:
 =
 \psi_{current,u}
 +
-\operatorname{wrapToPi}
+\mathrm{wrapToPi}
 \left(
-\psi_{target,w} - \operatorname{wrapToPi}(\psi_{current,u})
+\psi_{target,w} - \mathrm{wrapToPi}(\psi_{current,u})
 \right)
 \]
 
@@ -1284,7 +1284,7 @@ for all MPC/control/planning calculations.
 Use:
 
 \[
-\psi_w = \operatorname{wrapToPi}(\psi_u)
+\psi_w = \mathrm{wrapToPi}(\psi_u)
 \]
 
 only when bounded angle representation is explicitly needed.

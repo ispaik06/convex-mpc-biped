@@ -133,9 +133,9 @@ R_k = R_z(\psi_{\mathrm{ref},k})^\top
 $$
 
 $$
-T_{\mathrm{position}} = \operatorname{diag}(R_k, 1), \qquad
-T_{\mathrm{velocity}} = \operatorname{diag}(R_k, 1), \qquad
-T_{\omega} = \operatorname{diag}(R_k, 1), \qquad
+T_{\mathrm{position}} = \mathrm{diag}(R_k, 1), \qquad
+T_{\mathrm{velocity}} = \mathrm{diag}(R_k, 1), \qquad
+T_{\omega} = \mathrm{diag}(R_k, 1), \qquad
 T_{\mathrm{orientation}} = I_3
 $$
 

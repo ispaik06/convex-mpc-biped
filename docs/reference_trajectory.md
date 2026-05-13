@@ -112,13 +112,13 @@ $$
 So the yaw recurrence is
 
 $$
-\psi_k = \operatorname{wrap}\!\left(\psi_{k-1} + g_k \, \dot\psi_{\text{cmd}} \, \Delta t\right),
+\psi_k = \mathrm{wrap}\!\left(\psi_{k-1} + g_k \, \dot\psi_{\text{cmd}} \, \Delta t\right),
 $$
 
 with
 
 $$
-\operatorname{wrap}(\alpha) = \operatorname{atan2}(\sin\alpha, \cos\alpha).
+\mathrm{wrap}(\alpha) = \mathrm{atan2}(\sin\alpha, \cos\alpha).
 $$
 
 The seed values are

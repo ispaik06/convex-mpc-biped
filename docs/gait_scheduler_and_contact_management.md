@@ -50,13 +50,13 @@ where `t0` is the synchronized cycle origin and `k` is the horizon step index.
 For each side `s`, the nominal phase is written with the fractional-part operator:
 
 $$
-\varphi_s(t) = \operatorname{frac}\!\left(\frac{t - t_0}{T_c} + \phi_s\right),
+\varphi_s(t) = \mathrm{frac}\!\left(\frac{t - t_0}{T_c} + \phi_s\right),
 $$
 
 where
 
 $$
-\operatorname{frac}(x) = x - \lfloor x \rfloor.
+\mathrm{frac}(x) = x - \lfloor x \rfloor.
 $$
 
 with the side offset
@@ -302,7 +302,7 @@ Instead, it uses
 
 $$
 \alpha_{\text{ramp}} =
-\operatorname{clamp}\!\left(\frac{t_{\text{ramp}}}{T_{\text{ramp}}},\,0,\,1\right)
+\mathrm{clamp}\!\left(\frac{t_{\text{ramp}}}{T_{\text{ramp}}},\,0,\,1\right)
 $$
 
 with `T_ramp = contactRampDuration`.
@@ -339,7 +339,7 @@ $$
 with
 
 $$
-e_\psi = \operatorname{wrap}\!\left(\psi_{\text{td}} - \psi_{\text{foot}}\right).
+e_\psi = \mathrm{wrap}\!\left(\psi_{\text{td}} - \psi_{\text{foot}}\right).
 $$
 
 The important part is the placement:

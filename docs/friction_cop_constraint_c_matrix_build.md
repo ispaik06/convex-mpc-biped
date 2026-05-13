@@ -5,7 +5,11 @@ This document explains the **contact wrench inequality constraints** used in the
 The correct implementation is:
 
 $$
-C_W = C_F \operatorname{blkdiag}(R_{WF}^{T}, R_{WF}^{T})
+C_W = C_F
+\begin{bmatrix}
+R_{WF}^{T} & 0 \\
+0 & R_{WF}^{T}
+\end{bmatrix}
 $$
 
 where $C_F$ is the foot-frame contact constraint matrix and $C_W$ is the matrix applied directly to the world-frame MPC input.
@@ -17,11 +21,21 @@ where $C_F$ is the foot-frame contact constraint matrix and $C_W$ is the matrix 
 For each foot, the MPC input is assumed to be a **world-frame contact wrench**:
 
 $$
- u_i =
- [F_{x,W}, F_{y,W}, F_{z,W}, M_{x,W}, M_{y,W}, M_{z,W}]^{T}
- =
- [F_W, M_W]^{T}
- \in \mathbb{R}^{6}
+u_i =
+\begin{bmatrix}
+F_{x,W} \\
+F_{y,W} \\
+F_{z,W} \\
+M_{x,W} \\
+M_{y,W} \\
+M_{z,W}
+\end{bmatrix}
+=
+\begin{bmatrix}
+F_W \\
+M_W
+\end{bmatrix}
+\in \mathbb{R}^{6}
 $$
 
 where:
@@ -33,9 +47,22 @@ where:
 For two feet, the per-step MPC input is ordered as:
 
 $$
- u_k =
- [F_{L,W}, F_{R,W}, M_{L,W}, M_{R,W}]^{T}
- \in \mathbb{R}^{12}
+u_k =
+\begin{bmatrix}
+F_{Lx,W} \\
+F_{Ly,W} \\
+F_{Lz,W} \\
+F_{Rx,W} \\
+F_{Ry,W} \\
+F_{Rz,W} \\
+M_{Lx,W} \\
+M_{Ly,W} \\
+M_{Lz,W} \\
+M_{Rx,W} \\
+M_{Ry,W} \\
+M_{Rz,W}
+\end{bmatrix}
+\in \mathbb{R}^{12}
 $$
 
 or, in scalar column order:
@@ -72,7 +99,11 @@ For a yaw-only foot frame, the rotation from foot frame to world frame is:
 $$
 R_{WF} = R_z(\psi_f)
 =
-[[\cos\psi_f, -\sin\psi_f, 0 ], [ \sin\psi_f, \cos\psi_f, 0 ], [ 0, 0, 1]]
+\begin{bmatrix}
+\cos\psi_f & -\sin\psi_f & 0 \\
+\sin\psi_f & \cos\psi_f & 0 \\
+0 & 0 & 1
+\end{bmatrix}
 $$
 
 Define:
@@ -85,7 +116,11 @@ Then:
 
 $$
 R_{WF} =
-[[c, -s, 0 ], [ s, c, 0 ], [ 0, 0, 1]]
+\begin{bmatrix}
+c & -s & 0 \\
+s & c & 0 \\
+0 & 0 & 1
+\end{bmatrix}
 $$
 
 A vector expressed in the foot frame maps to the world frame by:
@@ -103,9 +138,19 @@ $$
 Since force and moment are both vectors, the wrench transform is:
 
 $$
- [F_F, M_F]^T
- =
- \operatorname{diag}(R_{WF}^{T}, R_{WF}^{T}) [F_W, M_W]^T
+\begin{bmatrix}
+F_F \\
+M_F
+\end{bmatrix}
+=
+\begin{bmatrix}
+R_{WF}^{T} & 0 \\
+0 & R_{WF}^{T}
+\end{bmatrix}
+\begin{bmatrix}
+F_W \\
+M_W
+\end{bmatrix}
 $$
 
 Explicitly:
@@ -215,14 +260,27 @@ $$
 For:
 
 $$
-w_F = [F_x,F_y,F_z,M_x,M_y,M_z]^T_F
+w_F =
+\begin{bmatrix}
+F_{x,F} \\
+F_{y,F} \\
+F_{z,F} \\
+M_{x,F} \\
+M_{y,F} \\
+M_{z,F}
+\end{bmatrix}
 $$
 
 we get:
 
 $$
 C_{\text{fric},F} =
-[[1, 0, -\mu, 0, 0, 0 ], [ -1, 0, -\mu, 0, 0, 0 ], [ 0, 1, -\mu, 0, 0, 0 ], [ 0, -1, -\mu, 0, 0, 0]]
+\begin{bmatrix}
+1 & 0 & -\mu & 0 & 0 & 0 \\
+-1 & 0 & -\mu & 0 & 0 & 0 \\
+0 & 1 & -\mu & 0 & 0 & 0 \\
+0 & -1 & -\mu & 0 & 0 & 0
+\end{bmatrix}
 $$
 
 with bound:
@@ -278,7 +336,12 @@ Therefore:
 
 $$
 C_{\text{fric},W}=
-[[c, s, -\mu, 0, 0, 0 ], [ -c, -s, -\mu, 0, 0, 0 ], [ -s, c, -\mu, 0, 0, 0 ], [ s, -c, -\mu, 0, 0, 0]]
+\begin{bmatrix}
+c & s & -\mu & 0 & 0 & 0 \\
+-c & -s & -\mu & 0 & 0 & 0 \\
+-s & c & -\mu & 0 & 0 & 0 \\
+s & -c & -\mu & 0 & 0 & 0
+\end{bmatrix}
 $$
 
 > [!TIP]
@@ -322,7 +385,10 @@ Therefore the normal force rows are:
 
 $$
 C_{\text{normal},W} =
-[[0, 0, 1, 0, 0, 0 ], [ 0, 0, -1, 0, 0, 0]]
+\begin{bmatrix}
+0 & 0 & 1 & 0 & 0 & 0 \\
+0 & 0 & -1 & 0 & 0 & 0
+\end{bmatrix}
 $$
 
 with bound:
@@ -455,14 +521,27 @@ $$
 Using:
 
 $$
-w_F=[F_x,F_y,F_z,M_x,M_y,M_z]^T_F
+w_F =
+\begin{bmatrix}
+F_{x,F} \\
+F_{y,F} \\
+F_{z,F} \\
+M_{x,F} \\
+M_{y,F} \\
+M_{z,F}
+\end{bmatrix}
 $$
 
 The CoP rows are:
 
 $$
 C_{\text{cop},F}=
-[[0, 0, -b, 1, 0, 0 ], [ 0, 0, -b, -1, 0, 0 ], [ 0, 0, -a, 0, 1, 0 ], [ 0, 0, -a, 0, -1, 0]]
+\begin{bmatrix}
+0 & 0 & -b & 1 & 0 & 0 \\
+0 & 0 & -b & -1 & 0 & 0 \\
+0 & 0 & -a & 0 & 1 & 0 \\
+0 & 0 & -a & 0 & -1 & 0
+\end{bmatrix}
 $$
 
 where rows 1--2 constrain $y_{cop}$ through $M_x$, and rows 3--4 constrain $x_{cop}$ through $M_y$.
@@ -510,7 +589,9 @@ $$
 so the row is:
 
 $$
-[[0, 0, -b, c, s, 0]]
+\begin{bmatrix}
+0 & 0 & -b & c & s & 0
+\end{bmatrix}
 $$
 
 Next:
@@ -528,7 +609,9 @@ $$
 so the row is:
 
 $$
-[[0, 0, -b, -c, -s, 0]]
+\begin{bmatrix}
+0 & 0 & -b & -c & -s & 0
+\end{bmatrix}
 $$
 
 #### Length-direction rows
@@ -546,7 +629,9 @@ $$
 so the row is:
 
 $$
-[[0, 0, -a, -s, c, 0]]
+\begin{bmatrix}
+0 & 0 & -a & -s & c & 0
+\end{bmatrix}
 $$
 
 Next:
@@ -564,14 +649,21 @@ $$
 so the row is:
 
 $$
-[[0, 0, -a, s, -c, 0]]
+\begin{bmatrix}
+0 & 0 & -a & s & -c & 0
+\end{bmatrix}
 $$
 
 Therefore:
 
 $$
 C_{\text{cop},W}=
-[[0, 0, -b, c, s, 0 ], [ 0, 0, -b, -c, -s, 0 ], [ 0, 0, -a, -s, c, 0 ], [ 0, 0, -a, s, -c, 0]]
+\begin{bmatrix}
+0 & 0 & -b & c & s & 0 \\
+0 & 0 & -b & -c & -s & 0 \\
+0 & 0 & -a & -s & c & 0 \\
+0 & 0 & -a & s & -c & 0
+\end{bmatrix}
 $$
 
 with zero upper bound:
@@ -619,7 +711,10 @@ Therefore:
 
 $$
 C_{\text{torsion},W}=
-[[0, 0, -\mu_t, 0, 0, 1 ], [ 0, 0, -\mu_t, 0, 0, -1]]
+\begin{bmatrix}
+0 & 0 & -\mu_t & 0 & 0 & 1 \\
+0 & 0 & -\mu_t & 0 & 0 & -1
+\end{bmatrix}
 $$
 
 with zero upper bound.
@@ -634,7 +729,20 @@ The complete local foot-frame template is:
 
 $$
 C_F =
-[[1, 0, -\mu, 0, 0, 0 ], [ -1, 0, -\mu, 0, 0, 0 ], [ 0, 1, -\mu, 0, 0, 0 ], [ 0, -1, -\mu, 0, 0, 0 ], [ 0, 0, 1, 0, 0, 0 ], [ 0, 0, -1, 0, 0, 0 ], [ 0, 0, -b, 1, 0, 0 ], [ 0, 0, -b, -1, 0, 0 ], [ 0, 0, -a, 0, 1, 0 ], [ 0, 0, -a, 0, -1, 0 ], [ 0, 0, -\mu_t, 0, 0, 1 ], [ 0, 0, -\mu_t, 0, 0, -1]]
+\begin{bmatrix}
+1 & 0 & -\mu & 0 & 0 & 0 \\
+-1 & 0 & -\mu & 0 & 0 & 0 \\
+0 & 1 & -\mu & 0 & 0 & 0 \\
+0 & -1 & -\mu & 0 & 0 & 0 \\
+0 & 0 & 1 & 0 & 0 & 0 \\
+0 & 0 & -1 & 0 & 0 & 0 \\
+0 & 0 & -b & 1 & 0 & 0 \\
+0 & 0 & -b & -1 & 0 & 0 \\
+0 & 0 & -a & 0 & 1 & 0 \\
+0 & 0 & -a & 0 & -1 & 0 \\
+0 & 0 & -\mu_t & 0 & 0 & 1 \\
+0 & 0 & -\mu_t & 0 & 0 & -1
+\end{bmatrix}
 $$
 
 where:
@@ -658,14 +766,30 @@ The final one-foot matrix applied to world-frame input is:
 
 $$
 C_W = C_F
-[[R_{WF}^{T}, 0 ], [ 0, R_{WF}^{T}]]
+\begin{bmatrix}
+R_{WF}^{T} & 0 \\
+0 & R_{WF}^{T}
+\end{bmatrix}
 $$
 
 For yaw-only rotation, explicitly:
 
 $$
 C_W =
-[[c, s, -\mu, 0, 0, 0 ], [ -c, -s, -\mu, 0, 0, 0 ], [ -s, c, -\mu, 0, 0, 0 ], [ s, -c, -\mu, 0, 0, 0 ], [ 0, 0, 1, 0, 0, 0 ], [ 0, 0, -1, 0, 0, 0 ], [ 0, 0, -b, c, s, 0 ], [ 0, 0, -b, -c, -s, 0 ], [ 0, 0, -a, -s, c, 0 ], [ 0, 0, -a, s, -c, 0 ], [ 0, 0, -\mu_t, 0, 0, 1 ], [ 0, 0, -\mu_t, 0, 0, -1]]
+\begin{bmatrix}
+c & s & -\mu & 0 & 0 & 0 \\
+-c & -s & -\mu & 0 & 0 & 0 \\
+-s & c & -\mu & 0 & 0 & 0 \\
+s & -c & -\mu & 0 & 0 & 0 \\
+0 & 0 & 1 & 0 & 0 & 0 \\
+0 & 0 & -1 & 0 & 0 & 0 \\
+0 & 0 & -b & c & s & 0 \\
+0 & 0 & -b & -c & -s & 0 \\
+0 & 0 & -a & -s & c & 0 \\
+0 & 0 & -a & s & -c & 0 \\
+0 & 0 & -\mu_t & 0 & 0 & 1 \\
+0 & 0 & -\mu_t & 0 & 0 & -1
+\end{bmatrix}
 $$
 
 > [!TIP]
@@ -728,7 +852,7 @@ $$
 where:
 
 $$
-T_{F_iW}=\operatorname{blkdiag}(R_{WF_i}^{T}, R_{WF_i}^{T})
+T_{F_iW}=\mathrm{blkdiag}(R_{WF_i}^{T}, R_{WF_i}^{T})
 $$
 
 Each foot should use its own foot yaw:
@@ -744,7 +868,7 @@ $$
 For a horizon of $N$ steps, the full inequality matrix is block diagonal:
 
 $$
-C = \operatorname{blkdiag}(C_0, C_1, \ldots, C_{N-1})
+C = \mathrm{blkdiag}(C_0, C_1, \ldots, C_{N-1})
 $$
 
 where:
@@ -873,7 +997,11 @@ we want the row that acts directly on:
 Using:
 
 $$
-C_W = C_F \operatorname{blkdiag}(R_{WF}^{T}, R_{WF}^{T})
+C_W = C_F
+\begin{bmatrix}
+R_{WF}^{T} & 0 \\
+0 & R_{WF}^{T}
+\end{bmatrix}
 $$
 
 For yaw-only rotation, the row coefficients become:
@@ -1205,7 +1333,12 @@ If this happens, it means one of the constraint rows is producing a nonzero term
 For nonzero foot yaw, the first four rows of a one-foot block should be:
 
 $$
-[[c, s, -\mu, 0, 0, 0 ], [ -c, -s, -\mu, 0, 0, 0 ], [ -s, c, -\mu, 0, 0, 0 ], [ s, -c, -\mu, 0, 0, 0]]
+\begin{bmatrix}
+c & s & -\mu & 0 & 0 & 0 \\
+-c & -s & -\mu & 0 & 0 & 0 \\
+-s & c & -\mu & 0 & 0 & 0 \\
+s & -c & -\mu & 0 & 0 & 0
+\end{bmatrix}
 $$
 
 If row 0 only touches `Fx` and `Fz`, the sparse pattern is wrong.
@@ -1217,7 +1350,12 @@ If row 0 only touches `Fx` and `Fz`, the sparse pattern is wrong.
 The CoP rows should be:
 
 $$
-[[0, 0, -b, c, s, 0 ], [ 0, 0, -b, -c, -s, 0 ], [ 0, 0, -a, -s, c, 0 ], [ 0, 0, -a, s, -c, 0]]
+\begin{bmatrix}
+0 & 0 & -b & c & s & 0 \\
+0 & 0 & -b & -c & -s & 0 \\
+0 & 0 & -a & -s & c & 0 \\
+0 & 0 & -a & s & -c & 0
+\end{bmatrix}
 $$
 
 If a CoP row only touches `Fz` and one of `Mx` or `My`, the sparse pattern is wrong for nonzero yaw.
@@ -1229,7 +1367,10 @@ If a CoP row only touches `Fz` and one of `Mx` or `My`, the sparse pattern is wr
 The normal force rows should remain:
 
 $$
-[[0, 0, 1, 0, 0, 0 ], [ 0, 0, -1, 0, 0, 0]]
+\begin{bmatrix}
+0 & 0 & 1 & 0 & 0 & 0 \\
+0 & 0 & -1 & 0 & 0 & 0
+\end{bmatrix}
 $$
 
 Yaw does not affect these rows.
@@ -1241,7 +1382,10 @@ Yaw does not affect these rows.
 The torsional rows should remain:
 
 $$
-[[0, 0, -\mu_t, 0, 0, 1 ], [ 0, 0, -\mu_t, 0, 0, -1]]
+\begin{bmatrix}
+0 & 0 & -\mu_t & 0 & 0 & 1 \\
+0 & 0 & -\mu_t & 0 & 0 & -1
+\end{bmatrix}
 $$
 
 Yaw-only rotation does not affect $M_z$.
