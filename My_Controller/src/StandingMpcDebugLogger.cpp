@@ -379,7 +379,7 @@ json userCommandJson(const UserCommand& command) {
     out["x_dot"] = scalarToJson(command.x_dot);
     out["y_dot"] = scalarToJson(command.y_dot);
     out["psi_dot"] = scalarToJson(command.psi_dot);
-    out["z_dot"] = scalarToJson(command.z_dot);
+    out["body_height_offset_m"] = scalarToJson(command.body_height_offset_m);
     out["standing_roll_offset_rad"] = scalarToJson(command.standing_roll_offset_rad);
     out["standing_pitch_offset_rad"] = scalarToJson(command.standing_pitch_offset_rad);
     out["standing_mpc_debug_log_request"] = command.standing_mpc_debug_log_request;
@@ -466,7 +466,6 @@ json controllerConfigJson(const ControllerConfig& config,
     userCommandFilter["x_dot_tau"] = config.userCommandFilter.xDotTau;
     userCommandFilter["y_dot_tau"] = config.userCommandFilter.yDotTau;
     userCommandFilter["psi_dot_tau"] = config.userCommandFilter.psiDotTau;
-    userCommandFilter["z_dot_tau"] = config.userCommandFilter.zDotTau;
     userCommandFilter["standing_roll_offset_tau"] =
         config.userCommandFilter.standingRollOffsetTau;
     userCommandFilter["standing_pitch_offset_tau"] =

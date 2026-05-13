@@ -83,7 +83,6 @@ struct UserCommandFilterParameters {
     double xDotTau{0.0};
     double yDotTau{0.0};
     double psiDotTau{0.0};
-    double zDotTau{0.0};
     double standingRollOffsetTau{0.0};
     double standingPitchOffsetTau{0.0};
     double xDotMax{std::numeric_limits<double>::infinity()};

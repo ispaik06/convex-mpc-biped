@@ -47,15 +47,15 @@ void sanitizeCommand(UserCommand& command) {
     command.x_dot = zeroTinyValue(command.x_dot);
     command.y_dot = zeroTinyValue(command.y_dot);
     command.psi_dot = zeroTinyValue(command.psi_dot);
-    command.z_dot = zeroTinyValue(command.z_dot);
+    command.body_height_offset_m = zeroTinyValue(command.body_height_offset_m);
     command.standing_roll_offset_rad = zeroTinyValue(command.standing_roll_offset_rad);
     command.standing_pitch_offset_rad = zeroTinyValue(command.standing_pitch_offset_rad);
 }
 
 void printCommand(const UserCommand& command, const bool standingControls) {
     if (standingControls) {
-        std::cout << "[KeyboardCommand] standing command | z_dot="
-                  << formatScalar(command.z_dot, 3) << " m/s"
+        std::cout << "[KeyboardCommand] standing command | height_offset="
+                  << formatScalar(command.body_height_offset_m, 3) << " m"
                   << "  pitch=" << formatDegrees(command.standing_pitch_offset_rad, 2)
                   << " deg"
                   << "  roll=" << formatDegrees(command.standing_roll_offset_rad, 2)
@@ -70,7 +70,7 @@ void printCommand(const UserCommand& command, const bool standingControls) {
               << formatScalar(command.x_dot, 3) << " m/s"
               << "  y_dot=" << formatScalar(command.y_dot, 3) << " m/s"
               << "  psi_dot=" << formatScalar(command.psi_dot, 3) << " rad/s"
-              << "  z_dot=" << formatScalar(command.z_dot, 3) << " m/s"
+              << "  height_offset=" << formatScalar(command.body_height_offset_m, 3) << " m"
               << "  pitch=" << formatDegrees(command.standing_pitch_offset_rad, 2)
               << " deg"
               << "  roll=" << formatDegrees(command.standing_roll_offset_rad, 2)
@@ -82,14 +82,14 @@ void printCommand(const UserCommand& command, const bool standingControls) {
 
 void printActiveControls(const bool standingControls) {
     if (standingControls) {
-        std::cout << "[KeyboardCommand] standing controls active: +/- z_dot, "
+        std::cout << "[KeyboardCommand] standing controls active: arrow up/down height, "
                   << "i/k pitch, j/l roll, t toggle stand/walk, Shift+L log, "
                   << "space reset\n";
         return;
     }
 
     std::cout << "[KeyboardCommand] walking controls active: w/s x_dot, a/d y_dot, "
-              << "q/e psi_dot, +/- z_dot, i/k pitch, j/l roll, t toggle stand/walk, "
+              << "q/e psi_dot, arrow up/down height, i/k pitch, j/l roll, t toggle stand/walk, "
               << "Shift+L log, space reset\n";
 }
 
@@ -272,6 +272,11 @@ void KeyboardCommand::inputLoop() {
                     escapeState = EscapeState::None;
                     break;
                 case EscapeState::SawEscapeBracket:
+                    if (key == 'A') {
+                        applyHeightKey(true);
+                    } else if (key == 'B') {
+                        applyHeightKey(false);
+                    }
                     escapeState = EscapeState::None;
                     break;
             }
@@ -279,16 +284,16 @@ void KeyboardCommand::inputLoop() {
     }
 }
 
-void KeyboardCommand::applyVerticalKey(bool increase) {
+void KeyboardCommand::applyHeightKey(bool increase) {
     const bool standingControls = _standingControls.load();
     std::lock_guard<std::mutex> lock(_commandMutex);
 
-    const double delta = increase ? _verticalStep : -_verticalStep;
-    applyLimitedDelta(_userCommand.z_dot,
+    const double delta = increase ? _heightStep : -_heightStep;
+    applyLimitedDelta(_userCommand.body_height_offset_m,
                       delta,
-                      _verticalLimit,
-                      "z_dot",
-                      "m/s",
+                      _heightLimit,
+                      "height_offset",
+                      "m",
                       standingControls);
     sanitizeCommand(_userCommand);
     printCommand(_userCommand, standingControls);
@@ -368,14 +373,6 @@ void KeyboardCommand::applyKey(char key) {
             case 'l':
                 applyStandingOrientationKey(lowerKey);
                 return;
-            case '+':
-            case '=':
-                applyVerticalKey(true);
-                return;
-            case '-':
-            case '_':
-                applyVerticalKey(false);
-                return;
             case 'w':
             case 's':
             case 'a':
@@ -394,14 +391,6 @@ void KeyboardCommand::applyKey(char key) {
         case 'j':
         case 'l':
             applyStandingOrientationKey(lowerKey);
-            return;
-        case '+':
-        case '=':
-            applyVerticalKey(true);
-            return;
-        case '-':
-        case '_':
-            applyVerticalKey(false);
             return;
         case 'w':
         case 's':

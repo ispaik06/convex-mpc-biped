@@ -68,7 +68,6 @@ user_command_filter:
   x_dot_tau: 0.90
   y_dot_tau: 0.90
   psi_dot_tau: 0.70
-  z_dot_tau: 0.70
   standing_roll_offset_tau: 0.70
   standing_pitch_offset_tau: 0.70
   x_dot_max: 1.0

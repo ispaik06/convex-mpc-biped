@@ -4,7 +4,7 @@
 
 `gait_swing_hold_keyboard` is the moving-base variant of `test/gait_swing_hold`.
 
-It starts from the configured `gait_swing_hold_test.keyframe_name`, freezes every non-leg joint coordinate, and then moves the floating base directly in planar `x/y/yaw` from keyboard velocity commands. The normal `RobotRunner` joint-position initializer is not used.
+It starts from the configured `gait_swing_hold_test.keyframe_name`, freezes every non-leg joint coordinate, and then moves the floating base directly in planar `x/y/yaw` from keyboard velocity commands while the shared body-height offset follows the arrow keys. The normal `RobotRunner` joint-position initializer is not used.
 
 ## What It Exercises
 
@@ -39,12 +39,12 @@ The runner uses `KeyboardCommand`.
 | `w` / `s` | Increase/decrease body-frame `x_dot` |
 | `a` / `d` | Increase/decrease body-frame `y_dot` |
 | `q` / `e` | Increase/decrease yaw rate `psi_dot` |
-| `+` / `-` | Increase/decrease body-height command `z_dot` |
+| Arrow up / down | Increase/decrease body-height offset |
 | Space | Reset velocity commands |
 
-Only the planar `x_dot`, `y_dot`, and `psi_dot` commands are applied to the base motion in this runner.
-The shared keyboard layer also accepts `i/j/k/l` for standing orientation, and `+/-` for the shared
-`z_dot` command.
+Only the planar `x_dot`, `y_dot`, and `psi_dot` commands are applied directly to the base motion in
+this runner. The shared keyboard layer also accepts `i/j/k/l` for standing orientation, and arrow
+up/down for the shared body-height offset that the controller applies.
 
 ## Build
 

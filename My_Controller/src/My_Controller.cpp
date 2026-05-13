@@ -513,6 +513,7 @@ void MyController::seedBodyTargetFromCurrentState() {
     const Vec2<double> rollPitch = quaternionToRollPitch(_stateEstimate->torsoQuat_W);
     _bodyTarget.nominalPosition_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
     _bodyTarget.position_W = _bodyTarget.nominalPosition_W;
+    _bodyTarget.nominalHeight_W = _bodyTarget.nominalPosition_W[2];
     _bodyTarget.euler_W << rollPitch[0], rollPitch[1], _stateEstimate->psi;
     _bodyTarget.eulerSeed_W = _bodyTarget.euler_W;
     _bodyTarget.initialized = true;
@@ -613,9 +614,7 @@ void MyController::updateFilteredUserCommand(const double dt) {
     _filteredUserCommand.psi_dot = previousCommand.psi_dot +
                                    lowPassBlendAlpha(filter.psiDotTau, dt) *
                                        (rawCommand.psi_dot - previousCommand.psi_dot);
-    _filteredUserCommand.z_dot = previousCommand.z_dot +
-                                 lowPassBlendAlpha(filter.zDotTau, dt) *
-                                     (rawCommand.z_dot - previousCommand.z_dot);
+    _filteredUserCommand.body_height_offset_m = rawCommand.body_height_offset_m;
     _filteredUserCommand.standing_roll_offset_rad =
         previousCommand.standing_roll_offset_rad +
         lowPassBlendAlpha(filter.standingRollOffsetTau, dt) *

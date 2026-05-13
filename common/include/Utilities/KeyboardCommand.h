@@ -27,7 +27,7 @@ private:
 
     void inputLoop();
     void applyKey(char key);
-    void applyVerticalKey(bool increase);
+    void applyHeightKey(bool increase);
     void applyStandingOrientationKey(char key);
 
     mutable std::mutex _commandMutex;
@@ -38,11 +38,11 @@ private:
     bool _terminalConfigured{false};
     double _linearStep{0.05};
     double _yawStep{0.05};
-    double _verticalStep{0.05};
+    double _heightStep{0.05};
     double _xLimit{1.0};
     double _yLimit{1.0};
     double _yawLimit{1.5};
-    double _verticalLimit{0.8};
+    double _heightLimit{0.8};
 };
 
 #endif  // KEYBOARD_COMMAND_H

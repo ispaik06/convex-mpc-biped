@@ -665,9 +665,6 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (userCommandFilter.contains("psi_dot_tau")) {
             out.userCommandFilter.psiDotTau = userCommandFilter.at("psi_dot_tau").get<double>();
         }
-        if (userCommandFilter.contains("z_dot_tau")) {
-            out.userCommandFilter.zDotTau = userCommandFilter.at("z_dot_tau").get<double>();
-        }
         if (userCommandFilter.contains("standing_roll_offset_tau")) {
             out.userCommandFilter.standingRollOffsetTau =
                 userCommandFilter.at("standing_roll_offset_tau").get<double>();
@@ -868,7 +865,7 @@ UserCommand userCommandFromLog(const json& log) {
     out.x_dot = jsonDoubleOr(command, "x_dot", 0.0);
     out.y_dot = jsonDoubleOr(command, "y_dot", 0.0);
     out.psi_dot = jsonDoubleOr(command, "psi_dot", 0.0);
-    out.z_dot = jsonDoubleOr(command, "z_dot", 0.0);
+    out.body_height_offset_m = jsonDoubleOr(command, "body_height_offset_m", 0.0);
     out.standing_roll_offset_rad =
         jsonDoubleOr(command, "standing_roll_offset_rad", 0.0);
     out.standing_pitch_offset_rad =
@@ -1103,7 +1100,6 @@ void advanceReferenceTarget(Vec13<double>& target,
     }
 
     if (locomotionMode == LocomotionMode::Standing) {
-        target[5] += command.z_dot * dt;
         return;
     }
 

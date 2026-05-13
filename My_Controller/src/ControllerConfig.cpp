@@ -290,7 +290,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(userCommandFilter, "x_dot_tau", params.userCommandFilter.xDotTau);
     readScalarIfPresent(userCommandFilter, "y_dot_tau", params.userCommandFilter.yDotTau);
     readScalarIfPresent(userCommandFilter, "psi_dot_tau", params.userCommandFilter.psiDotTau);
-    readScalarIfPresent(userCommandFilter, "z_dot_tau", params.userCommandFilter.zDotTau);
     readScalarIfPresent(userCommandFilter,
                         "standing_roll_offset_tau",
                         params.userCommandFilter.standingRollOffsetTau);
@@ -458,7 +457,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !std::isfinite(params.userCommandFilter.xDotTau) ||
         !std::isfinite(params.userCommandFilter.yDotTau) ||
         !std::isfinite(params.userCommandFilter.psiDotTau) ||
-        !std::isfinite(params.userCommandFilter.zDotTau) ||
         !std::isfinite(params.userCommandFilter.standingRollOffsetTau) ||
         !std::isfinite(params.userCommandFilter.standingPitchOffsetTau) ||
         !isNonNegativeFiniteOrPositiveInfinity(params.userCommandFilter.xDotMax) ||
@@ -479,7 +477,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.userCommandFilter.xDotTau < 0.0 ||
         params.userCommandFilter.yDotTau < 0.0 ||
         params.userCommandFilter.psiDotTau < 0.0 ||
-        params.userCommandFilter.zDotTau < 0.0 ||
         params.userCommandFilter.standingRollOffsetTau < 0.0 ||
         params.userCommandFilter.standingPitchOffsetTau < 0.0 ||
         params.swing.rollKp < 0.0 || params.swing.rollKd < 0.0 ||
@@ -496,7 +493,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "swing.stance_yaw_kp, swing.stance_yaw_kd, "
             "user_command_filter.x_dot_tau, "
             "user_command_filter.y_dot_tau, user_command_filter.psi_dot_tau, "
-            "user_command_filter.z_dot_tau, user_command_filter.standing_roll_offset_tau, "
+            "user_command_filter.standing_roll_offset_tau, "
             "user_command_filter.standing_pitch_offset_tau must be finite; "
             "user_command_filter.x_dot_max, user_command_filter.y_dot_max, and "
             "user_command_filter.psi_dot_max must be finite or positive infinity; "

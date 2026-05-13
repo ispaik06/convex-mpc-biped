@@ -42,6 +42,7 @@ private:
 
 		Vec3<double> nominalPosition_W = Vec3<double>::Zero();
 		Vec3<double> position_W = Vec3<double>::Zero();
+		double nominalHeight_W{0.0};
 		Vec3<double> euler_W = Vec3<double>::Zero();
 		Vec3<double> eulerSeed_W = Vec3<double>::Zero();
 		bool initialized{false};
