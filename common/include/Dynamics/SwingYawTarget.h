@@ -34,7 +34,6 @@ inline double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFoo
                                                   const double fallbackYaw_W) {
     constexpr double kDiagonalCommandDeadband = 1e-3;
     constexpr double kFilteredLateralSpeedThreshold = 0.1;
-    constexpr double kHalfPi = 1.570796326794896619231321691639751442;
     const double psiBias_W = swingFootYawPsiOffset(side, psi_dot);
     if (std::abs(filteredPlanarCommand_B.y()) < kFilteredLateralSpeedThreshold) {
         return liftAngleNear(fallbackYaw_W + psiBias_W, fallbackYaw_W);
@@ -67,10 +66,7 @@ inline double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFoo
         return liftAngleNear(fallbackYaw_W + psiBias_W, fallbackYaw_W);
     }
 
-    double yaw_W = std::atan2(stepXY_W.y(), stepXY_W.x());
-    if (xDot < 0.0) {
-        yaw_W += (side == Side::Right) ? kHalfPi : -kHalfPi;
-    }
+    const double yaw_W = std::atan2(stepXY_W.y(), stepXY_W.x());
     return liftAngleNear(yaw_W + psiBias_W, fallbackYaw_W);
 }
 }  // namespace swingyaw
