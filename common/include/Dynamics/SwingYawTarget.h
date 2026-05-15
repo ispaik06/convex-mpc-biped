@@ -52,10 +52,8 @@ inline double swingFootYawFromDiagonalStepHeading(const Vec3<double>& currentFoo
 
     const double xDot = filteredPlanarCommand_B.x();
     const double yDot = filteredPlanarCommand_B.y();
-    // Only treat the command as diagonal when the forward/back component dominates in the
-    // same-sign case; otherwise keep the simpler fallback heading.
-    const bool diagonalHeadingDominates =
-        (xDot > 0.0 && xDot >= yDot) || (xDot < 0.0 && xDot <= yDot);
+    // Only treat the command as diagonal when moving forward.
+    const bool diagonalHeadingDominates = (xDot > 0.0 && xDot >= yDot);
     if (!diagonalHeadingDominates) {
         return liftAngleNear(fallbackYaw_W + psiBias_W, fallbackYaw_W);
     }

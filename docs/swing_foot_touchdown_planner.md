@@ -111,12 +111,11 @@ Here, `k_{\text{lead}}` maps to `swing_foot_yaw_lead_scale`.
 There is one extra heuristic for diagonal stepping. If the filtered lateral command is large enough, the planner uses the world direction from the current foot position to the touchdown target as the base yaw. That path is only enabled when:
 
 - `|filtered_y_dot| >= 0.2 m/s`
-- `filtered_x_dot != 0`
+- `filtered_x_dot > 0`
 - the swing leg matches the lateral direction
 - if `filtered_x_dot > 0`, require `filtered_x_dot >= filtered_y_dot`
-- if `filtered_x_dot < 0`, require `filtered_x_dot <= filtered_y_dot`
 
-Backward motion uses the same step-heading yaw as forward motion; no extra `+/-90 deg` foot yaw rotation is applied.
+Backward motion does not enter the diagonal-step yaw heuristic; it stays on the fallback swing yaw plus the `psi_dot` bias.
 
 There is also a `psi_dot` bias:
 
