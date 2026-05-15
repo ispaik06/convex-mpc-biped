@@ -805,8 +805,6 @@ void MyController::updateSwingTrajectories(
 
         const Vec3<double>& currentFootPosition = _stateEstimate->legs[leg].footPos_W;
         const Vec3<double> touchdownTarget = desiredFootPositionForSide(desiredFootPositions, side);
-        const Vec2<double> filteredPlanarCommand_B(_filteredUserCommand.x_dot,
-                                                   _filteredUserCommand.y_dot);
         const double fallbackYaw_W = swingFootYawTargetWorld();
         const double psi_dot = _filteredUserCommand.psi_dot;
         const bool searchMode =
@@ -816,13 +814,8 @@ void MyController::updateSwingTrajectories(
                 std::max(getControllerConfig().contactManager.groundSearchTrackingTime,
                          minRemainingTime);
             if (!runtime.wasSearchMode || !runtime.swingTrajectory.active()) {
-                runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-                    currentFootPosition,
-                    touchdownTarget,
-                    filteredPlanarCommand_B,
-                    psi_dot,
-                    side,
-                    fallbackYaw_W);
+                runtime.touchdownYaw_W =
+                    swingyaw::swingFootYawTargetWorldWithPsiOffset(psi_dot, side, fallbackYaw_W);
                 runtime.swingTrajectory.reset(
                     currentFootPosition,
                     touchdownTarget,
@@ -843,13 +836,8 @@ void MyController::updateSwingTrajectories(
             std::max(remainingSwingTime(*_gaitScheduler, side, time), minRemainingTime);
 
         if (runtime.wasInStance || !runtime.swingTrajectory.active()) {
-            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-                currentFootPosition,
-                touchdownTarget,
-                filteredPlanarCommand_B,
-                psi_dot,
-                side,
-                fallbackYaw_W);
+            runtime.touchdownYaw_W =
+                swingyaw::swingFootYawTargetWorldWithPsiOffset(psi_dot, side, fallbackYaw_W);
             runtime.swingTrajectory.reset(currentFootPosition,
                                           touchdownTarget,
                                           _swingHeight,

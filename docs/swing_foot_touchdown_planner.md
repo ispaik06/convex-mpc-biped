@@ -108,14 +108,7 @@ $$
 
 Here, `k_{\text{lead}}` maps to `swing_foot_yaw_lead_scale`.
 
-There is one extra heuristic for diagonal stepping. If the filtered lateral command is large enough, the planner uses the world direction from the current foot position to the touchdown target as the base yaw. That path is only enabled when:
-
-- `|filtered_y_dot| >= 0.2 m/s`
-- `filtered_x_dot > 0`
-- the swing leg matches the lateral direction
-- if `filtered_x_dot > 0`, require `filtered_x_dot >= filtered_y_dot`
-
-Backward motion does not enter the diagonal-step yaw heuristic; it stays on the fallback swing yaw plus the `psi_dot` bias.
+Swing-foot yaw does not use a diagonal-step heading heuristic. The planner stays on the fallback swing yaw plus the `psi_dot` bias.
 
 There is also a `psi_dot` bias:
 
@@ -464,9 +457,9 @@ Result:
 - The right foot steps slightly forward and the left foot slightly backward when `psi_dot > 0`.
 - The tangential lead is controlled by `turn_tangential_lead_scale`.
 - The nominal foot offset uses the estimated yaw at touchdown, where `T_td = remainingSwingTime`.
-- Turning-specific heading adjustment happens later in
-  `My_Controller::swingFootYawFromDiagonalStepHeading()`, where `psiBias_W` is added to the
-  swing-foot yaw.
+- Swing-foot yaw bias is applied in
+  `My_Controller::swingFootYawTargetWorldWithPsiOffset()`, where `psiBias_W` is added to the
+  fallback yaw.
 
 ### 10.6 Moving while turning: `x_dot / y_dot != 0`, `psi_dot != 0`
 
@@ -502,7 +495,7 @@ Result:
 - Touchdown targets are world-frame positions.
 - Nominal left/right spacing lives in the body-yaw frame.
 - Previewing uses the expected future body position, not the current foot position alone.
-- Swing-foot yaw is body-yaw aware, with a diagonal-step heuristic and a signed `psi_dot` bias.
+- Swing-foot yaw uses the fallback body-yaw target plus a signed `psi_dot` bias.
 - Turning can optionally add a tangential lead to the touchdown position via `turn_tangential_lead_scale`.
 - Stopping adds a braking offset so the feet help bring the body marker back over the support footprint.
 
@@ -510,7 +503,7 @@ Result:
 
 - Nominal foot offsets and the reconstructed stance center are implemented in [SwingFootPlanner::ensureNominalFootOffsets](../My_Controller/src/SwingFootPlanner.cpp#L91), [SwingFootPlanner::currentFootTouchdownTarget](../My_Controller/src/SwingFootPlanner.cpp#L136), and [SwingFootPlanner::recordSequentialTouchdown](../My_Controller/src/SwingFootPlanner.cpp#L282).
 - Preview-time logic lives in [SwingFootPlanner::touchdownPreviewTime](../My_Controller/src/SwingFootPlanner.cpp#L149), and the full touchdown target equation is assembled in [SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance](../My_Controller/src/SwingFootPlanner.cpp#L245).
-- Swing-foot yaw and the diagonal-step heuristic are implemented in [MyController::swingFootYawTargetWorld](../My_Controller/src/My_Controller.cpp#L917), [swingFootYawFromDiagonalStepHeading](../My_Controller/src/My_Controller.cpp#L47), and [MyController::swingFootYawPsiOffset](../My_Controller/src/My_Controller.cpp#L29).
+- Swing-foot yaw is implemented in [MyController::swingFootYawTargetWorld](../My_Controller/src/My_Controller.cpp#L891), [swingFootYawTargetWorldWithPsiOffset](../My_Controller/src/My_Controller.cpp#L29), and [MyController::swingFootYawPsiOffset](../My_Controller/src/My_Controller.cpp#L11).
 - The tangential turn lead and the final touchdown offset are implemented in [SwingFootPlanner::touchdownOffsetBodyFrame](../My_Controller/src/SwingFootPlanner.cpp#L154), [SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance](../My_Controller/src/SwingFootPlanner.cpp#L245), and [SwingFootPlanner::recordSequentialTouchdown](../My_Controller/src/SwingFootPlanner.cpp#L282). The turning gain comes from [ControllerConfig.h](../My_Controller/include/MyController/ControllerConfig.h#L62) and [ControllerConfig.cpp](../My_Controller/src/ControllerConfig.cpp#L253).
 - The braking-offset capture-point estimate, deadband gating, and latch-clear logic are implemented in [SwingFootPlanner::shouldApplyBrakingOffset](../My_Controller/src/SwingFootPlanner.cpp#L173), [SwingFootPlanner::computeStopBrakingOffsetBodyFrame](../My_Controller/src/SwingFootPlanner.cpp#L192), [SwingFootPlanner::stopBrakingOffsetBodyFrame](../My_Controller/src/SwingFootPlanner.cpp#L237), and the latch block inside [SwingFootPlanner::desiredFootPositions](../My_Controller/src/SwingFootPlanner.cpp#L291). The tuning knobs come from [ControllerConfig.h](../My_Controller/include/MyController/ControllerConfig.h#L66) and [ControllerConfig.cpp](../My_Controller/src/ControllerConfig.cpp#L265).
 

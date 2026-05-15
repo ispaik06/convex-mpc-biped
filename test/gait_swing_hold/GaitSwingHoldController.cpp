@@ -373,7 +373,6 @@ void GaitSwingHoldController::runController() {
 
         const UserCommand clampedCommand =
             clampUserCommand((_userCommand != nullptr) ? *_userCommand : UserCommand{});
-        const Vec2<double> filteredPlanarCommand_B(clampedCommand.x_dot, clampedCommand.y_dot);
         const double fallbackYaw_W = swingFootYawTargetWorld(_stateEstimate, _userCommand);
         const double psi_dot = clampedCommand.psi_dot;
 
@@ -381,13 +380,10 @@ void GaitSwingHoldController::runController() {
             if (leg == static_cast<std::size_t>(_leftLegIndex)) {
                 ++_traceSegmentId;
             }
-            runtime.touchdownYaw_W = swingyaw::swingFootYawFromDiagonalStepHeading(
-                _stateEstimate->legs[leg].footPos_W,
-                touchdownTargetWorld(leg),
-                filteredPlanarCommand_B,
-                psi_dot,
-                legParams.side,
-                fallbackYaw_W);
+            runtime.touchdownYaw_W =
+                swingyaw::swingFootYawTargetWorldWithPsiOffset(psi_dot,
+                                                               legParams.side,
+                                                               fallbackYaw_W);
             runtime.touchdownTarget_W = touchdownTargetWorld(leg);
             if (leg == static_cast<std::size_t>(_leftLegIndex)) {
                 _touchdownTarget_W = runtime.touchdownTarget_W;
