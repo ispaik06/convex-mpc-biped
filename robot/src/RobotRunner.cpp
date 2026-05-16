@@ -95,6 +95,13 @@ UserCommand RobotRunner::dashboardUserCommand() const {
     return _robot_ctrl->dashboardUserCommand();
 }
 
+ControllerBodyTargetDebugState RobotRunner::dashboardBodyTargetDebugState() const {
+    if (_robot_ctrl == nullptr) {
+        return {};
+    }
+    return _robot_ctrl->bodyTargetDebugState();
+}
+
 void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& command) {
     if (!_legController) {
         throw std::runtime_error("RobotRunner::init must be called before run");

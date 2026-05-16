@@ -4,9 +4,12 @@
     const CHART_ORDER = CHART_CONFIGS.map((config, index) => ({ config, index }));
     const BASE_CHART_COUNT = CHART_CONFIGS.length;
     const COMMAND_SERIES_BY_LABEL = {
-      yaw: { label: "cmd_psi_dot", baseLabel: "yaw", index: 2, title: "Command psi_dot", color: "#f472b6" },
+      omega_z: { label: "cmd_psi_dot", baseLabel: "omega_z", index: 2, title: "Command psi_dot", color: "#f472b6" },
       vel_x: { label: "cmd_vel_x", baseLabel: "vel_x", index: 0, title: "Command vel_x", color: "#86efac" },
       vel_y: { label: "cmd_vel_y", baseLabel: "vel_y", index: 1, title: "Command vel_y", color: "#fca5a5" },
+      roll: { label: "target_roll", baseLabel: "roll", index: 3, title: "Target roll", color: "#f9a8d4" },
+      pitch: { label: "target_pitch", baseLabel: "pitch", index: 4, title: "Target pitch", color: "#c4b5fd" },
+      pos_z: { label: "target_pos_z", baseLabel: "pos_z", index: 5, title: "Target pos_z", color: "#93c5fd" },
     };
     const DEFAULT_WINDOW_SECONDS = DASHBOARD_CONFIG.defaultWindowSeconds ?? 10;
     const WINDOW_OPTIONS = DASHBOARD_CONFIG.windowOptions || [5, 10, 20, 30];
@@ -663,7 +666,7 @@
         min_span: 1.0,
         precision: 3,
       };
-      return buildSeries(samples, config, overlay.index, mode, movingAverageSeconds, "commands");
+      return buildSeries(samples, config, overlay.index, mode, movingAverageSeconds, "overlays");
     }
 
     function buildTargetDomain(stats, config) {
@@ -1172,7 +1175,7 @@
         sequence: data.sequence,
         t: data.sim_time,
         values: data.state.slice(0, BASE_CHART_COUNT),
-        commands: data.state.slice(BASE_CHART_COUNT),
+        overlays: data.state.slice(BASE_CHART_COUNT),
       });
       pruneHistory();
       return true;

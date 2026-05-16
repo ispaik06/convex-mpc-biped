@@ -100,7 +100,7 @@ void DashboardSharedMemoryPublisher::initializeSharedMemory() {
 
     _layout = reinterpret_cast<SharedMemoryLayout*>(mapped);
     std::memset(_layout, 0, sizeof(SharedMemoryLayout));
-    _layout->version = 2;
+    _layout->version = 3;
     _layout->state_dim = static_cast<std::uint32_t>(kStateDim);
     writeString(_layout->robot_name, kRobotNameCapacity, _robotName);
 

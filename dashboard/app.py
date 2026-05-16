@@ -30,6 +30,9 @@ STATE_LABELS = (
     "cmd_vel_x",
     "cmd_vel_y",
     "cmd_psi_dot",
+    "target_roll",
+    "target_pitch",
+    "target_pos_z",
 )
 
 
@@ -74,7 +77,8 @@ CHART_CONFIGS = (
 )
 
 LAYOUT_VERSION = 2
-LAYOUT = struct.Struct("<QQd32s15dIIQQ")
+LAYOUT_VERSION = 3
+LAYOUT = struct.Struct("<QQd32s18dIIQQ")
 LAYOUT_SIZE = LAYOUT.size
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -201,9 +205,9 @@ class DashboardSharedMemoryClient:
             }
 
         sequence, iteration, sim_time, robot_raw = fields[:4]
-        state = list(fields[4:19])
-        version = fields[19]
-        state_dim = fields[20]
+        state = list(fields[4:22])
+        version = fields[22]
+        state_dim = fields[23]
         robot_name = robot_raw.split(b"\x00", 1)[0].decode("utf-8", "replace")
         status = "live" if sequence > 0 else "priming"
         message = "live data" if sequence > 0 else "waiting for first controller sample"

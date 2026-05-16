@@ -12,7 +12,7 @@ The server entry point is `dashboard/app.py`, which serves:
 
 ## What It Does
 
-- Displays the 12 controller state channels as time-series plots, with command overlays on the motion/yaw charts
+- Displays the 12 controller state channels as time-series plots, with command overlays on the motion/yaw charts and target overlays on the standing pose charts
 - Shows the current robot, iteration, simulation time, and sequence number
 - Lets you switch between all channels, pose channels, and motion channels
 - Lets you toggle angle display between `deg` and `rad` with `deg` as the default

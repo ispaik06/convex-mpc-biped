@@ -68,13 +68,23 @@ Vec3<double> worldToBodyFrame(const Quat<double>& torsoQuat_W, const Vec3<double
 std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateForDashboard(
 	const StateEstimate<double>& state,
 	const RobotParams<double>& params,
-	const UserCommand& userCommand) {
+	const UserCommand& userCommand,
+	const ControllerBodyTargetDebugState& bodyTargetDebug) {
 	const Vec2<double> rollPitch = rollPitchFromQuaternion(state.torsoQuat_W);
 	const Vec3<double> comWorld = reducedBodyComWorld(state, params);
 	const Vec3<double> comVelocityWorld = reducedBodyComVelocityWorld(state, params);
 	const Vec3<double> omegaBody = worldToBodyFrame(state.torsoQuat_W, state.torsoAngVel_W);
 	const Vec3<double> comVelocityBody =
 		worldToBodyFrame(state.torsoQuat_W, comVelocityWorld);
+	const bool targetValid = bodyTargetDebug.initialized &&
+	                        bodyTargetDebug.position_W.allFinite() &&
+	                        bodyTargetDebug.euler_W.allFinite();
+	const double targetRoll = targetValid ? bodyTargetDebug.euler_W[0]
+	                                      : std::numeric_limits<double>::quiet_NaN();
+	const double targetPitch = targetValid ? bodyTargetDebug.euler_W[1]
+	                                       : std::numeric_limits<double>::quiet_NaN();
+	const double targetHeight = targetValid ? bodyTargetDebug.position_W[2]
+	                                        : std::numeric_limits<double>::quiet_NaN();
 
 	return {
 		rollPitch[0],
@@ -92,6 +102,9 @@ std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateFo
 		userCommand.x_dot,
 		userCommand.y_dot,
 		userCommand.psi_dot,
+		targetRoll,
+		targetPitch,
+		targetHeight,
 	};
 }
 
@@ -366,16 +379,19 @@ void SimulationRunner::runRobotControl() {
 	// if ((_iterations % 50) == 0) {
 		// 	std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
 		// 			  << "  y_dot: " << _userCommand.y_dot
-	// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
+		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
 	// }
 	_robotRunner->run(_stateEstimate, _robotCommand);
 	if (_dashboardPublisher != nullptr) {
 		const UserCommand dashboardCommand = _robotRunner->dashboardUserCommand();
+		const ControllerBodyTargetDebugState bodyTargetDebug =
+			_robotRunner->dashboardBodyTargetDebugState();
 		_dashboardPublisher->publish(_iterations,
 		                             _stateEstimate.time,
 		                             reducedBodyStateForDashboard(_stateEstimate,
 		                                                          _params,
-		                                                          dashboardCommand));
+		                                                          dashboardCommand,
+		                                                          bodyTargetDebug));
 	}
 	applyFixedJointCommands();
 	updateDebugVisualization();

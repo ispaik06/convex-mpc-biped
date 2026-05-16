@@ -24,6 +24,7 @@ public:
     void prepareController(const StateEstimate<double>& state);
     LegDynamicsRequest legDynamicsRequest() const;
     UserCommand dashboardUserCommand() const;
+    ControllerBodyTargetDebugState dashboardBodyTargetDebugState() const;
     void setupStep(const StateEstimate<double>& state);
     void composeCommand(RobotCommand<double>& command) const;
     void run(const StateEstimate<double>& state, RobotCommand<double>& command);
