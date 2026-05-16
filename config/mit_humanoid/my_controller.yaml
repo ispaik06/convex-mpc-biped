@@ -19,7 +19,7 @@ mpc:
   foot_half_width: 0.01
   torsional_friction_scale: 0.0657
   normal_force_max: 1500.0
-  normal_force_min: 5.0 # 얘 때문에 mpc solving에 문제가 생기나? 0N으로 해야하나?
+  normal_force_min: 5.0 # Could this cause MPC solve issues? Should this be 0 N instead?
   iterations_between_solve: 10
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
