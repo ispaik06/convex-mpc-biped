@@ -596,6 +596,10 @@ LocomotionFSMOutput MyController::syncLocomotionFSM() {
     return output;
 }
 
+UserCommand MyController::dashboardUserCommand() const {
+    return _filteredUserCommand;
+}
+
 void MyController::updateFilteredUserCommand(const double dt) {
     if (_zeroMotionCommand) {
         _filteredUserCommand = UserCommand{};

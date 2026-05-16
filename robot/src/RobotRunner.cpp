@@ -88,6 +88,13 @@ LegDynamicsRequest RobotRunner::legDynamicsRequest() const {
     return _robot_ctrl->legDynamicsRequest();
 }
 
+UserCommand RobotRunner::dashboardUserCommand() const {
+    if (_robot_ctrl == nullptr) {
+        return UserCommand{};
+    }
+    return _robot_ctrl->dashboardUserCommand();
+}
+
 void RobotRunner::run(const StateEstimate<double>& state, RobotCommand<double>& command) {
     if (!_legController) {
         throw std::runtime_error("RobotRunner::init must be called before run");

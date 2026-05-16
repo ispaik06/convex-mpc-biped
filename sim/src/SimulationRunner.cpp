@@ -67,7 +67,8 @@ Vec3<double> worldToBodyFrame(const Quat<double>& torsoQuat_W, const Vec3<double
 
 std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateForDashboard(
 	const StateEstimate<double>& state,
-	const RobotParams<double>& params) {
+	const RobotParams<double>& params,
+	const UserCommand& userCommand) {
 	const Vec2<double> rollPitch = rollPitchFromQuaternion(state.torsoQuat_W);
 	const Vec3<double> comWorld = reducedBodyComWorld(state, params);
 	const Vec3<double> comVelocityWorld = reducedBodyComVelocityWorld(state, params);
@@ -88,6 +89,9 @@ std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateFo
 		comVelocityBody.x(),
 		comVelocityBody.y(),
 		comVelocityBody.z(),
+		userCommand.x_dot,
+		userCommand.y_dot,
+		userCommand.psi_dot,
 	};
 }
 
@@ -351,11 +355,6 @@ void SimulationRunner::runRobotControl() {
 
 	fillCheaterState(model, data, _params, _bindings, _cheaterState);
 	_stateEstimator.update(_cheaterState, _stateEstimate);
-	if (_dashboardPublisher != nullptr) {
-		_dashboardPublisher->publish(_iterations,
-		                             _stateEstimate.time,
-		                             reducedBodyStateForDashboard(_stateEstimate, _params));
-	}
 	const bool keyboardStartedNow = maybeStartKeyboardCommand(_stateEstimate.time);
 	_userCommand = _keyboardCommand.getUserCommand();
 	_robotRunner->prepareController(_stateEstimate);
@@ -367,9 +366,17 @@ void SimulationRunner::runRobotControl() {
 	// if ((_iterations % 50) == 0) {
 		// 	std::cout << "[SimulationRunner] UserCommand | x_dot: " << _userCommand.x_dot
 		// 			  << "  y_dot: " << _userCommand.y_dot
-		// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
-		// }
+	// 			  << "  psi_dot: " << _userCommand.psi_dot << '\n';
+	// }
 	_robotRunner->run(_stateEstimate, _robotCommand);
+	if (_dashboardPublisher != nullptr) {
+		const UserCommand dashboardCommand = _robotRunner->dashboardUserCommand();
+		_dashboardPublisher->publish(_iterations,
+		                             _stateEstimate.time,
+		                             reducedBodyStateForDashboard(_stateEstimate,
+		                                                          _params,
+		                                                          dashboardCommand));
+	}
 	applyFixedJointCommands();
 	updateDebugVisualization();
 	applyRobotCommand();

@@ -2,6 +2,12 @@
     const CHART_CONFIGS = DASHBOARD_CONFIG.chartConfigs || [];
     const STATE_LABELS = DASHBOARD_CONFIG.stateLabels || [];
     const CHART_ORDER = CHART_CONFIGS.map((config, index) => ({ config, index }));
+    const BASE_CHART_COUNT = CHART_CONFIGS.length;
+    const COMMAND_SERIES_BY_LABEL = {
+      yaw: { label: "cmd_psi_dot", baseLabel: "yaw", index: 2, title: "Command psi_dot", color: "#f472b6" },
+      vel_x: { label: "cmd_vel_x", baseLabel: "vel_x", index: 0, title: "Command vel_x", color: "#86efac" },
+      vel_y: { label: "cmd_vel_y", baseLabel: "vel_y", index: 1, title: "Command vel_y", color: "#fca5a5" },
+    };
     const DEFAULT_WINDOW_SECONDS = DASHBOARD_CONFIG.defaultWindowSeconds ?? 10;
     const WINDOW_OPTIONS = DASHBOARD_CONFIG.windowOptions || [5, 10, 20, 30];
     const MAX_MAIN_PANELS = DASHBOARD_CONFIG.maxMainPanels ?? 3;
@@ -594,10 +600,11 @@
       };
     }
 
-    function buildSeries(samples, config, chartIndex, mode, movingAverageSeconds) {
+    function buildSeries(samples, config, chartIndex, mode, movingAverageSeconds, sourceKey = "values") {
       const sourceValues = [];
       for (const sample of samples) {
-        const value = toDisplayValue(sample.values[chartIndex], config);
+        const rawValues = sample?.[sourceKey];
+        const value = toDisplayValue(rawValues?.[chartIndex], config);
         if (!Number.isFinite(value)) {
           continue;
         }
@@ -641,6 +648,22 @@
 
       const series = sourceValues.map((sample) => ({ t: sample.t, value: sample.value }));
       return { series, stats: computeSeriesStats(series) };
+    }
+
+    function buildOverlaySeries(samples, overlay, mode, movingAverageSeconds) {
+      if (!overlay) {
+        return { series: [], stats: null };
+      }
+      const config = {
+        label: overlay.label,
+        title: overlay.title,
+        unit: CHART_CONFIGS.find((entry) => entry.label === overlay.baseLabel)?.unit || "m/s",
+        color: overlay.color,
+        scale: "symmetric",
+        min_span: 1.0,
+        precision: 3,
+      };
+      return buildSeries(samples, config, overlay.index, mode, movingAverageSeconds, "commands");
     }
 
     function buildTargetDomain(stats, config) {
@@ -714,7 +737,16 @@
       return null;
     }
 
-    function drawChart(canvas, samples, config, state, focused, mode = "raw", movingAverageSeconds = DEFAULT_MAIN_MA_SECONDS) {
+    function drawChart(
+      canvas,
+      samples,
+      config,
+      state,
+      focused,
+      mode = "raw",
+      movingAverageSeconds = DEFAULT_MAIN_MA_SECONDS,
+      overlay = null
+    ) {
       const resolvedCanvas = resolveCanvas(canvas, state, focused);
       if (!resolvedCanvas) {
         return null;
@@ -766,7 +798,9 @@
       const latestTime = samples.length > 0 ? samples[samples.length - 1].t : 0;
       const startTime = latestTime - appState.windowSeconds;
       const seriesInfo = buildSeries(samples, config, chartIndex, mode, movingAverageSeconds);
-      const stats = seriesInfo.stats;
+      const overlayInfo = buildOverlaySeries(samples, overlay, mode, movingAverageSeconds);
+      const combinedSeries = overlayInfo.series.length > 0 ? seriesInfo.series.concat(overlayInfo.series) : seriesInfo.series;
+      const stats = computeSeriesStats(combinedSeries);
       const targetDomain = buildTargetDomain(stats, renderedConfig);
       state.domain = settleDomain(state.domain, targetDomain, renderedConfig);
       const niceDomain = buildNiceDomain(state.domain, renderedConfig, focused ? 6 : 5);
@@ -812,28 +846,35 @@
 
       ctx.restore();
 
-      const points = [];
+      const basePoints = [];
       for (const sample of seriesInfo.series) {
         const x = plot.x + ((sample.t - startTime) / appState.windowSeconds) * plot.w;
         const y = plot.y + plot.h - ((sample.value - niceDomain.min) / (niceDomain.max - niceDomain.min)) * plot.h;
-        points.push({ x, y, value: sample.value });
+        basePoints.push({ x, y, value: sample.value });
       }
 
-      if (points.length === 0) {
+      const overlayPoints = [];
+      for (const sample of overlayInfo.series) {
+        const x = plot.x + ((sample.t - startTime) / appState.windowSeconds) * plot.w;
+        const y = plot.y + plot.h - ((sample.value - niceDomain.min) / (niceDomain.max - niceDomain.min)) * plot.h;
+        overlayPoints.push({ x, y, value: sample.value });
+      }
+
+      if (basePoints.length === 0 && overlayPoints.length === 0) {
         drawEmptyState(ctx, plot, config);
         drawAxes(ctx, plot, niceDomain, xTicks, yTicks, config, focused);
         return;
       }
 
-      if (focused && points.length > 1) {
+      if (focused && basePoints.length > 1) {
         ctx.save();
         ctx.beginPath();
-        ctx.moveTo(points[0].x, points[0].y);
-        for (let i = 1; i < points.length; i += 1) {
-          ctx.lineTo(points[i].x, points[i].y);
+        ctx.moveTo(basePoints[0].x, basePoints[0].y);
+        for (let i = 1; i < basePoints.length; i += 1) {
+          ctx.lineTo(basePoints[i].x, basePoints[i].y);
         }
-        ctx.lineTo(points[points.length - 1].x, plot.y + plot.h);
-        ctx.lineTo(points[0].x, plot.y + plot.h);
+        ctx.lineTo(basePoints[basePoints.length - 1].x, plot.y + plot.h);
+        ctx.lineTo(basePoints[0].x, plot.y + plot.h);
         ctx.closePath();
         const fillGradient = ctx.createLinearGradient(0, plot.y, 0, plot.y + plot.h);
         fillGradient.addColorStop(0, hexToRgba(config.color, 0.28));
@@ -843,30 +884,60 @@
         ctx.restore();
       }
 
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i += 1) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.strokeStyle = config.color;
-      ctx.lineWidth = focused ? 2.8 : 2.0;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.shadowColor = hexToRgba(config.color, focused ? 0.32 : 0.20);
-      ctx.shadowBlur = focused ? 18 : 10;
-      ctx.stroke();
-      ctx.restore();
+      if (basePoints.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(basePoints[0].x, basePoints[0].y);
+        for (let i = 1; i < basePoints.length; i += 1) {
+          ctx.lineTo(basePoints[i].x, basePoints[i].y);
+        }
+        ctx.strokeStyle = config.color;
+        ctx.lineWidth = focused ? 2.8 : 2.0;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.shadowColor = hexToRgba(config.color, focused ? 0.32 : 0.20);
+        ctx.shadowBlur = focused ? 18 : 10;
+        ctx.stroke();
+        ctx.restore();
 
-      const lastPoint = points[points.length - 1];
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(lastPoint.x, lastPoint.y, focused ? 4.2 : 3.4, 0, Math.PI * 2);
-      ctx.fillStyle = config.color;
-      ctx.shadowColor = hexToRgba(config.color, 0.40);
-      ctx.shadowBlur = focused ? 18 : 10;
-      ctx.fill();
-      ctx.restore();
+        const lastPoint = basePoints[basePoints.length - 1];
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(lastPoint.x, lastPoint.y, focused ? 4.2 : 3.4, 0, Math.PI * 2);
+        ctx.fillStyle = config.color;
+        ctx.shadowColor = hexToRgba(config.color, 0.40);
+        ctx.shadowBlur = focused ? 18 : 10;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      if (overlayPoints.length > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash(focused ? [8, 5] : [6, 5]);
+        ctx.moveTo(overlayPoints[0].x, overlayPoints[0].y);
+        for (let i = 1; i < overlayPoints.length; i += 1) {
+          ctx.lineTo(overlayPoints[i].x, overlayPoints[i].y);
+        }
+        ctx.strokeStyle = hexToRgba(overlay.color, focused ? 0.92 : 0.80);
+        ctx.lineWidth = focused ? 2.2 : 1.7;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.shadowColor = hexToRgba(overlay.color, focused ? 0.24 : 0.14);
+        ctx.shadowBlur = focused ? 12 : 8;
+        ctx.stroke();
+        ctx.restore();
+
+        const lastOverlayPoint = overlayPoints[overlayPoints.length - 1];
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(lastOverlayPoint.x, lastOverlayPoint.y, focused ? 3.1 : 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(overlay.color, 0.90);
+        ctx.shadowColor = hexToRgba(overlay.color, 0.22);
+        ctx.shadowBlur = focused ? 12 : 8;
+        ctx.fill();
+        ctx.restore();
+      }
 
       drawAxes(ctx, plot, niceDomain, xTicks, yTicks, config, focused);
       return { stats, niceDomain };
@@ -1100,7 +1171,8 @@
       appState.history.push({
         sequence: data.sequence,
         t: data.sim_time,
-        values: data.state.slice(),
+        values: data.state.slice(0, BASE_CHART_COUNT),
+        commands: data.state.slice(BASE_CHART_COUNT),
       });
       pruneHistory();
       return true;
@@ -1123,10 +1195,18 @@
         }
         const stats = statsByIndex[orderEntry.index];
         const visible = visibleLabels.has(orderEntry.config.label);
+        const overlay = COMMAND_SERIES_BY_LABEL[orderEntry.config.label] || null;
         updateChartCard(
           runtimeEntry,
           stats,
-          drawChart(runtimeEntry.canvas, historyWindow, orderEntry.config, runtimeEntry, false) || { niceDomain: { step: 1 } },
+          drawChart(runtimeEntry.canvas,
+                    historyWindow,
+                    orderEntry.config,
+                    runtimeEntry,
+                    false,
+                    "raw",
+                    DEFAULT_MAIN_MA_SECONDS,
+                    overlay) || { niceDomain: { step: 1 } },
           visible
         );
       }
@@ -1146,14 +1226,29 @@
           panelEntry.panel.style.display = "none";
           return;
         }
+        const overlay = COMMAND_SERIES_BY_LABEL[label] || null;
         panelEntry.panel.style.display = "";
         panelEntry.titleNode.textContent = config.title;
         const mode = panelState.mode;
         const movingAverageSeconds = panelState.movingAverageSeconds;
         const cardDraw =
-          drawChart(chartEntry.canvas, historyWindow, config, chartEntry, false) || { niceDomain: { step: 1 } };
+          drawChart(chartEntry.canvas,
+                    historyWindow,
+                    config,
+                    chartEntry,
+                    false,
+                    "raw",
+                    DEFAULT_MAIN_MA_SECONDS,
+                    overlay) || { niceDomain: { step: 1 } };
         const mainDraw =
-          drawChart(panelEntry.canvas, historyWindow, config, panelEntry, true, mode, movingAverageSeconds) || cardDraw;
+          drawChart(panelEntry.canvas,
+                    historyWindow,
+                    config,
+                    panelEntry,
+                    true,
+                    mode,
+                    movingAverageSeconds,
+                    overlay) || cardDraw;
         updateMainPanel(panelEntry, label, mainDraw, panelState, index);
       });
 

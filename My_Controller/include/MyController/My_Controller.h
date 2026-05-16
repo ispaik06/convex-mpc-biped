@@ -28,6 +28,7 @@ public:
 	virtual void initializeController() override;
 	virtual void prepareController() override;
 	virtual LegDynamicsRequest legDynamicsRequest() const override;
+	virtual UserCommand dashboardUserCommand() const override;
 
 	virtual void runController() override;
 	virtual void printProfilingSummary(std::ostream& out) const override;

@@ -27,6 +27,9 @@ STATE_LABELS = (
     "vel_x",
     "vel_y",
     "vel_z",
+    "cmd_vel_x",
+    "cmd_vel_y",
+    "cmd_psi_dot",
 )
 
 
@@ -70,7 +73,8 @@ CHART_CONFIGS = (
     _chart("vel_z", "Vel Z", "motion", "Motion", "m/s", "#38bdf8", scale="symmetric", min_span=1.0),
 )
 
-LAYOUT = struct.Struct("<QQd32s12dIIQQ")
+LAYOUT_VERSION = 2
+LAYOUT = struct.Struct("<QQd32s15dIIQQ")
 LAYOUT_SIZE = LAYOUT.size
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
@@ -197,13 +201,13 @@ class DashboardSharedMemoryClient:
             }
 
         sequence, iteration, sim_time, robot_raw = fields[:4]
-        state = list(fields[4:16])
-        version = fields[16]
-        state_dim = fields[17]
+        state = list(fields[4:19])
+        version = fields[19]
+        state_dim = fields[20]
         robot_name = robot_raw.split(b"\x00", 1)[0].decode("utf-8", "replace")
         status = "live" if sequence > 0 else "priming"
         message = "live data" if sequence > 0 else "waiting for first controller sample"
-        if version != 1:
+        if version != LAYOUT_VERSION:
             status = "error"
             message = f"unexpected layout version {version}"
         elif state_dim != len(STATE_LABELS):

@@ -10,7 +10,7 @@
 
 class DashboardSharedMemoryPublisher {
 public:
-    static constexpr std::size_t kStateDim = 12;
+    static constexpr std::size_t kStateDim = 15;
 
     explicit DashboardSharedMemoryPublisher(std::string robot_name = {},
                                             std::string shared_memory_name = {});
@@ -36,7 +36,7 @@ private:
         std::uint64_t reserved0{0};
         std::uint64_t reserved1{0};
     };
-    static_assert(sizeof(SharedMemoryLayout) == 176, "Unexpected dashboard shared memory size");
+    static_assert(sizeof(SharedMemoryLayout) == 200, "Unexpected dashboard shared memory size");
 
     static std::string defaultSharedMemoryName();
     static std::string normalizedPosixName(const std::string& name);
