@@ -37,7 +37,7 @@ private:
     std::atomic<bool> _standingControls{false};
     bool _terminalConfigured{false};
     double _linearStep{0.05};
-    double _yawStep{0.05};
+    double _yawStep{0.1};
     double _heightStep{0.01};
     double _xLimit{1.0};
     double _yLimit{1.0};

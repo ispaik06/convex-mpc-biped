@@ -61,12 +61,19 @@ Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& state,
 	return state.torsoLinVel_W + state.torsoAngVel_W.cross(bodyBOffset_W);
 }
 
+Vec3<double> worldToBodyFrame(const Quat<double>& torsoQuat_W, const Vec3<double>& value_W) {
+	return torsoQuat_W.toRotationMatrix().transpose() * value_W;
+}
+
 std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateForDashboard(
 	const StateEstimate<double>& state,
 	const RobotParams<double>& params) {
 	const Vec2<double> rollPitch = rollPitchFromQuaternion(state.torsoQuat_W);
 	const Vec3<double> comWorld = reducedBodyComWorld(state, params);
 	const Vec3<double> comVelocityWorld = reducedBodyComVelocityWorld(state, params);
+	const Vec3<double> omegaBody = worldToBodyFrame(state.torsoQuat_W, state.torsoAngVel_W);
+	const Vec3<double> comVelocityBody =
+		worldToBodyFrame(state.torsoQuat_W, comVelocityWorld);
 
 	return {
 		rollPitch[0],
@@ -75,12 +82,12 @@ std::array<double, DashboardSharedMemoryPublisher::kStateDim> reducedBodyStateFo
 		comWorld.x(),
 		comWorld.y(),
 		comWorld.z(),
-		state.torsoAngVel_W.x(),
-		state.torsoAngVel_W.y(),
-		state.torsoAngVel_W.z(),
-		comVelocityWorld.x(),
-		comVelocityWorld.y(),
-		comVelocityWorld.z(),
+		omegaBody.x(),
+		omegaBody.y(),
+		omegaBody.z(),
+		comVelocityBody.x(),
+		comVelocityBody.y(),
+		comVelocityBody.z(),
 	};
 }
 
