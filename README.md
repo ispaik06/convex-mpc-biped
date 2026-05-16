@@ -10,9 +10,65 @@ The same controller can be retargeted across robots through robot-specific MuJoC
 - **Early/late contact handling** for touchdown, liftoff, and recovery
 - **Shared controller pipeline** across robots, with **viewer** and **headless** execution modes
 
-<p align="center">
-  <img src="docs/assets/readme/20260509.gif" alt="Humanoid walking demo" width="77%">
-</p>
+<div align="center">
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/assets/readme/20260516_x.gif" alt="Forward walking at 0.6 m/s" width="100%">
+      <br>
+      <strong>Forward</strong>
+      <br>
+      <sub>Clip velocity: <code>0.6 m/s</code></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/readme/20260516_y.gif" alt="Lateral walking at 0.3 m/s" width="100%">
+      <br>
+      <strong>Lateral</strong>
+      <br>
+      <sub>Clip velocity: <code>0.3 m/s</code></sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/readme/20260516_psi.gif" alt="In-place turning at 1.3 rad/s" width="100%">
+      <br>
+      <strong>In-place Turn</strong>
+      <br>
+      <sub>Clip yaw rate: <code>1.3 rad/s</code></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="33%">
+      <img src="docs/assets/readme/20260516_roll.gif" alt="Roll tracking demo" width="100%">
+      <br>
+      <strong>Roll</strong>
+      <br>
+      <sub>Base orientation tracking</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/readme/20260516_pitch.gif" alt="Pitch tracking demo" width="100%">
+      <br>
+      <strong>Pitch</strong>
+      <br>
+      <sub>Base orientation tracking</sub>
+    </td>
+    <td align="center" width="33%">
+      <img src="docs/assets/readme/20260516_z.gif" alt="Height tracking demo" width="100%">
+      <br>
+      <strong>Height</strong>
+      <br>
+      <sub>Base height tracking</sub>
+    </td>
+  </tr>
+</table>
+
+<br>
+
+<img src="docs/assets/readme/20260516_full.gif" alt="Humanoid locomotion demo" width="77%">
+
+<br>
+<sub>Combined locomotion demo</sub>
+
+</div>
 
 > [!TIP]
 > Start with **Quick start** if you want the build path. Jump to **Debugging Probes**
@@ -115,8 +171,9 @@ flowchart LR
 ```
 
 > [!IMPORTANT]
-> The control frequencies below reflect the current checked-in defaults. Exact values come from each
-> robot's `config/<robot>/my_controller.yaml` and from `config/simulation.yaml`.
+> The concrete values below describe the current **MIT Humanoid** checked-in tuning. Timing and MPC
+> cadence are YAML-driven, so other robots should be treated as robot-specific tuning targets rather
+> than validated defaults.
 
 ### Control Frequencies
 
@@ -126,19 +183,19 @@ flowchart LR
 | Controller tick | 500 Hz | `SimulationRunner -> RobotRunner -> MyController::runController()` runs every simulation step |
 | Contact manager | 500 Hz | Updates contact overrides and recovery state on each tick |
 | Swing-foot planner | 500 Hz | Advances swing trajectories on each tick |
-| MPC solve | 50 Hz | Rebuilds the QP every `iterations_between_solve = 10` physics steps |
-| Reference trajectory | 50 Hz | Rebuilt whenever MPC is solved |
+| MPC solve | 50 Hz | MIT default: rebuilds the QP every `iterations_between_solve = 10` physics steps |
+| MPC horizon sample | `20 ms` / 50 Hz | MIT default: `timing.horizon = 0.5 s`, `timing.horizon_steps = 25` |
+| Reference trajectory | 50 Hz | Rebuilt on each scheduled MPC solve |
 
-<details>
-<summary><strong>Current robot timing defaults</strong></summary>
+MIT Humanoid gait timing:
 
-| Robot | Cycle | Swing | Stance | Horizon | Steps | `dt_mpc` |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| MIT Humanoid | `0.5 s` | `0.15 s` | `0.35 s` | `0.5 s` | `25` | `20 ms` |
-| Unitree G1 | `1.0 s` | `0.4 s` | `0.6 s` | `0.5 s` | `20` | `25 ms` |
-| Unitree H1 | `1.0 s` | `0.4 s` | `0.6 s` | `0.5 s` | `20` | `25 ms` |
+| Cycle | Swing | Stance | Horizon | Horizon steps | `dt_mpc` |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| `0.5 s` | `0.17 s` | `0.33 s` | `0.5 s` | `25` | `20 ms` |
 
-</details>
+Unitree G1 and H1 configs are kept as integration starting points. Their timing,
+weights, and contact parameters still need robot-specific fine tuning before they
+should be treated as validated defaults.
 
 ## Repository layout
 
@@ -153,7 +210,12 @@ flowchart LR
 | `docs/` | Technical notes about frames, reference trajectories, gait scheduling, swing planning, and controller conventions |
 | `test/` | Manual experiments and standing debug tools |
 
-The `docs/` directory contains standalone notes such as [MPC frame convention](docs/mpc_frame_convention.md), [reference trajectory](docs/reference_trajectory.md), [swing-foot touchdown planning](docs/swing_foot_touchdown_planner.md), and [gait scheduling + contact management](docs/gait_scheduler_and_contact_management.md).
+Key technical notes in `docs/`:
+
+- [MPC frame convention](docs/mpc_frame_convention.md): state, wrench, and frame conventions used by the MPC.
+- [Reference trajectory](docs/reference_trajectory.md): desired body-state rollout and command integration.
+- [Swing-foot touchdown planning](docs/swing_foot_touchdown_planner.md): foot placement, touchdown rules, and braking offsets.
+- [Gait scheduling + contact management](docs/gait_scheduler_and_contact_management.md): gait phase logic, contact overlays, and MPC constraint inputs.
 
 ## Supported robots
 
@@ -370,4 +432,3 @@ The existing examples are:
 - The Unitree G1 and H1 parameters in `config/unitree_robots/{g1,h1}/my_controller.yaml` are
   present, but they are **not fully tuned or validated** yet; treat them as starting points
   rather than final gains.
-- Yaw control during in-place turning is still not robust enough and needs follow-up improvement.
