@@ -9,7 +9,9 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 
 #include <mujoco/mujoco.h>
@@ -136,6 +138,32 @@ int legControlModeCode(const LegControlMode mode) {
 
 void writeVec3Csv(std::ostream& out, const Vec3<double>& value) {
 	out << value.x() << ',' << value.y() << ',' << value.z();
+}
+
+bool parseVec3Env(const char* text, Vec3<double>& out) {
+	if (text == nullptr || std::string(text).empty()) {
+		return false;
+	}
+	std::string value(text);
+	std::replace(value.begin(), value.end(), ',', ' ');
+	std::istringstream in(value);
+	double x = 0.0;
+	double y = 0.0;
+	double z = 0.0;
+	if (!(in >> x >> y >> z) || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+		return false;
+	}
+	out = Vec3<double>(x, y, z);
+	return true;
+}
+
+double parseDoubleEnv(const char* name, const double fallback) {
+	const char* text = std::getenv(name);
+	if (text == nullptr || std::string(text).empty()) {
+		return fallback;
+	}
+	const double value = std::atof(text);
+	return std::isfinite(value) ? value : fallback;
 }
 
 const ControllerContactDebugLegState* contactDebugForSide(
@@ -294,6 +322,7 @@ void SimulationRunner::runPhysicsLoop(bool throttleRealtime, bool syncViewer) {
 
 	while (!_stopRequested && (!syncViewer || !_mainThread.exitRequested())) {
 		runRobotControl();
+		applyDebugExternalForce();
 		{
 			profiling::ScopedTimer timer(_mjStepTime);
 			mj_step(model, data);
@@ -397,6 +426,86 @@ void SimulationRunner::runRobotControl() {
 	updateDebugVisualization();
 	applyRobotCommand();
 	writeHeadlessTelemetry();
+}
+
+void SimulationRunner::applyDebugExternalForce() {
+	if (model == nullptr || data == nullptr) {
+		return;
+	}
+
+	if (!_debugExternalForce.initialized) {
+		_debugExternalForce.initialized = true;
+		Vec3<double> force_W = Vec3<double>::Zero();
+		const bool hasForce = parseVec3Env(std::getenv("CONVEXMPC_PUSH_FORCE_W"), force_W);
+		Vec3<double> torque_W = Vec3<double>::Zero();
+		const bool hasTorque = parseVec3Env(std::getenv("CONVEXMPC_PUSH_TORQUE_W"), torque_W);
+		if ((!hasForce || force_W.norm() <= 0.0) &&
+		    (!hasTorque || torque_W.norm() <= 0.0)) {
+			return;
+		}
+
+		_debugExternalForce.enabled = true;
+		_debugExternalForce.force_W = force_W;
+		_debugExternalForce.torque_W = torque_W;
+		_debugExternalForce.startTime =
+			parseDoubleEnv("CONVEXMPC_PUSH_START_TIME", _debugExternalForce.startTime);
+		_debugExternalForce.duration =
+			parseDoubleEnv("CONVEXMPC_PUSH_DURATION", _debugExternalForce.duration);
+
+		const char* bodyEnv = std::getenv("CONVEXMPC_PUSH_BODY");
+		_debugExternalForce.bodyName =
+			(bodyEnv != nullptr && std::string(bodyEnv).size() > 0) ? std::string(bodyEnv)
+			                                                        : std::string("torso");
+		_debugExternalForce.bodyId =
+			mj_name2id(model, mjOBJ_BODY, _debugExternalForce.bodyName.c_str());
+		if (_debugExternalForce.bodyId < 0 && _bindings.torsoBodyId >= 0) {
+			_debugExternalForce.bodyId = _bindings.torsoBodyId;
+			_debugExternalForce.bodyName = "torso_binding";
+		}
+		if (_debugExternalForce.bodyId < 0) {
+			std::cerr << "[DebugPush] disabled; body not found: "
+			          << _debugExternalForce.bodyName << std::endl;
+			_debugExternalForce.enabled = false;
+			return;
+		}
+	}
+
+	if (!_debugExternalForce.enabled || _debugExternalForce.bodyId < 0) {
+		return;
+	}
+
+	mjtNum* xfrc = data->xfrc_applied + 6 * _debugExternalForce.bodyId;
+	for (int i = 0; i < 6; ++i) {
+		xfrc[i] = 0.0;
+	}
+
+	const bool active =
+		data->time >= _debugExternalForce.startTime &&
+		data->time < (_debugExternalForce.startTime + _debugExternalForce.duration);
+	if (!active) {
+		return;
+	}
+
+	if (!_debugExternalForce.announced) {
+		_debugExternalForce.announced = true;
+		std::cout << "[DebugPush] applying force_W=("
+		          << _debugExternalForce.force_W.x() << ", "
+		          << _debugExternalForce.force_W.y() << ", "
+		          << _debugExternalForce.force_W.z() << ") N"
+		          << " torque_W=("
+		          << _debugExternalForce.torque_W.x() << ", "
+		          << _debugExternalForce.torque_W.y() << ", "
+		          << _debugExternalForce.torque_W.z() << ") Nm"
+		          << " body=" << _debugExternalForce.bodyName
+		          << " t=[" << _debugExternalForce.startTime << ", "
+		          << (_debugExternalForce.startTime + _debugExternalForce.duration)
+		          << ")" << std::endl;
+	}
+
+	for (int i = 0; i < 3; ++i) {
+		xfrc[i] = _debugExternalForce.force_W[i];
+		xfrc[3 + i] = _debugExternalForce.torque_W[i];
+	}
 }
 
 bool SimulationRunner::maybeStartKeyboardCommand(const double simTime) {

@@ -46,6 +46,7 @@ public:
 private:
 	void applyFixedJointCommands();
 	void applyRobotCommand();
+	void applyDebugExternalForce();
 	void updateDebugVisualization();
 	bool maybeStartKeyboardCommand(double simTime);
 	void writeHeadlessTelemetry();
@@ -54,6 +55,18 @@ private:
 		std::string name;
 		int bodyId{-1};
 		int mocapId{-1};
+	};
+
+	struct DebugExternalForce {
+		bool initialized{false};
+		bool enabled{false};
+		bool announced{false};
+		int bodyId{-1};
+		double startTime{4.0};
+		double duration{0.15};
+		Vec3<double> force_W = Vec3<double>::Zero();
+		Vec3<double> torque_W = Vec3<double>::Zero();
+		std::string bodyName;
 	};
 
 	RobotType _robot;
@@ -88,6 +101,7 @@ private:
     bool _headlessTelemetryInitialized{false};
     double _telemetryInterval{0.05};
     double _nextTelemetryTime{0.0};
+    DebugExternalForce _debugExternalForce;
     profiling::TimingStats _mjStepTime;
 };
 

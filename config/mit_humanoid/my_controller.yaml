@@ -109,24 +109,24 @@ recovery_step:
   # Capture-point stepping is only active in walking mode while the planar command is near zero.
   enabled: true
   command_velocity_deadband: 0.05
-  capture_point_deadband: 0.045
-  capture_point_filter_tau: 0.10
+  capture_point_deadband: 0.055
+  capture_point_filter_tau: 0.08
   # Adds measured yaw-rate error into swing-foot yaw preview, creating opposite
   # fore-aft touchdown bias between left/right feet during uncommanded spin.
-  yaw_rate_deadband: 0.35
-  yaw_rate_gain: 1.0
-  yaw_rate_max: 1.0
-  step_gain: 1.0
-  max_forward_step: 0.18
-  max_backward_step: 0.12
-  max_lateral_step: 0.12
-  body_offset_gain: 0.7
-  body_offset_max: 0.14
-  body_offset_tau: 0.05
-  velocity_gain: 2.0
-  velocity_max: 0.35
-  max_active_time: 0.8
-  cooldown_time: 0.7
+  yaw_rate_deadband: 0.25
+  yaw_rate_gain: 0.8
+  yaw_rate_max: 0.8
+  step_gain: 0.75
+  max_forward_step: 0.12
+  max_backward_step: 0.08
+  max_lateral_step: 0.08
+  body_offset_gain: 0.25
+  body_offset_max: 0.04
+  body_offset_tau: 0.12
+  velocity_gain: 0.5
+  velocity_max: 0.12
+  max_active_time: 0.45
+  cooldown_time: 0.35
 
 joint_tracking:
   leg:
