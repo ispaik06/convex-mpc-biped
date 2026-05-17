@@ -54,8 +54,26 @@ private:
 
 		SwingFootTrajectory swingTrajectory;
 		double touchdownYaw_W{0.0};
+		Vec2<double> appliedRecoveryStepBias_W = Vec2<double>::Zero();
 		bool wasInStance{true};
 		bool wasSearchMode{false};
+	};
+
+	struct RecoveryStepState {
+		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+		Vec2<double> bodyOffset_W = Vec2<double>::Zero();
+		Vec2<double> stepBias_W = Vec2<double>::Zero();
+		Vec2<double> velocityBias_B = Vec2<double>::Zero();
+		Vec2<double> filteredCaptureError_W = Vec2<double>::Zero();
+		Vec2<double> direction_W = Vec2<double>::Zero();
+		double yawRateBias{0.0};
+		double activeTime{0.0};
+		double cooldownUntilTime{0.0};
+		bool active{false};
+		bool initialized{false};
+		bool filterInitialized{false};
+		bool directionInitialized{false};
 	};
 
 	static Mat3<double> makeDiagonal(double x, double y, double z);
@@ -69,6 +87,8 @@ private:
 	LocomotionFSMOutput syncLocomotionFSM();
 	void updateFilteredUserCommand(double dt);
 	void updateBodyTarget(const Vec13<double>& x0, double dt);
+	void updateRecoveryStep(const Vec13<double>& x0, double dt);
+	void clearRecoveryStep(bool commitBodyOffset);
 	bool activeContactForSide(Side side, double time) const;
 	double contactRampAlphaForSide(Side side) const;
 	void updateSwingTrajectories(const DesiredFootPositions& desiredFootPositions);
@@ -127,6 +147,7 @@ private:
 	bool _zeroMotionCommand{false};
 	profiling::TimingStats _torqueComputeTime;
 	BodyTargetState _bodyTarget;
+	RecoveryStepState _recoveryStep;
 	Vec3<double> _leftTouchdownTarget_W = Vec3<double>::Zero();
 	Vec3<double> _rightTouchdownTarget_W = Vec3<double>::Zero();
 	double _leftTouchdownTargetYaw_W{0.0};

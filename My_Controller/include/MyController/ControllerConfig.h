@@ -121,6 +121,27 @@ struct TransitionParameters {
     int brakingTouchdownCount{2};
 };
 
+struct RecoveryStepParameters {
+    bool enabled{false};
+    double commandVelocityDeadband{0.05};
+    double capturePointDeadband{0.03};
+    double capturePointFilterTau{0.15};
+    double yawRateDeadband{0.0};
+    double yawRateGain{0.0};
+    double yawRateMax{0.0};
+    double stepGain{0.7};
+    double maxForwardStep{0.10};
+    double maxBackwardStep{0.08};
+    double maxLateralStep{0.08};
+    double bodyOffsetGain{0.4};
+    double bodyOffsetMax{0.06};
+    double bodyOffsetTau{0.08};
+    double velocityGain{0.0};
+    double velocityMax{0.0};
+    double maxActiveTime{1.0};
+    double cooldownTime{0.5};
+};
+
 struct InitialPoseParameters {
     std::vector<double> legJointOffsets{0.0, 0.0, -0.65, 0.80, -0.35};
     std::vector<double> armJointOffsets{0.0, 0.0, 0.0, -0.65};
@@ -148,6 +169,7 @@ struct ControllerConfig {
     LoggingParameters logging;
     StartupParameters startup;
     TransitionParameters transition;
+    RecoveryStepParameters recoveryStep;
     InitialPoseParameters initialPose;
     GaitSwingHoldTestParameters gaitSwingHoldTest;
 };

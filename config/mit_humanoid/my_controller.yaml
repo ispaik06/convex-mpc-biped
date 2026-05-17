@@ -20,7 +20,7 @@ mpc:
   torsional_friction_scale: 0.0657
   normal_force_max: 1500.0
   normal_force_min: 5.0 # Could this cause MPC solve issues? Should this be 0 N instead?
-  iterations_between_solve: 10
+  iterations_between_solve: 7
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
@@ -87,7 +87,7 @@ contact_manager:
   ground_search_tracking_time: 0.08
   stance_contact_loss_foot_height: 0.060
   enable_early_contact_handling: true
-  enable_late_contact_handling: true
+  enable_late_contact_handling: false
 
 logging:
   standing_mpc_debug_trigger_times: []
@@ -104,6 +104,29 @@ locomotion_transition:
   braking_settle_hold_ticks: 3
   braking_timeout_seconds: 3.0
   braking_touchdown_count: 5
+
+recovery_step:
+  # Capture-point stepping is only active in walking mode while the planar command is near zero.
+  enabled: true
+  command_velocity_deadband: 0.05
+  capture_point_deadband: 0.045
+  capture_point_filter_tau: 0.10
+  # Adds measured yaw-rate error into swing-foot yaw preview, creating opposite
+  # fore-aft touchdown bias between left/right feet during uncommanded spin.
+  yaw_rate_deadband: 0.35
+  yaw_rate_gain: 1.0
+  yaw_rate_max: 1.0
+  step_gain: 1.0
+  max_forward_step: 0.18
+  max_backward_step: 0.12
+  max_lateral_step: 0.12
+  body_offset_gain: 0.7
+  body_offset_max: 0.14
+  body_offset_tau: 0.05
+  velocity_gain: 2.0
+  velocity_max: 0.35
+  max_active_time: 0.8
+  cooldown_time: 0.7
 
 joint_tracking:
   leg:
@@ -122,7 +145,7 @@ initial_pose:
   leg_initialization_time: 2.0
   arm_initialization_time: 1.0
   leg_joint_offsets: [0, 0, -0.735, 1.2, -0.70]
-  arm_joint_offsets: [0.0, 0.0, 0.0, -0.65]
+  arm_joint_offsets: [0.0, 0.0, 0.0, -1.65]
 
 gait_swing_hold_test:
   xml_path: models/mit_humanoid/scene_test.xml

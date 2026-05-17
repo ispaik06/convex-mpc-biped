@@ -28,6 +28,8 @@ public:
 
     void reset();
     void setBodyTargetWorld(const Vec3<double>& position_W, double yaw_W);
+    void setRecoveryStepBiasWorld(const Vec2<double>& bias_W);
+    void setRecoveryYawRateBias(double yawRateBias);
     DesiredFootPositions desiredFootPositions();
 
 private:
@@ -35,6 +37,7 @@ private:
     void ensureSwingTouchdownCache();
     void ensureNominalFootOffsets();
     Vec2<double> currentPlanarCommandBodyFrame() const;
+    double effectiveYawRateCommand() const;
     double bodyYawTargetWorld() const;
     double touchdownPreviewTime() const;
     Vec3<double> touchdownOffsetBodyFrame(std::size_t legIndex, double previewTime) const;
@@ -42,6 +45,7 @@ private:
     bool shouldApplyBrakingOffset(const Vec2<double>& currentPlanarCommand) const;
     Vec2<double> computeStopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
     Vec2<double> stopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
+    Vec3<double> recoveryStepBiasWorld() const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex,
                                                             const Vec2<double>& currentPlanarCommand,
                                                             double* touchdownYaw_W_out = nullptr) const;
@@ -56,6 +60,7 @@ private:
     const UserCommand* _userCommand = nullptr;
     std::vector<Vec3<double>> _touchdownTargets;
     std::vector<bool> _touchdownTargetValid;
+    std::vector<Vec2<double>> _appliedRecoveryStepBias_W;
     std::vector<Vec3<double>> _nominalFootOffsets_B;
     std::vector<bool> _nominalFootOffsetValid;
     std::vector<bool> _wasInStance;
@@ -65,6 +70,8 @@ private:
     bool _bodyPositionTargetValid{false};
     double _bodyYawTarget_W{0.0};
     bool _bodyYawTargetValid{false};
+    Vec2<double> _recoveryStepBias_W = Vec2<double>::Zero();
+    double _recoveryYawRateBias{0.0};
     Vec2<double> _latchedBrakingOffset_B = Vec2<double>::Zero();
     bool _latchedBrakingOffsetValid{false};
     int _brakingOffsetDeadbandHoldTicks{0};

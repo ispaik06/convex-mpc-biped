@@ -29,6 +29,7 @@ Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstim
 void SwingFootPlanner::reset() {
     _touchdownTargets.clear();
     _touchdownTargetValid.clear();
+    _appliedRecoveryStepBias_W.clear();
     _nominalFootOffsets_B.clear();
     _nominalFootOffsetValid.clear();
     _wasInStance.clear();
@@ -36,6 +37,8 @@ void SwingFootPlanner::reset() {
     _footprintCenterValid = false;
     _bodyPositionTargetValid = false;
     _bodyYawTargetValid = false;
+    _recoveryStepBias_W.setZero();
+    _recoveryYawRateBias = 0.0;
     _latchedBrakingOffset_B.setZero();
     _latchedBrakingOffsetValid = false;
     _brakingOffsetDeadbandHoldTicks = 0;
@@ -57,6 +60,14 @@ void SwingFootPlanner::setBodyTargetWorld(const Vec3<double>& position_W, const 
     _bodyYawTargetValid = true;
 }
 
+void SwingFootPlanner::setRecoveryStepBiasWorld(const Vec2<double>& bias_W) {
+    _recoveryStepBias_W = bias_W.allFinite() ? bias_W : Vec2<double>::Zero();
+}
+
+void SwingFootPlanner::setRecoveryYawRateBias(const double yawRateBias) {
+    _recoveryYawRateBias = std::isfinite(yawRateBias) ? yawRateBias : 0.0;
+}
+
 void SwingFootPlanner::syncHorizonClock() {
     if (_horizonClock == nullptr || _stateEstimate == nullptr) {
         throw std::runtime_error("SwingFootPlanner::syncHorizonClock requires initialized pointers");
@@ -73,6 +84,7 @@ void SwingFootPlanner::ensureSwingTouchdownCache() {
     const std::size_t legCount = _robotParams->legs.size();
     if (_touchdownTargets.size() == legCount &&
         _touchdownTargetValid.size() == legCount &&
+        _appliedRecoveryStepBias_W.size() == legCount &&
         _nominalFootOffsets_B.size() == legCount &&
         _nominalFootOffsetValid.size() == legCount &&
         _wasInStance.size() == legCount) {
@@ -81,6 +93,7 @@ void SwingFootPlanner::ensureSwingTouchdownCache() {
 
     _touchdownTargets.assign(legCount, Vec3<double>::Zero());
     _touchdownTargetValid.assign(legCount, false);
+    _appliedRecoveryStepBias_W.assign(legCount, Vec2<double>::Zero());
     _nominalFootOffsets_B.assign(legCount, Vec3<double>::Zero());
     _nominalFootOffsetValid.assign(legCount, false);
     _wasInStance.assign(legCount, true);
@@ -142,6 +155,11 @@ Vec2<double> SwingFootPlanner::currentPlanarCommandBodyFrame() const {
                         _userCommand != nullptr ? _userCommand->y_dot : 0.0);
 }
 
+double SwingFootPlanner::effectiveYawRateCommand() const {
+    const double commandYawRate = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    return commandYawRate + _recoveryYawRateBias;
+}
+
 double SwingFootPlanner::bodyYawTargetWorld() const {
     return _bodyYawTargetValid ? _bodyYawTarget_W : _stateEstimate->yaw_W_unwrapped;
 }
@@ -160,7 +178,7 @@ Vec3<double> SwingFootPlanner::touchdownOffsetBodyFrame(const std::size_t legInd
         return nominalFootOffset_B;
     }
 
-    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    const double psi_dot = effectiveYawRateCommand();
     if (!std::isfinite(psi_dot)) {
         return nominalFootOffset_B;
     }
@@ -242,6 +260,10 @@ Vec2<double> SwingFootPlanner::stopBrakingOffsetBodyFrame(
     return computeStopBrakingOffsetBodyFrame(currentPlanarCommand);
 }
 
+Vec3<double> SwingFootPlanner::recoveryStepBiasWorld() const {
+    return Vec3<double>(_recoveryStepBias_W.x(), _recoveryStepBias_W.y(), 0.0);
+}
+
 Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex,
     const Vec2<double>& currentPlanarCommand,
@@ -250,7 +272,7 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
                                   currentPlanarCommand.y(),
                                   0.0);
     const double previewTime = touchdownPreviewTime();
-    const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
+    const double psi_dot = effectiveYawRateCommand();
     const double yaw0 = bodyYawTargetWorld();
     const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
     // Use the remaining swing time to estimate the yaw at the eventual touchdown instant.
@@ -274,7 +296,8 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     Vec3<double> target =
         currentCenter_W + step_W +
         Rz(yaw0) * Vec3<double>(brakingOffset_B.x(), brakingOffset_B.y(), 0.0) +
-        Rz(touchdownYaw_W) * touchdownOffset_B;
+        Rz(touchdownYaw_W) * touchdownOffset_B +
+        recoveryStepBiasWorld();
     target.z() = kSwingFootTargetZ;
     return target;
 }
@@ -343,6 +366,7 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
             if (!_touchdownTargetValid[leg]) {
                 _touchdownTargets[leg] = currentFootTouchdownTarget(leg);
                 _touchdownTargetValid[leg] = true;
+                _appliedRecoveryStepBias_W[leg].setZero();
             }
             _wasInStance[leg] = true;
             return _touchdownTargets[leg];
@@ -359,6 +383,14 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
                 leg, currentPlanarCommand, &touchdownYaw_W);
             recordSequentialTouchdown(_touchdownTargets[leg], touchdownYaw_W, touchdownOffset_B);
             _touchdownTargetValid[leg] = true;
+            _appliedRecoveryStepBias_W[leg] = _recoveryStepBias_W;
+        } else {
+            if (_recoveryStepBias_W.norm() > 1e-9) {
+                const Vec2<double> deltaRecovery_W =
+                    _recoveryStepBias_W - _appliedRecoveryStepBias_W[leg];
+                _touchdownTargets[leg].template head<2>() += deltaRecovery_W;
+                _appliedRecoveryStepBias_W[leg] = _recoveryStepBias_W;
+            }
         }
 
         return _touchdownTargets[leg];

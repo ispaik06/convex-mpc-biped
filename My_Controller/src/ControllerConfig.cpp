@@ -422,6 +422,95 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "locomotion_transition.braking_touchdown_count must be non-negative");
     }
 
+    const YAML::Node recoveryStep = config["recovery_step"];
+    readScalarIfPresent(recoveryStep, "enabled", params.recoveryStep.enabled);
+    readScalarIfPresent(recoveryStep,
+                        "command_velocity_deadband",
+                        params.recoveryStep.commandVelocityDeadband);
+    readScalarIfPresent(recoveryStep,
+                        "capture_point_deadband",
+                        params.recoveryStep.capturePointDeadband);
+    readScalarIfPresent(recoveryStep,
+                        "capture_point_filter_tau",
+                        params.recoveryStep.capturePointFilterTau);
+    readScalarIfPresent(recoveryStep,
+                        "yaw_rate_deadband",
+                        params.recoveryStep.yawRateDeadband);
+    readScalarIfPresent(recoveryStep,
+                        "yaw_rate_gain",
+                        params.recoveryStep.yawRateGain);
+    readScalarIfPresent(recoveryStep,
+                        "yaw_rate_max",
+                        params.recoveryStep.yawRateMax);
+    readScalarIfPresent(recoveryStep, "step_gain", params.recoveryStep.stepGain);
+    readScalarIfPresent(recoveryStep,
+                        "max_forward_step",
+                        params.recoveryStep.maxForwardStep);
+    readScalarIfPresent(recoveryStep,
+                        "max_backward_step",
+                        params.recoveryStep.maxBackwardStep);
+    readScalarIfPresent(recoveryStep,
+                        "max_lateral_step",
+                        params.recoveryStep.maxLateralStep);
+    readScalarIfPresent(recoveryStep,
+                        "body_offset_gain",
+                        params.recoveryStep.bodyOffsetGain);
+    readScalarIfPresent(recoveryStep,
+                        "body_offset_max",
+                        params.recoveryStep.bodyOffsetMax);
+    readScalarIfPresent(recoveryStep,
+                        "body_offset_tau",
+                        params.recoveryStep.bodyOffsetTau);
+    readScalarIfPresent(recoveryStep,
+                        "velocity_gain",
+                        params.recoveryStep.velocityGain);
+    readScalarIfPresent(recoveryStep,
+                        "velocity_max",
+                        params.recoveryStep.velocityMax);
+    readScalarIfPresent(recoveryStep,
+                        "max_active_time",
+                        params.recoveryStep.maxActiveTime);
+    readScalarIfPresent(recoveryStep,
+                        "cooldown_time",
+                        params.recoveryStep.cooldownTime);
+    if (!std::isfinite(params.recoveryStep.commandVelocityDeadband) ||
+        !std::isfinite(params.recoveryStep.capturePointDeadband) ||
+        !std::isfinite(params.recoveryStep.capturePointFilterTau) ||
+        !std::isfinite(params.recoveryStep.yawRateDeadband) ||
+        !std::isfinite(params.recoveryStep.yawRateGain) ||
+        !std::isfinite(params.recoveryStep.yawRateMax) ||
+        !std::isfinite(params.recoveryStep.stepGain) ||
+        !std::isfinite(params.recoveryStep.maxForwardStep) ||
+        !std::isfinite(params.recoveryStep.maxBackwardStep) ||
+        !std::isfinite(params.recoveryStep.maxLateralStep) ||
+        !std::isfinite(params.recoveryStep.bodyOffsetGain) ||
+        !std::isfinite(params.recoveryStep.bodyOffsetMax) ||
+        !std::isfinite(params.recoveryStep.bodyOffsetTau) ||
+        !std::isfinite(params.recoveryStep.velocityGain) ||
+        !std::isfinite(params.recoveryStep.velocityMax) ||
+        !std::isfinite(params.recoveryStep.maxActiveTime) ||
+        !std::isfinite(params.recoveryStep.cooldownTime) ||
+        params.recoveryStep.commandVelocityDeadband < 0.0 ||
+        params.recoveryStep.capturePointDeadband < 0.0 ||
+        params.recoveryStep.capturePointFilterTau < 0.0 ||
+        params.recoveryStep.yawRateDeadband < 0.0 ||
+        params.recoveryStep.yawRateGain < 0.0 ||
+        params.recoveryStep.yawRateMax < 0.0 ||
+        params.recoveryStep.stepGain < 0.0 ||
+        params.recoveryStep.maxForwardStep < 0.0 ||
+        params.recoveryStep.maxBackwardStep < 0.0 ||
+        params.recoveryStep.maxLateralStep < 0.0 ||
+        params.recoveryStep.bodyOffsetGain < 0.0 ||
+        params.recoveryStep.bodyOffsetMax < 0.0 ||
+        params.recoveryStep.bodyOffsetTau < 0.0 ||
+        params.recoveryStep.velocityGain < 0.0 ||
+        params.recoveryStep.velocityMax < 0.0 ||
+        params.recoveryStep.maxActiveTime < 0.0 ||
+        params.recoveryStep.cooldownTime < 0.0) {
+        throw std::runtime_error(
+            "recovery_step gains, deadbands, limits, and time constants must be finite and non-negative");
+    }
+
     const YAML::Node gaitSwingHoldTest = config["gait_swing_hold_test"];
     readScalarIfPresent(gaitSwingHoldTest,
                         "xml_path",

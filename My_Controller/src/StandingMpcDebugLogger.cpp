@@ -523,6 +523,27 @@ json controllerConfigJson(const ControllerConfig& config,
     transition["braking_touchdown_count"] = config.transition.brakingTouchdownCount;
     root["locomotion_transition"] = std::move(transition);
 
+    json recoveryStep = json::object();
+    recoveryStep["enabled"] = config.recoveryStep.enabled;
+    recoveryStep["command_velocity_deadband"] = config.recoveryStep.commandVelocityDeadband;
+    recoveryStep["capture_point_deadband"] = config.recoveryStep.capturePointDeadband;
+    recoveryStep["capture_point_filter_tau"] = config.recoveryStep.capturePointFilterTau;
+    recoveryStep["yaw_rate_deadband"] = config.recoveryStep.yawRateDeadband;
+    recoveryStep["yaw_rate_gain"] = config.recoveryStep.yawRateGain;
+    recoveryStep["yaw_rate_max"] = config.recoveryStep.yawRateMax;
+    recoveryStep["step_gain"] = config.recoveryStep.stepGain;
+    recoveryStep["max_forward_step"] = config.recoveryStep.maxForwardStep;
+    recoveryStep["max_backward_step"] = config.recoveryStep.maxBackwardStep;
+    recoveryStep["max_lateral_step"] = config.recoveryStep.maxLateralStep;
+    recoveryStep["body_offset_gain"] = config.recoveryStep.bodyOffsetGain;
+    recoveryStep["body_offset_max"] = config.recoveryStep.bodyOffsetMax;
+    recoveryStep["body_offset_tau"] = config.recoveryStep.bodyOffsetTau;
+    recoveryStep["velocity_gain"] = config.recoveryStep.velocityGain;
+    recoveryStep["velocity_max"] = config.recoveryStep.velocityMax;
+    recoveryStep["max_active_time"] = config.recoveryStep.maxActiveTime;
+    recoveryStep["cooldown_time"] = config.recoveryStep.cooldownTime;
+    root["recovery_step"] = std::move(recoveryStep);
+
     json initialPose = json::object();
     if (config.initialPose.hasBasePose) {
         initialPose["base_position_W"] = vectorToJson(config.initialPose.basePosition_W);

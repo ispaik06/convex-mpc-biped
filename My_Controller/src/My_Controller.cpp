@@ -360,6 +360,23 @@ Vec3<double> reducedBodyComWorldFromBasePose(const Vec3<double>& basePosition_W,
     return basePosition_W + Rz(baseEuler_W[2]) * robotParams.bodyComLocation;
 }
 
+Vec2<double> clampRecoveryStepBodyFrame(const Vec2<double>& step_B,
+                                        const RecoveryStepParameters& params) {
+    Vec2<double> clamped = step_B;
+    clamped.x() = std::clamp(clamped.x(), -params.maxBackwardStep, params.maxForwardStep);
+    clamped.y() = std::clamp(clamped.y(), -params.maxLateralStep, params.maxLateralStep);
+    return clamped;
+}
+
+Vec2<double> clampRecoveryBodyOffsetBodyFrame(const Vec2<double>& offset_B,
+                                              const RecoveryStepParameters& params) {
+    const double norm = offset_B.norm();
+    if (!(params.bodyOffsetMax > 0.0) || !(norm > params.bodyOffsetMax)) {
+        return offset_B;
+    }
+    return offset_B * (params.bodyOffsetMax / norm);
+}
+
 Vec3<double> footLocalXAxisWorld(const StateEstimate<double>& stateEstimate,
                                  const RobotParams<double>& robotParams,
                                  const Side side) {
@@ -725,6 +742,161 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     applyPoseOffsets();
 }
 
+void MyController::clearRecoveryStep(const bool commitBodyOffset) {
+    const bool wasActive = _recoveryStep.active || _recoveryStep.initialized;
+    if (commitBodyOffset && _bodyTarget.initialized && _recoveryStep.bodyOffset_W.allFinite()) {
+        _bodyTarget.nominalPosition_W.template head<2>() += _recoveryStep.bodyOffset_W;
+        _bodyTarget.position_W.template head<2>() =
+            _bodyTarget.nominalPosition_W.template head<2>();
+    }
+
+    _recoveryStep.bodyOffset_W.setZero();
+    _recoveryStep.stepBias_W.setZero();
+    _recoveryStep.velocityBias_B.setZero();
+    _recoveryStep.direction_W.setZero();
+    _recoveryStep.yawRateBias = 0.0;
+    _recoveryStep.activeTime = 0.0;
+    _recoveryStep.active = false;
+    _recoveryStep.initialized = false;
+    _recoveryStep.directionInitialized = false;
+    if (wasActive && _stateEstimate != nullptr) {
+        _recoveryStep.cooldownUntilTime =
+            _stateEstimate->time + getControllerConfig().recoveryStep.cooldownTime;
+    }
+}
+
+void MyController::updateRecoveryStep(const Vec13<double>& x0, const double dt) {
+    const auto& recovery = getControllerConfig().recoveryStep;
+    if (_stateEstimate != nullptr && _stateEstimate->time < _recoveryStep.cooldownUntilTime) {
+        _recoveryStep.stepBias_W.setZero();
+        _recoveryStep.velocityBias_B.setZero();
+        _recoveryStep.yawRateBias = 0.0;
+        return;
+    }
+    if (recovery.maxActiveTime > 0.0 && _recoveryStep.active &&
+        _recoveryStep.activeTime >= recovery.maxActiveTime) {
+        clearRecoveryStep(true);
+        return;
+    }
+    if (!recovery.enabled || _locomotionMode != LocomotionMode::Walking ||
+        !_bodyTarget.initialized || _stateEstimate == nullptr || _robotParams == nullptr) {
+        clearRecoveryStep(true);
+        return;
+    }
+
+    const Vec2<double> planarCommand(_filteredUserCommand.x_dot, _filteredUserCommand.y_dot);
+    if (planarCommand.norm() > recovery.commandVelocityDeadband) {
+        clearRecoveryStep(true);
+        return;
+    }
+
+    const double gravity = std::abs(getControllerConfig().model.gravity);
+    const double comHeight = std::max(1e-6, x0[5]);
+    if (!(gravity > 0.0) || !(comHeight > 0.0)) {
+        clearRecoveryStep(true);
+        return;
+    }
+
+    const double omega0 = std::sqrt(gravity / comHeight);
+    if (!(omega0 > 0.0) || !std::isfinite(omega0)) {
+        clearRecoveryStep(true);
+        return;
+    }
+
+    const Vec2<double> comXY_W = x0.template segment<2>(3);
+    const Vec2<double> comVelocityXY_W = x0.template segment<2>(9);
+    const Vec2<double> capturePoint_W = comXY_W + comVelocityXY_W / omega0;
+    const Vec2<double> supportCenter_W = averageFootEndEffectorXY(*_stateEstimate, *_robotParams);
+    const Vec2<double> captureError_W = capturePoint_W - supportCenter_W;
+    const double yawRateError = x0[8] - _filteredUserCommand.psi_dot;
+    const double yawRateErrorAbs = std::abs(yawRateError);
+    const bool yawRecoveryActive =
+        recovery.yawRateGain > 0.0 &&
+        yawRateErrorAbs > recovery.yawRateDeadband;
+    if (yawRecoveryActive) {
+        const double yawRateExcess = yawRateErrorAbs - recovery.yawRateDeadband;
+        _recoveryStep.yawRateBias = recovery.yawRateGain *
+                                    std::copysign(yawRateExcess, yawRateError);
+        if (recovery.yawRateMax > 0.0 &&
+            std::abs(_recoveryStep.yawRateBias) > recovery.yawRateMax) {
+            _recoveryStep.yawRateBias =
+                std::copysign(recovery.yawRateMax, _recoveryStep.yawRateBias);
+        }
+    } else {
+        _recoveryStep.yawRateBias = 0.0;
+    }
+    if (!_recoveryStep.filterInitialized) {
+        _recoveryStep.filteredCaptureError_W = captureError_W;
+        _recoveryStep.filterInitialized = true;
+    } else {
+        const double alpha = lowPassBlendAlpha(recovery.capturePointFilterTau, dt);
+        _recoveryStep.filteredCaptureError_W +=
+            alpha * (captureError_W - _recoveryStep.filteredCaptureError_W);
+    }
+
+    const double filteredErrorNorm = _recoveryStep.filteredCaptureError_W.norm();
+    const bool captureRecoveryActive = filteredErrorNorm > recovery.capturePointDeadband;
+    if (!captureRecoveryActive && !yawRecoveryActive) {
+        clearRecoveryStep(_recoveryStep.active || _recoveryStep.initialized);
+        return;
+    }
+
+    Vec2<double> recoveryError_W = Vec2<double>::Zero();
+    if (captureRecoveryActive) {
+        if (!_recoveryStep.directionInitialized) {
+            _recoveryStep.direction_W = _recoveryStep.filteredCaptureError_W / filteredErrorNorm;
+            _recoveryStep.directionInitialized = true;
+        }
+        const double directionalError =
+            _recoveryStep.filteredCaptureError_W.dot(_recoveryStep.direction_W);
+        if (!(directionalError > recovery.capturePointDeadband)) {
+            if (!yawRecoveryActive) {
+                clearRecoveryStep(_recoveryStep.active || _recoveryStep.initialized);
+                return;
+            }
+        } else {
+            recoveryError_W = directionalError * _recoveryStep.direction_W;
+        }
+    } else {
+        _recoveryStep.directionInitialized = false;
+        _recoveryStep.direction_W.setZero();
+    }
+
+    const Mat3<double> R_WB = Rz(_bodyTarget.euler_W[2]);
+    const Mat3<double> R_BW = R_WB.transpose();
+    const Vec3<double> captureError_B3 =
+        R_BW * Vec3<double>(recoveryError_W.x(), recoveryError_W.y(), 0.0);
+    const Vec2<double> captureError_B(captureError_B3.x(), captureError_B3.y());
+
+    const Vec2<double> stepBias_B =
+        clampRecoveryStepBodyFrame(recovery.stepGain * captureError_B, recovery);
+    const Vec3<double> stepBias_W3 = R_WB * Vec3<double>(stepBias_B.x(), stepBias_B.y(), 0.0);
+    _recoveryStep.stepBias_W = Vec2<double>(stepBias_W3.x(), stepBias_W3.y());
+    _recoveryStep.velocityBias_B = recovery.velocityGain * captureError_B;
+    const double velocityBiasNorm = _recoveryStep.velocityBias_B.norm();
+    if (recovery.velocityMax > 0.0 && velocityBiasNorm > recovery.velocityMax) {
+        _recoveryStep.velocityBias_B *= recovery.velocityMax / velocityBiasNorm;
+    }
+
+    const Vec2<double> bodyOffsetTarget_B =
+        clampRecoveryBodyOffsetBodyFrame(recovery.bodyOffsetGain * captureError_B, recovery);
+    const Vec3<double> bodyOffsetTarget_W3 =
+        R_WB * Vec3<double>(bodyOffsetTarget_B.x(), bodyOffsetTarget_B.y(), 0.0);
+    const Vec2<double> bodyOffsetTarget_W(bodyOffsetTarget_W3.x(), bodyOffsetTarget_W3.y());
+    const double alpha = lowPassBlendAlpha(recovery.bodyOffsetTau, dt);
+    if (!_recoveryStep.initialized) {
+        _recoveryStep.bodyOffset_W = bodyOffsetTarget_W;
+        _recoveryStep.initialized = true;
+    } else {
+        _recoveryStep.bodyOffset_W += alpha * (bodyOffsetTarget_W - _recoveryStep.bodyOffset_W);
+    }
+
+    _bodyTarget.position_W.template head<2>() =
+        _bodyTarget.nominalPosition_W.template head<2>() + _recoveryStep.bodyOffset_W;
+    _recoveryStep.activeTime += std::max(0.0, dt);
+    _recoveryStep.active = true;
+}
+
 bool MyController::activeContactForSide(const Side side, const double time) const {
     if (_locomotionMode == LocomotionMode::Walking && _contactManager != nullptr) {
         return _contactManager->activeContact(side);
@@ -774,8 +946,8 @@ ControllerBodyTargetDebugState MyController::bodyTargetDebugState() const {
     out.position_W = _bodyTarget.position_W;
     out.euler_W = _bodyTarget.euler_W;
     out.initialized = _bodyTarget.initialized;
-    out.gaitRecoveryHoldActive = false;
-    out.gaitRecoveryHoldTime = 0.0;
+    out.gaitRecoveryHoldActive = _recoveryStep.active;
+    out.gaitRecoveryHoldTime = _recoveryStep.activeTime;
     return out;
 }
 
@@ -802,6 +974,7 @@ void MyController::updateSwingTrajectories(
                 _locomotionFSM->registerBrakingTouchdown();
             }
             runtime.swingTrajectory.deactivate();
+            runtime.appliedRecoveryStepBias_W.setZero();
             runtime.wasInStance = true;
             runtime.wasSearchMode = false;
             continue;
@@ -846,9 +1019,22 @@ void MyController::updateSwingTrajectories(
                                           touchdownTarget,
                                           _swingHeight,
                                           timeRemaining);
+            runtime.appliedRecoveryStepBias_W = _recoveryStep.stepBias_W;
         } else {
-            runtime.swingTrajectory.setFinalPosition(touchdownTarget);
-            runtime.swingTrajectory.advance(dt);
+            const Vec2<double> recoveryBiasDelta_W =
+                _recoveryStep.stepBias_W - runtime.appliedRecoveryStepBias_W;
+            if (_recoveryStep.active && recoveryBiasDelta_W.norm() > 0.015) {
+                const double retargetTime =
+                    std::max(runtime.swingTrajectory.remainingTime(), minRemainingTime);
+                runtime.swingTrajectory.reset(currentFootPosition,
+                                              touchdownTarget,
+                                              0.5 * _swingHeight,
+                                              retargetTime);
+                runtime.appliedRecoveryStepBias_W = _recoveryStep.stepBias_W;
+            } else {
+                runtime.swingTrajectory.setFinalPosition(touchdownTarget);
+                runtime.swingTrajectory.advance(dt);
+            }
         }
 
         runtime.wasInStance = false;
@@ -957,6 +1143,8 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
 
             UserCommand referenceCommand = _filteredUserCommand;
+            referenceCommand.x_dot += _recoveryStep.velocityBias_B.x();
+            referenceCommand.y_dot += _recoveryStep.velocityBias_B.y();
             {
                 profiling::ScopedTimer timer(_referenceTrajectoryTime);
                 ReferenceTrajectory(&referenceCommand,
@@ -1369,9 +1557,12 @@ void MyController::runController() {
     const double dt = std::max(0.0, _stateEstimate->time - _lastControlTime);
     updateFilteredUserCommand(dt);
     updateBodyTarget(x0, dt);
+    updateRecoveryStep(x0, dt);
     if (_bodyTarget.initialized) {
         _swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W, _bodyTarget.euler_W[2]);
     }
+    _swingFootPlanner->setRecoveryStepBiasWorld(_recoveryStep.stepBias_W);
+    _swingFootPlanner->setRecoveryYawRateBias(_recoveryStep.yawRateBias);
     const auto standingFootTarget = [&](const Side side) {
         Vec3<double> target = _stateEstimate->legs[findLegIndex(side)].footPos_W;
         target.z() = -0.005;
