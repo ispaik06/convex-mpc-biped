@@ -173,6 +173,29 @@ ContactWrenchModel parseContactWrenchModel(const YAML::Node& node,
                              ". Expected full_wrench or no_roll_moment");
 }
 
+YawIntegrationMode parseYawIntegrationMode(
+    const YAML::Node& node,
+    const char* keyName,
+    const YawIntegrationMode defaultMode = YawIntegrationMode::SingleSupport) {
+    if (!node || !node.IsScalar()) {
+        return defaultMode;
+    }
+
+    const std::string mode = node.as<std::string>();
+    if (mode == "single_support" || mode == "single" || mode == "stance_single") {
+        return YawIntegrationMode::SingleSupport;
+    }
+    if (mode == "double_support" || mode == "double" || mode == "both_feet") {
+        return YawIntegrationMode::DoubleSupport;
+    }
+    if (mode == "always" || mode == "continuous") {
+        return YawIntegrationMode::Always;
+    }
+
+    throw std::runtime_error(std::string("Invalid ") + keyName +
+                             ". Expected single_support, double_support, or always");
+}
+
 ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     ControllerConfig params;
 
@@ -299,6 +322,11 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(userCommandFilter, "x_dot_max", params.userCommandFilter.xDotMax);
     readScalarIfPresent(userCommandFilter, "y_dot_max", params.userCommandFilter.yDotMax);
     readScalarIfPresent(userCommandFilter, "psi_dot_max", params.userCommandFilter.psiDotMax);
+
+    const YAML::Node referenceTrajectory = config["reference_trajectory"];
+    params.referenceTrajectory.yawIntegrationMode =
+        parseYawIntegrationMode(referenceTrajectory["yaw_integration_mode"],
+                                "reference_trajectory.yaw_integration_mode");
 
     const YAML::Node contactManager = config["contact_manager"];
     readScalarIfPresent(contactManager,
@@ -662,6 +690,18 @@ std::string contactWrenchModelName(const ContactWrenchModel model) {
             return "full_wrench";
         case ContactWrenchModel::NoRollMoment:
             return "no_roll_moment";
+    }
+    return "unknown";
+}
+
+std::string yawIntegrationModeName(const YawIntegrationMode mode) {
+    switch (mode) {
+        case YawIntegrationMode::SingleSupport:
+            return "single_support";
+        case YawIntegrationMode::DoubleSupport:
+            return "double_support";
+        case YawIntegrationMode::Always:
+            return "always";
     }
     return "unknown";
 }

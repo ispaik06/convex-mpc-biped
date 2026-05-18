@@ -6,13 +6,19 @@
 
 namespace BodyMotionReference {
 
-bool shouldAdvanceYaw(const GaitScheduler* gaitScheduler, double sampleTime);
+bool shouldAdvanceYaw(const GaitScheduler* gaitScheduler,
+                      double sampleTime,
+                      YawIntegrationMode mode);
 double advanceYaw(const GaitScheduler* gaitScheduler,
                   double currentYaw,
                   double psiDot,
                   double dt,
-                  double sampleTime);
-double yawRate(const GaitScheduler* gaitScheduler, double psiDot, double sampleTime);
+                  double sampleTime,
+                  YawIntegrationMode mode);
+double yawRate(const GaitScheduler* gaitScheduler,
+               double psiDot,
+               double sampleTime,
+               YawIntegrationMode mode);
 Vec3<double> advancePlanarPosition(const Vec3<double>& position_W,
                                    double bodyYaw_W,
                                    const Vec2<double>& planarCommand_B,

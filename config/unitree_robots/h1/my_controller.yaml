@@ -63,6 +63,10 @@ user_command_filter:
   y_dot_max: 1.0
   psi_dot_max: 1.5
 
+reference_trajectory:
+  # single_support: legacy behavior, double_support: only when both feet are stance, always: integrate every step
+  yaw_integration_mode: single_support
+
 logging:
   standing_mpc_debug_trigger_times: []
 

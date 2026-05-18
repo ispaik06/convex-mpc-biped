@@ -687,6 +687,8 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
     const double bodyHeightOffset = _filteredUserCommand.body_height_offset_m;
     const double standingRollOffset = _filteredUserCommand.standing_roll_offset_rad;
     const double standingPitchOffset = _filteredUserCommand.standing_pitch_offset_rad;
+    const YawIntegrationMode yawIntegrationMode =
+        getControllerConfig().referenceTrajectory.yawIntegrationMode;
     const auto applyPoseOffsets = [&]() {
         _bodyTarget.euler_W[0] = _bodyTarget.eulerSeed_W[0] + standingRollOffset;
         _bodyTarget.euler_W[1] = _bodyTarget.eulerSeed_W[1] + standingPitchOffset;
@@ -703,7 +705,8 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
                                                                  _bodyTarget.euler_W[2],
                                                                  _filteredUserCommand.psi_dot,
                                                                  dt,
-                                                                 _stateEstimate->time);
+                                                                 _stateEstimate->time,
+                                                                 yawIntegrationMode);
         applyPoseOffsets();
         return;
     }
@@ -721,7 +724,8 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
                                                              _bodyTarget.euler_W[2],
                                                              psi_dot,
                                                              dt,
-                                                             _stateEstimate->time);
+                                                             _stateEstimate->time,
+                                                             yawIntegrationMode);
     applyPoseOffsets();
 }
 

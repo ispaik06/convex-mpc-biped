@@ -404,6 +404,20 @@ ContactWrenchModel contactWrenchModelFromString(const std::string& value) {
     throw std::runtime_error("Invalid controller_config.mpc.contact_wrench_model: " + value);
 }
 
+YawIntegrationMode yawIntegrationModeFromString(const std::string& value) {
+    if (value == "single_support" || value == "single" || value == "stance_single") {
+        return YawIntegrationMode::SingleSupport;
+    }
+    if (value == "double_support" || value == "double" || value == "both_feet") {
+        return YawIntegrationMode::DoubleSupport;
+    }
+    if (value == "always" || value == "continuous") {
+        return YawIntegrationMode::Always;
+    }
+    throw std::runtime_error(
+        "Invalid controller_config.reference_trajectory.yaw_integration_mode: " + value);
+}
+
 Vec3<double> vec3FromJson(const json& value, const std::string& name);
 std::vector<Vec3<double>> readVec3VectorFromJson(const json& value, const std::string& name);
 
@@ -684,6 +698,16 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (userCommandFilter.contains("psi_dot_max") &&
             userCommandFilter.at("psi_dot_max").is_number()) {
             out.userCommandFilter.psiDotMax = userCommandFilter.at("psi_dot_max").get<double>();
+        }
+    }
+
+    if (cfg.contains("reference_trajectory") && cfg.at("reference_trajectory").is_object()) {
+        const json& referenceTrajectory = cfg.at("reference_trajectory");
+        if (referenceTrajectory.contains("yaw_integration_mode") &&
+            referenceTrajectory.at("yaw_integration_mode").is_string()) {
+            out.referenceTrajectory.yawIntegrationMode =
+                yawIntegrationModeFromString(
+                    referenceTrajectory.at("yaw_integration_mode").get<std::string>());
         }
     }
 

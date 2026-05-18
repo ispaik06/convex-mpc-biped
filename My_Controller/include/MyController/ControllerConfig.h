@@ -22,6 +22,12 @@ enum class ContactWrenchModel {
     NoRollMoment,
 };
 
+enum class YawIntegrationMode {
+    SingleSupport,
+    DoubleSupport,
+    Always,
+};
+
 struct TimingParameters {
     double cycle{1.0};
     double swing{0.4};
@@ -90,6 +96,10 @@ struct UserCommandFilterParameters {
     double psiDotMax{std::numeric_limits<double>::infinity()};
 };
 
+struct ReferenceTrajectoryParameters {
+    YawIntegrationMode yawIntegrationMode{YawIntegrationMode::SingleSupport};
+};
+
 struct ContactManagerParameters {
     double contactForceOnThreshold{20.0};
     double contactForceOffThreshold{5.0};
@@ -144,6 +154,7 @@ struct ControllerConfig {
     MPCParameters mpc;
     SwingParameters swing;
     UserCommandFilterParameters userCommandFilter;
+    ReferenceTrajectoryParameters referenceTrajectory;
     ContactManagerParameters contactManager;
     LoggingParameters logging;
     StartupParameters startup;
@@ -172,5 +183,6 @@ LocomotionMode requestedLocomotionMode();
 std::string contactWrenchModelName(ContactWrenchModel model);
 ContactWrenchModel contactWrenchModelForMode(const MPCParameters& mpc, LocomotionMode mode);
 ContactWrenchModel contactWrenchModel(LocomotionMode mode);
+std::string yawIntegrationModeName(YawIntegrationMode mode);
 
 #endif  // CONTROLLER_CONFIG_H

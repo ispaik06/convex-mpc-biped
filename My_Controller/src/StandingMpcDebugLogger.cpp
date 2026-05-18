@@ -481,6 +481,11 @@ json controllerConfigJson(const ControllerConfig& config,
     }
     root["user_command_filter"] = std::move(userCommandFilter);
 
+    json referenceTrajectory = json::object();
+    referenceTrajectory["yaw_integration_mode"] =
+        yawIntegrationModeName(config.referenceTrajectory.yawIntegrationMode);
+    root["reference_trajectory"] = std::move(referenceTrajectory);
+
     json contactManager = json::object();
     contactManager["contact_force_on_threshold"] =
         config.contactManager.contactForceOnThreshold;

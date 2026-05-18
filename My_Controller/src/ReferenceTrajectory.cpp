@@ -26,6 +26,8 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
     const double gravity = _x0[12];
     const double dt = dtMpc();
     const int steps = horizonSteps();
+    const YawIntegrationMode yawIntegrationMode =
+        getControllerConfig().referenceTrajectory.yawIntegrationMode;
 
     Vec3<double> p_ref = _x0.template segment<3>(3);
     p_ref[2] += bodyHeightOffset_m;
@@ -42,7 +44,8 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
                                                       psi_ref,
                                                       psi_dot_des,
                                                       dt,
-                                                      yawSampleTime);
+                                                      yawSampleTime,
+                                                      yawIntegrationMode);
         }
 
         const double psi_k = psi_ref;
@@ -70,7 +73,10 @@ void ReferenceTrajectory::build(ReferenceTrajectoryOutput& out) const {
         x_ref_k.template segment<3>(3) = p_ref;
         x_ref_k[6] = 0.0;
         x_ref_k[7] = 0.0;
-        x_ref_k[8] = BodyMotionReference::yawRate(_gaitScheduler, psi_dot_des, yawSampleTime);
+        x_ref_k[8] = BodyMotionReference::yawRate(_gaitScheduler,
+                                                  psi_dot_des,
+                                                  yawSampleTime,
+                                                  yawIntegrationMode);
         x_ref_k.template segment<3>(9) = v_ref_W;
         x_ref_k[12] = gravity;
     }
