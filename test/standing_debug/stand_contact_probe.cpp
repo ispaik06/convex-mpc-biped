@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include "MujocoRobotBindings.h"
+#include "RobotConfig.h"
 #include "Utilities/MatrixUtils.h"
 #include "setupRobotParams.h"
 
@@ -157,6 +158,36 @@ std::string readJsonStringOr(const json& value,
         return fallback;
     }
     return value.at(key).get<std::string>();
+}
+
+RobotType robotTypeFromString(const std::string& value) {
+    if (value == "mit_humanoid") {
+        return RobotType::MIT_HUMANOID;
+    }
+    if (value == "unitree_g1") {
+        return RobotType::UNITREE_G1;
+    }
+    if (value == "unitree_h1") {
+        return RobotType::UNITREE_H1;
+    }
+    throw std::runtime_error("Invalid robot_type: " + value);
+}
+
+std::string resolveModelPathOr(const std::string& modelPathFallback, const std::string& value) {
+    if (value.empty()) {
+        return modelPathFallback;
+    }
+    return resolveProjectPath(value);
+}
+
+FootEndEffectorSource footEndEffectorSourceFromString(const std::string& value) {
+    if (value == "site") {
+        return FootEndEffectorSource::Site;
+    }
+    if (value == "collision_geom_center") {
+        return FootEndEffectorSource::CollisionGeomCenter;
+    }
+    throw std::runtime_error("Invalid foot_end_effector_source: " + value);
 }
 
 std::vector<double> readJsonVector(const json& value, const std::string& name) {
@@ -572,11 +603,48 @@ int main(int argc, char** argv) {
     logStream >> log;
 
     const json metadata = log.value("metadata", json::object());
-    const std::string robotType = readJsonStringOr(metadata, "robot_type", "unknown");
+    const json* controllerConfig = nullptr;
+    if (log.contains("controller_config") && log.at("controller_config").is_object()) {
+        controllerConfig = &log.at("controller_config");
+    }
+
+    const std::string robotTypeLabel = controllerConfig != nullptr
+                                           ? readJsonStringOr(*controllerConfig, "robot_type",
+                                                             readJsonStringOr(metadata, "robot_type",
+                                                                              "unknown"))
+                                           : readJsonStringOr(metadata, "robot_type", "unknown");
+    const RobotType robotType = robotTypeFromString(robotTypeLabel);
     const std::string locomotionMode =
         normalizedLocomotionMode(readJsonStringOr(metadata, "locomotion_mode", "standing"));
-    const std::string footSource =
-        readJsonStringOr(metadata, "foot_end_effector_source", "unknown");
+    const json* controllerModel = nullptr;
+    if (controllerConfig != nullptr && controllerConfig->contains("model") &&
+        controllerConfig->at("model").is_object()) {
+        controllerModel = &controllerConfig->at("model");
+    }
+
+    const RobotRuntimeConfig& runtimeConfig = getRobotRuntimeConfig(robotType);
+    const std::string footSourceLabelFallback =
+        readJsonStringOr(metadata,
+                         "foot_end_effector_source",
+                         runtimeConfig.footEndEffectorSource == FootEndEffectorSource::Site
+                             ? "site"
+                             : "collision_geom_center");
+    const std::string modelPath = controllerModel != nullptr
+                                      ? resolveModelPathOr(runtimeConfig.modelXmlPath,
+                                                           readJsonStringOr(*controllerModel,
+                                                                            "xml_path", ""))
+                                      : runtimeConfig.modelXmlPath;
+    const FootEndEffectorSource footSource = controllerModel != nullptr
+                                                 ? footEndEffectorSourceFromString(
+                                                       readJsonStringOr(*controllerModel,
+                                                                        "foot_end_effector_source",
+                                                                        footSourceLabelFallback))
+                                                 : runtimeConfig.footEndEffectorSource;
+    const std::string footSourceLabel =
+        controllerModel != nullptr ? readJsonStringOr(*controllerModel,
+                                                      "foot_end_effector_source",
+                                                      footSourceLabelFallback)
+                                   : footSourceLabelFallback;
     const std::string desiredReferencePoint =
         readJsonStringOr(metadata, "desired_wrench_reference_point", "unknown");
     const std::string contactWrenchModel =
@@ -596,7 +664,6 @@ int main(int argc, char** argv) {
         throw std::runtime_error("MuJoCo header/library version mismatch");
     }
 
-    const std::string modelPath = std::string(PROJECT_ROOT_DIR) + "/models/mit_humanoid/scene.xml";
     std::array<char, 1024> error{};
     std::unique_ptr<mjModel, decltype(&mj_deleteModel)> model(
         mj_loadXML(modelPath.c_str(), nullptr, error.data(), error.size()),
@@ -611,7 +678,7 @@ int main(int argc, char** argv) {
     }
 
     const auto robotSetup =
-        setupRobotParams<double>(RobotType::MIT_HUMANOID, model.get(), FootEndEffectorSource::Site);
+        setupRobotParams<double>(robotType, model.get(), footSource);
     const RobotParams<double>& params = robotSetup.params;
     const MujocoRobotBindings& bindings = robotSetup.bindings;
     if (params.legs.size() != bindings.feet.size()) {
@@ -654,9 +721,9 @@ int main(int argc, char** argv) {
                 modelPath,
                 data->ncon,
                 maxCtrlClampDelta,
-                robotType,
+                robotTypeLabel,
                 locomotionMode,
-                footSource,
+                footSourceLabel,
                 desiredReferencePoint,
                 contactWrenchModel,
                 results);
@@ -670,9 +737,9 @@ int main(int argc, char** argv) {
                 modelPath,
                 data->ncon,
                 maxCtrlClampDelta,
-                robotType,
+                robotTypeLabel,
                 locomotionMode,
-                footSource,
+                footSourceLabel,
                 desiredReferencePoint,
                 contactWrenchModel,
                 results);
@@ -682,7 +749,7 @@ int main(int argc, char** argv) {
     if (!csv.is_open()) {
         throw std::runtime_error("Failed to open plot CSV output: " + outputPaths.csv.string());
     }
-    writePlotCsv(csv, logPath, robotType, locomotionMode, desiredReferencePoint, results);
+    writePlotCsv(csv, logPath, robotTypeLabel, locomotionMode, desiredReferencePoint, results);
     csv.close();
     if (!csv.good()) {
         throw std::runtime_error("Failed while writing plot CSV output: " + outputPaths.csv.string());
