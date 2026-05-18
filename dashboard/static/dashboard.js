@@ -4,12 +4,12 @@
     const CHART_ORDER = CHART_CONFIGS.map((config, index) => ({ config, index }));
     const BASE_CHART_COUNT = CHART_CONFIGS.length;
     const COMMAND_SERIES_BY_LABEL = {
-      omega_z: { label: "cmd_psi_dot", baseLabel: "omega_z", index: 2, title: "Command psi_dot", color: "#f472b6" },
-      vel_x: { label: "cmd_vel_x", baseLabel: "vel_x", index: 0, title: "Command vel_x", color: "#86efac" },
-      vel_y: { label: "cmd_vel_y", baseLabel: "vel_y", index: 1, title: "Command vel_y", color: "#fca5a5" },
-      roll: { label: "target_roll", baseLabel: "roll", index: 3, title: "Target roll", color: "#f9a8d4" },
-      pitch: { label: "target_pitch", baseLabel: "pitch", index: 4, title: "Target pitch", color: "#c4b5fd" },
-      pos_z: { label: "target_pos_z", baseLabel: "pos_z", index: 5, title: "Target pos_z", color: "#93c5fd" },
+      omega_z: { label: "cmd_psi_dot", baseLabel: "omega_z", index: 2, title: "Command psi_dot", valueLabel: "Command", color: "#f472b6" },
+      vel_x: { label: "cmd_vel_x", baseLabel: "vel_x", index: 0, title: "Command vel_x", valueLabel: "Command", color: "#86efac" },
+      vel_y: { label: "cmd_vel_y", baseLabel: "vel_y", index: 1, title: "Command vel_y", valueLabel: "Command", color: "#fca5a5" },
+      roll: { label: "target_roll", baseLabel: "roll", index: 3, title: "Target roll", valueLabel: "Target", color: "#f9a8d4" },
+      pitch: { label: "target_pitch", baseLabel: "pitch", index: 4, title: "Target pitch", valueLabel: "Target", color: "#c4b5fd" },
+      pos_z: { label: "target_pos_z", baseLabel: "pos_z", index: 5, title: "Target pos_z", valueLabel: "Target", color: "#93c5fd" },
     };
     const DEFAULT_WINDOW_SECONDS = DASHBOARD_CONFIG.defaultWindowSeconds ?? 10;
     const WINDOW_OPTIONS = DASHBOARD_CONFIG.windowOptions || [5, 10, 20, 30];
@@ -487,6 +487,10 @@
             </div>
             <div class="panel-head-right">
               <div class="panel-mode-badge" data-role="main-mode-badge">Raw</div>
+              <div class="panel-current panel-overlay-current hidden" data-role="main-overlay-current">
+                <span class="panel-current-label" data-role="main-overlay-label">Target</span>
+                <span data-role="main-overlay-value">--</span>
+              </div>
               <div class="panel-current" data-role="main-current">
                 <span class="panel-current-label">Current</span>
                 <span data-role="main-current-value">--</span>
@@ -511,6 +515,9 @@
         const canvas = panel.querySelector("[data-role='main-canvas']");
         const titleNode = panel.querySelector("[data-role='main-title']");
         const currentNode = panel.querySelector("[data-role='main-current-value']");
+        const overlayCurrentNode = panel.querySelector("[data-role='main-overlay-current']");
+        const overlayLabelNode = panel.querySelector("[data-role='main-overlay-label']");
+        const overlayValueNode = panel.querySelector("[data-role='main-overlay-value']");
         const modeBadgeNode = panel.querySelector("[data-role='main-mode-badge']");
         const modeButtons = Array.from(panel.querySelectorAll("[data-role='main-mode-segment'] button"));
         const maControl = panel.querySelector("[data-role='main-ma-control']");
@@ -531,6 +538,9 @@
           canvas,
           titleNode,
           currentNode,
+          overlayCurrentNode,
+          overlayLabelNode,
+          overlayValueNode,
           modeBadgeNode,
           modeButtons,
           maControl,
@@ -803,8 +813,8 @@
       const seriesInfo = buildSeries(samples, config, chartIndex, mode, movingAverageSeconds);
       const overlayInfo = buildOverlaySeries(samples, overlay, mode, movingAverageSeconds);
       const combinedSeries = overlayInfo.series.length > 0 ? seriesInfo.series.concat(overlayInfo.series) : seriesInfo.series;
-      const stats = computeSeriesStats(combinedSeries);
-      const targetDomain = buildTargetDomain(stats, renderedConfig);
+      const combinedStats = computeSeriesStats(combinedSeries);
+      const targetDomain = buildTargetDomain(combinedStats, renderedConfig);
       state.domain = settleDomain(state.domain, targetDomain, renderedConfig);
       const niceDomain = buildNiceDomain(state.domain, renderedConfig, focused ? 6 : 5);
 
@@ -943,7 +953,12 @@
       }
 
       drawAxes(ctx, plot, niceDomain, xTicks, yTicks, config, focused);
-      return { stats, niceDomain };
+      return {
+        stats: seriesInfo.stats,
+        overlayStats: overlayInfo.stats,
+        combinedStats,
+        niceDomain,
+      };
     }
 
     function drawEmptyState(ctx, plot, config) {
@@ -1009,6 +1024,7 @@
     function updateMainPanel(panelEntry, label, drawResult, panelState, panelIndex) {
       const config = CHART_CONFIGS.find((entry) => entry.label === label) || CHART_CONFIGS[0];
       const renderedConfig = displayConfig(config);
+      const overlay = COMMAND_SERIES_BY_LABEL[label] || null;
       if (!panelEntry) {
         return;
       }
@@ -1040,6 +1056,24 @@
         panelEntry.currentNode.textContent = drawResult.stats
           ? formatValue(drawResult.stats.latest, renderedConfig.unit, renderedConfig.precision)
           : "--";
+      }
+      if (panelEntry.overlayCurrentNode) {
+        const showOverlay = Boolean(overlay && drawResult.overlayStats);
+        panelEntry.overlayCurrentNode.classList.toggle("hidden", !showOverlay);
+        if (showOverlay) {
+          if (panelEntry.overlayLabelNode) {
+            panelEntry.overlayLabelNode.textContent = overlay.valueLabel || "Target";
+          }
+          if (panelEntry.overlayValueNode) {
+            panelEntry.overlayValueNode.textContent = formatValue(
+              drawResult.overlayStats.latest,
+              renderedConfig.unit,
+              renderedConfig.precision
+            );
+          }
+        } else if (panelEntry.overlayValueNode) {
+          panelEntry.overlayValueNode.textContent = "--";
+        }
       }
     }
 

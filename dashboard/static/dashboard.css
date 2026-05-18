@@ -324,6 +324,12 @@
       font-variant-numeric: tabular-nums;
       white-space: nowrap;
     }
+    .panel-current.hidden {
+      display: none;
+    }
+    .panel-overlay-current {
+      color: rgba(255, 255, 255, 0.78);
+    }
     .panel-current-label {
       color: var(--muted);
       font-size: 9px;
