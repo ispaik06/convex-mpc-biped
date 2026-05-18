@@ -123,6 +123,14 @@ bool GaitScheduler::bothFeetStance(const double t) const {
     return c(Side::Left, t) && c(Side::Right, t);
 }
 
+const std::vector<GaitConstraintStep>& GaitScheduler::constraintSteps() const {
+    return _constraintSteps;
+}
+
+bool GaitScheduler::constrainFootRollMoment() const {
+    return _constrainFootRollMoment;
+}
+
 void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* contactOverride,
                                             const double leftFootYaw_W,
                                             const double rightFootYaw_W) {
@@ -133,22 +141,17 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
 
     const int steps = horizonSteps();
     const auto& mpc = getControllerConfig().mpc;
-    const bool constrainFootRollMoment =
+    _constrainFootRollMoment =
         contactWrenchModel(_locomotionMode) == ContactWrenchModel::NoRollMoment;
     const double resolvedLeftFootYaw_W = resolvedFootYaw(_leftFootXAxis_W, leftFootYaw_W);
     const double resolvedRightFootYaw_W = resolvedFootYaw(_rightFootXAxis_W, rightFootYaw_W);
 
-    D.setZero(12 * steps, 12 * steps);
-    C.setZero(24 * steps, 12 * steps);
     C_bound.setZero(24 * steps);
+    _constraintSteps.resize(static_cast<std::size_t>(steps));
 
     for (int k = 0; k < steps; ++k) {
         const double tk = _horizonClock->tk(k);
         Ck_bound = Vec24<double>::Zero();
-        Mat3<double> S_left = Mat3<double>::Zero();
-        Mat3<double> S_right = Mat3<double>::Zero();
-        Mat12<double> C_left = Mat12<double>::Zero();
-        Mat12<double> C_right = Mat12<double>::Zero();
         bool leftStance = c(Side::Left, tk);
         bool rightStance = c(Side::Right, tk);
         double leftNormalForceMinScale = 1.0;
@@ -163,49 +166,28 @@ void GaitScheduler::buildConstraintMatrices(const ContactScheduleOverride* conta
             rightNormalForceMinScale = std::clamp(step.rightNormalForceMinScale, 0.0, 1.0);
         }
 
-        if (!leftStance) {  // swing
-            S_left = Mat3<double>::Identity();
-        }
-        else {  // stance
-            fillYawRotatedFootConstraintBlock(C_unit,
-                                             resolvedLeftFootYaw_W,
-                                             C_left,
-                                             0,
-                                             6);
+        if (leftStance) {
             Ck_bound(4) = mpc.normalForceMax;
             Ck_bound(5) = -leftNormalForceMinScale * mpc.normalForceMin;
         }
 
-        if (!rightStance) {  // swing
-            S_right = Mat3<double>::Identity();
-        }
-        else {  // stance
-            fillYawRotatedFootConstraintBlock(C_unit,
-                                             resolvedRightFootYaw_W,
-                                             C_right,
-                                             3,
-                                             9);
+        if (rightStance) {
             Ck_bound(16) = mpc.normalForceMax;
             Ck_bound(17) = -rightNormalForceMinScale * mpc.normalForceMin;
         }
 
-        Mat12<double> Dk = Mat12<double>::Zero();
-        Dk.block<3, 3>(0, 0) = S_left;
-        Dk.block<3, 3>(3, 3) = S_right;
-        Dk.block<3, 3>(6, 6) = S_left;
-        Dk.block<3, 3>(9, 9) = S_right;
-        if (constrainFootRollMoment && leftStance) {
-            Dk.block<1, 3>(6, 6) = _leftFootXAxis_W.transpose();
-        }
-        if (constrainFootRollMoment && rightStance) {
-            Dk.block<1, 3>(9, 9) = _rightFootXAxis_W.transpose();
-        }
-
-        const Eigen::Index dOffset = static_cast<Eigen::Index>(12 * k);
         const Eigen::Index cOffset = static_cast<Eigen::Index>(24 * k);
-        D.block(dOffset, dOffset, 12, 12) = Dk;
-        C.block(cOffset + 0, dOffset, 12, 12) = C_left;
-        C.block(cOffset + 12, dOffset, 12, 12) = C_right;
         C_bound.segment(cOffset, 24) = Ck_bound;
+
+        GaitConstraintStep& constraintStep = _constraintSteps[static_cast<std::size_t>(k)];
+        constraintStep.leftStance = leftStance;
+        constraintStep.rightStance = rightStance;
+        constraintStep.leftNormalForceMinScale = leftNormalForceMinScale;
+        constraintStep.rightNormalForceMinScale = rightNormalForceMinScale;
+        constraintStep.leftFootYaw_W = resolvedLeftFootYaw_W;
+        constraintStep.rightFootYaw_W = resolvedRightFootYaw_W;
+        constraintStep.leftFootXAxis_W = _leftFootXAxis_W;
+        constraintStep.rightFootXAxis_W = _rightFootXAxis_W;
     }
+
 }

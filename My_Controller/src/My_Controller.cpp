@@ -150,17 +150,6 @@ const char* sideCompactName(const Side side) {
     return "?";
 }
 
-double blockNormOrZero(const DMat<double>& matrix,
-                       const Eigen::Index row,
-                       const Eigen::Index col,
-                       const Eigen::Index rows,
-                       const Eigen::Index cols) {
-    if (matrix.rows() < row + rows || matrix.cols() < col + cols) {
-        return 0.0;
-    }
-    return matrix.block(row, col, rows, cols).norm();
-}
-
 double footYawFromXAxisWorld(const Vec3<double>& footXAxis_W) {
     if (!footXAxis_W.allFinite()) {
         throw std::runtime_error("Foot x axis is non-finite");
@@ -182,16 +171,17 @@ double vectorValueOrNan(const DVec<double>& vector, const Eigen::Index index) {
 }
 
 void writeMpcFailureConstraintSummary(const GaitScheduler* gaitScheduler) {
-    if (gaitScheduler == nullptr || gaitScheduler->D.size() == 0 ||
+    if (gaitScheduler == nullptr || gaitScheduler->constraintSteps().empty() ||
         gaitScheduler->C_bound.size() == 0) {
         std::cerr << "[MPC] constraint summary unavailable" << std::endl;
         return;
     }
 
-    const Eigen::Index stepsFromD = gaitScheduler->D.rows() / 12;
     const Eigen::Index stepsFromBounds = gaitScheduler->C_bound.size() / 24;
+    const Eigen::Index stepsFromSchedule =
+        static_cast<Eigen::Index>(gaitScheduler->constraintSteps().size());
     const std::size_t stepsToPrint = static_cast<std::size_t>(
-        std::min<Eigen::Index>({stepsFromD, stepsFromBounds, horizonSteps(), 4}));
+        std::min<Eigen::Index>({stepsFromSchedule, stepsFromBounds, horizonSteps(), 4}));
     if (stepsToPrint == 0) {
         std::cerr << "[MPC] constraint summary unavailable; empty constraint matrices"
                   << std::endl;
@@ -202,16 +192,14 @@ void writeMpcFailureConstraintSummary(const GaitScheduler* gaitScheduler) {
     constraintLine << std::fixed << std::setprecision(3)
                    << "[MPC] constraints";
     for (std::size_t k = 0; k < stepsToPrint; ++k) {
-        const Eigen::Index dOffset = static_cast<Eigen::Index>(12 * k);
         const Eigen::Index cOffset = static_cast<Eigen::Index>(24 * k);
-        const bool leftForceZeroEq =
-            blockNormOrZero(gaitScheduler->D, dOffset + 0, dOffset + 0, 3, 3) > 1e-9;
-        const bool rightForceZeroEq =
-            blockNormOrZero(gaitScheduler->D, dOffset + 3, dOffset + 3, 3, 3) > 1e-9;
+        const GaitConstraintStep& step = gaitScheduler->constraintSteps()[k];
+        const bool leftForceZeroEq = !step.leftStance;
+        const bool rightForceZeroEq = !step.rightStance;
         const bool leftMomentEq =
-            blockNormOrZero(gaitScheduler->D, dOffset + 6, dOffset + 6, 3, 3) > 1e-9;
+            !step.leftStance || gaitScheduler->constrainFootRollMoment();
         const bool rightMomentEq =
-            blockNormOrZero(gaitScheduler->D, dOffset + 9, dOffset + 9, 3, 3) > 1e-9;
+            !step.rightStance || gaitScheduler->constrainFootRollMoment();
         const double leftFzMax = vectorValueOrNan(gaitScheduler->C_bound, cOffset + 4);
         const double leftFzMin = -vectorValueOrNan(gaitScheduler->C_bound, cOffset + 5);
         const double rightFzMax = vectorValueOrNan(gaitScheduler->C_bound, cOffset + 16);

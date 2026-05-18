@@ -403,6 +403,208 @@ void fillConstraintValues(const DMat<double>& C,
     }
 }
 
+double localFootConstraintTemplateValue(const int row, const int col) {
+    const auto& mpc = getControllerConfig().mpc;
+    switch (row) {
+        case 0:
+            return col == 0 ? 1.0 : (col == 2 ? -mpc.frictionCoefficient : 0.0);
+        case 1:
+            return col == 0 ? -1.0 : (col == 2 ? -mpc.frictionCoefficient : 0.0);
+        case 2:
+            return col == 1 ? 1.0 : (col == 2 ? -mpc.frictionCoefficient : 0.0);
+        case 3:
+            return col == 1 ? -1.0 : (col == 2 ? -mpc.frictionCoefficient : 0.0);
+        case 4:
+            return col == 2 ? 1.0 : 0.0;
+        case 5:
+            return col == 2 ? -1.0 : 0.0;
+        case 6:
+            return col == 2 ? -mpc.footHalfWidth : (col == 3 ? 1.0 : 0.0);
+        case 7:
+            return col == 2 ? -mpc.footHalfWidth : (col == 3 ? -1.0 : 0.0);
+        case 8:
+            return col == 2 ? -mpc.footHalfLength : (col == 4 ? 1.0 : 0.0);
+        case 9:
+            return col == 2 ? -mpc.footHalfLength : (col == 4 ? -1.0 : 0.0);
+        case 10:
+            return col == 2 ? -mpc.torsionalFrictionScale * mpc.frictionCoefficient
+                            : (col == 5 ? 1.0 : 0.0);
+        case 11:
+            return col == 2 ? -mpc.torsionalFrictionScale * mpc.frictionCoefficient
+                            : (col == 5 ? -1.0 : 0.0);
+    }
+    return 0.0;
+}
+
+double yawRotatedFootConstraintValue(const int row,
+                                     const int footLocalCol,
+                                     const double yaw_W) {
+    const double c = std::cos(yaw_W);
+    const double s = std::sin(yaw_W);
+
+    switch (footLocalCol) {
+        case 0:
+            return c * localFootConstraintTemplateValue(row, 0) -
+                   s * localFootConstraintTemplateValue(row, 1);
+        case 1:
+            return s * localFootConstraintTemplateValue(row, 0) +
+                   c * localFootConstraintTemplateValue(row, 1);
+        case 2:
+            return localFootConstraintTemplateValue(row, 2);
+        case 3:
+            return c * localFootConstraintTemplateValue(row, 3) -
+                   s * localFootConstraintTemplateValue(row, 4);
+        case 4:
+            return s * localFootConstraintTemplateValue(row, 3) +
+                   c * localFootConstraintTemplateValue(row, 4);
+        case 5:
+            return localFootConstraintTemplateValue(row, 5);
+    }
+    return 0.0;
+}
+
+int leftFootLocalColumn(const int localInputCol) {
+    switch (localInputCol) {
+        case 0:
+        case 1:
+        case 2:
+            return localInputCol;
+        case 6:
+        case 7:
+        case 8:
+            return localInputCol - 3;
+    }
+    return -1;
+}
+
+int rightFootLocalColumn(const int localInputCol) {
+    switch (localInputCol) {
+        case 3:
+        case 4:
+        case 5:
+            return localInputCol - 3;
+        case 9:
+        case 10:
+        case 11:
+            return localInputCol - 6;
+    }
+    return -1;
+}
+
+double directConstraintValue(const GaitScheduler& gaitScheduler,
+                             const Eigen::Index row,
+                             const Eigen::Index col) {
+    constexpr int kVarsPerStep = 12;
+    constexpr int kIneqPerStep = 24;
+    constexpr int kEqPerStep = 12;
+
+    const int steps = horizonSteps();
+    const Eigen::Index ineqRows = static_cast<Eigen::Index>(kIneqPerStep * steps);
+    const int k = static_cast<int>(col / kVarsPerStep);
+    const int localCol = static_cast<int>(col % kVarsPerStep);
+    const auto& constraintSteps = gaitScheduler.constraintSteps();
+    if (k < 0 || k >= static_cast<int>(constraintSteps.size())) {
+        throw std::runtime_error("directConstraintValue received invalid horizon column");
+    }
+    const GaitConstraintStep& step = constraintSteps[static_cast<std::size_t>(k)];
+
+    if (row < ineqRows) {
+        const int rowStep = static_cast<int>(row / kIneqPerStep);
+        if (rowStep != k) {
+            return 0.0;
+        }
+        const int localRow = static_cast<int>(row % kIneqPerStep);
+        if (localRow < 12) {
+            if (!step.leftStance) {
+                return 0.0;
+            }
+            const int footCol = leftFootLocalColumn(localCol);
+            return footCol >= 0
+                       ? yawRotatedFootConstraintValue(localRow, footCol, step.leftFootYaw_W)
+                       : 0.0;
+        }
+
+        if (!step.rightStance) {
+            return 0.0;
+        }
+        const int footCol = rightFootLocalColumn(localCol);
+        return footCol >= 0
+                   ? yawRotatedFootConstraintValue(localRow - 12, footCol, step.rightFootYaw_W)
+                   : 0.0;
+    }
+
+    const Eigen::Index eqRow = row - ineqRows;
+    const int rowStep = static_cast<int>(eqRow / kEqPerStep);
+    if (rowStep != k) {
+        return 0.0;
+    }
+    const int localRow = static_cast<int>(eqRow % kEqPerStep);
+    const bool constrainFootRollMoment = gaitScheduler.constrainFootRollMoment();
+
+    if (localRow >= 0 && localRow <= 2) {
+        return (!step.leftStance && localCol == localRow) ? 1.0 : 0.0;
+    }
+    if (localRow >= 3 && localRow <= 5) {
+        return (!step.rightStance && localCol == localRow) ? 1.0 : 0.0;
+    }
+    if (localRow == 6) {
+        if (!step.leftStance) {
+            return localCol == 6 ? 1.0 : 0.0;
+        }
+        if (constrainFootRollMoment && localCol >= 6 && localCol <= 8) {
+            return step.leftFootXAxis_W[localCol - 6];
+        }
+        return 0.0;
+    }
+    if (localRow == 7 || localRow == 8) {
+        return (!step.leftStance && localCol == localRow) ? 1.0 : 0.0;
+    }
+    if (localRow == 9) {
+        if (!step.rightStance) {
+            return localCol == 9 ? 1.0 : 0.0;
+        }
+        if (constrainFootRollMoment && localCol >= 9 && localCol <= 11) {
+            return step.rightFootXAxis_W[localCol - 9];
+        }
+        return 0.0;
+    }
+    if (localRow == 10 || localRow == 11) {
+        return (!step.rightStance && localCol == localRow) ? 1.0 : 0.0;
+    }
+
+    return 0.0;
+}
+
+void fillConstraintValuesDirect(const GaitScheduler& gaitScheduler,
+                                Eigen::SparseMatrix<c_float>& sparse) {
+    const auto& constraintSteps = gaitScheduler.constraintSteps();
+    if (constraintSteps.size() != static_cast<std::size_t>(horizonSteps())) {
+        throw std::runtime_error("GaitScheduler constraint step count does not match MPC horizon");
+    }
+
+    c_float* values = sparse.valuePtr();
+    Eigen::Index idx = 0;
+    for (int outer = 0; outer < sparse.outerSize(); ++outer) {
+        for (Eigen::SparseMatrix<c_float>::InnerIterator it(sparse, outer); it; ++it) {
+            values[idx++] =
+                static_cast<c_float>(directConstraintValue(gaitScheduler, it.row(), it.col()));
+        }
+    }
+
+    if (idx != sparse.nonZeros()) {
+        throw std::runtime_error("fillConstraintValuesDirect did not fill all sparse entries");
+    }
+}
+
+bool vectorAllFinite(const DVec<c_float>& vector) {
+    for (Eigen::Index i = 0; i < vector.size(); ++i) {
+        if (!std::isfinite(static_cast<double>(vector[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 const char* osqpStatusName(const OsqpEigen::Status status) {
     switch (status) {
         case OsqpEigen::Status::DualInfeasibleInaccurate:
@@ -538,9 +740,8 @@ ConvexMPCInputView ConvexMPCInputView::from(const GaitScheduler& gaitScheduler,
     input.B_qp = &formulation.B_qp;
     input.X_ref = &referenceTrajectory.X_ref;
     input.x0 = &x0;
-    input.C = &gaitScheduler.C;
+    input.gaitScheduler = &gaitScheduler;
     input.C_bound = &gaitScheduler.C_bound;
-    input.D = &gaitScheduler.D;
     input.locomotionMode = locomotionMode;
     return input;
 }
@@ -625,9 +826,8 @@ void ConvexMPC::buildQP() {
     const DMat<double>& B_qp = *_input.B_qp;
     const DVec<double>& X_ref = *_input.X_ref;
     const Vec13<double>& x0 = *_input.x0;
-    const DMat<double>& C = *_input.C;
+    const GaitScheduler& gaitScheduler = *_input.gaitScheduler;
     const DVec<double>& C_bound = *_input.C_bound;
-    const DMat<double>& D = *_input.D;
     const StateWeightMat& stateWeight = stateWeightForMode(_input.locomotionMode);
     const InputWeightMat& inputWeight = inputWeightForMode(_input.locomotionMode);
     const int steps = horizonSteps();
@@ -674,10 +874,10 @@ void ConvexMPC::buildQP() {
     }
     {
         profiling::ScopedTimer timer(_sparseConstraintTime);
-        buildConstraintMatrix(C, D);
+        buildConstraintMatrix(gaitScheduler);
     }
 
-    const std::vector<int> currentContactSignature = contactConstraintSignature(D);
+    const std::vector<int> currentContactSignature = contactConstraintSignature(gaitScheduler);
     const bool contactSignatureChanged =
         _hasContactConstraintSignature &&
         currentContactSignature != _contactConstraintSignature;
@@ -719,11 +919,22 @@ void ConvexMPC::solve() {
 
     auto solveCurrentProblem = [this](const bool useWarmStart,
                                       const char* context) -> OsqpEigen::Status {
-        if (useWarmStart && _hasPreviousSolution && !_solver.setPrimalVariable(_warmStart)) {
-            std::ostringstream oss;
-            oss << "ConvexMPC failed to set OsqpEigen warm start"
-                << " context=" << context;
-            throw std::runtime_error(oss.str());
+        if (useWarmStart && hasUsableWarmStart()) {
+            const bool shifted = getControllerConfig().mpc.useShiftedWarmStart;
+            if (shifted && !_loggedShiftedWarmStart) {
+                std::cerr << "[MPC] using shifted warm start" << std::endl;
+                _loggedShiftedWarmStart = true;
+            }
+            if (!shifted && !_loggedNormalWarmStart) {
+                std::cerr << "[MPC] using normal warm start" << std::endl;
+                _loggedNormalWarmStart = true;
+            }
+            if (!_solver.setPrimalVariable(_warmStart)) {
+                std::ostringstream oss;
+                oss << "ConvexMPC failed to set OsqpEigen warm start"
+                    << " context=" << context;
+                throw std::runtime_error(oss.str());
+            }
         }
 
         OsqpEigen::ErrorExitFlag exitFlag;
@@ -787,20 +998,18 @@ void ConvexMPC::validateInputDimensions(const ConvexMPCInputView& input) const {
     requireNonNull(input.B_qp, "B_qp");
     requireNonNull(input.X_ref, "X_ref");
     requireNonNull(input.x0, "x0");
-    requireNonNull(input.C, "C");
+    requireNonNull(input.gaitScheduler, "gaitScheduler");
     requireNonNull(input.C_bound, "C_bound");
-    requireNonNull(input.D, "D");
 
     requireShape(input.A_qp->rows(), input.A_qp->cols(), 13 * horizonSteps(), 13, "A_qp");
     requireShape(input.B_qp->rows(), input.B_qp->cols(),
                  13 * horizonSteps(), 12 * horizonSteps(), "B_qp");
     requireSize(input.X_ref->size(), 13 * horizonSteps(), "X_ref");
     requireSize(input.x0->size(), 13, "x0");
-    requireShape(input.C->rows(), input.C->cols(),
-                 24 * horizonSteps(), 12 * horizonSteps(), "C");
+    requireSize(static_cast<Eigen::Index>(input.gaitScheduler->constraintSteps().size()),
+                horizonSteps(),
+                "constraintSteps");
     requireSize(input.C_bound->size(), 24 * horizonSteps(), "C_bound");
-    requireShape(input.D->rows(), input.D->cols(),
-                 12 * horizonSteps(), 12 * horizonSteps(), "D");
 }
 
 bool ConvexMPC::initializeSolver() {
@@ -855,23 +1064,31 @@ void ConvexMPC::buildHessianMatrix(const DMat<double>& P) {
     fillUpperTriangularValues(P, _hessian);
 }
 
-void ConvexMPC::buildConstraintMatrix(const DMat<double>& C, const DMat<double>& D) {
-    fillConstraintValues(C, D, _constraintMatrix);
+void ConvexMPC::buildConstraintMatrix(const GaitScheduler& gaitScheduler) {
+    fillConstraintValuesDirect(gaitScheduler, _constraintMatrix);
 }
 
-std::vector<int> ConvexMPC::contactConstraintSignature(const DMat<double>& D) const {
+std::vector<int> ConvexMPC::contactConstraintSignature(
+    const GaitScheduler& gaitScheduler) const {
     std::vector<int> signature;
     signature.reserve(static_cast<std::size_t>(2 * horizonSteps()));
-    for (int k = 0; k < horizonSteps(); ++k) {
-        const Eigen::Index offset = static_cast<Eigen::Index>(12 * k);
-        const bool leftForceZeroEquality =
-            D.block(offset + 0, offset + 0, 3, 3).norm() > 1e-9;
-        const bool rightForceZeroEquality =
-            D.block(offset + 3, offset + 3, 3, 3).norm() > 1e-9;
-        signature.push_back(leftForceZeroEquality ? 0 : 1);
-        signature.push_back(rightForceZeroEquality ? 0 : 1);
+    const auto& constraintSteps = gaitScheduler.constraintSteps();
+    if (constraintSteps.size() != static_cast<std::size_t>(horizonSteps())) {
+        throw std::runtime_error("GaitScheduler constraint step count does not match MPC horizon");
+    }
+    for (const GaitConstraintStep& step : constraintSteps) {
+        signature.push_back(step.leftStance ? 1 : 0);
+        signature.push_back(step.rightStance ? 1 : 0);
     }
     return signature;
+}
+
+bool ConvexMPC::hasUsableWarmStart() const {
+    return _hasPreviousSolution &&
+           _solverInitialized &&
+           !_skipWarmStartForCurrentSolve &&
+           _warmStart.size() == numVars() &&
+           vectorAllFinite(_warmStart);
 }
 
 void ConvexMPC::updateWarmStart() {
@@ -879,8 +1096,15 @@ void ConvexMPC::updateWarmStart() {
         throw std::runtime_error("ConvexMPC warm start dimension mismatch");
     }
 
-    _warmStart.head(numVars() - 12) = _lastSolution.segment(12, numVars() - 12);
-    _warmStart.tail(12) = _lastSolution.tail(12);
+    if (!getControllerConfig().mpc.useShiftedWarmStart) {
+        _warmStart = _lastSolution;
+        return;
+    }
+
+    constexpr int kVarsPerStep = 12;
+    _warmStart.head(numVars() - kVarsPerStep) =
+        _lastSolution.segment(kVarsPerStep, numVars() - kVarsPerStep);
+    _warmStart.tail(kVarsPerStep) = _lastSolution.tail(kVarsPerStep);
 }
 
 void ConvexMPC::printProfilingSummary(std::ostream& out) const {

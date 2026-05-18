@@ -6,6 +6,18 @@
 #include "HorizonClock.h"
 #include "Robot/RobotParams.h"
 #include <limits>
+#include <vector>
+
+struct GaitConstraintStep {
+    bool leftStance{true};
+    bool rightStance{true};
+    double leftNormalForceMinScale{1.0};
+    double rightNormalForceMinScale{1.0};
+    double leftFootYaw_W{0.0};
+    double rightFootYaw_W{0.0};
+    Vec3<double> leftFootXAxis_W = Vec3<double>::UnitX();
+    Vec3<double> rightFootXAxis_W = Vec3<double>::UnitX();
+};
 
 class GaitScheduler {
 public:
@@ -27,6 +39,9 @@ public:
                                  double leftFootYaw_W = std::numeric_limits<double>::quiet_NaN(),
                                  double rightFootYaw_W = std::numeric_limits<double>::quiet_NaN());
 
+    const std::vector<GaitConstraintStep>& constraintSteps() const;
+    bool constrainFootRollMoment() const;
+
     DMat<double> D;
     DMat<double> C;
     DVec<double> C_bound;
@@ -38,6 +53,8 @@ private:
     LocomotionMode _locomotionMode{LocomotionMode::Walking};
     Vec3<double> _leftFootXAxis_W = Vec3<double>::UnitX();
     Vec3<double> _rightFootXAxis_W = Vec3<double>::UnitX();
+    bool _constrainFootRollMoment{false};
+    std::vector<GaitConstraintStep> _constraintSteps;
     Eigen::Matrix<double, 12, 6> C_unit;
     Vec24<double> Ck_bound;
 };

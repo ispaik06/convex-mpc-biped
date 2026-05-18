@@ -18,9 +18,8 @@ struct ConvexMPCInputView {
     const DMat<double>* B_qp{nullptr};
     const DVec<double>* X_ref{nullptr};
     const Vec13<double>* x0{nullptr};
-    const DMat<double>* C{nullptr};
+    const GaitScheduler* gaitScheduler{nullptr};
     const DVec<double>* C_bound{nullptr};
-    const DMat<double>* D{nullptr};
     LocomotionMode locomotionMode{LocomotionMode::Walking};
 
     static ConvexMPCInputView from(const GaitScheduler& gaitScheduler,
@@ -63,8 +62,9 @@ private:
     bool initializeSolver();
     bool updateSolverData();
     void buildHessianMatrix(const DMat<double>& P);
-    void buildConstraintMatrix(const DMat<double>& C, const DMat<double>& D);
-    std::vector<int> contactConstraintSignature(const DMat<double>& D) const;
+    void buildConstraintMatrix(const GaitScheduler& gaitScheduler);
+    std::vector<int> contactConstraintSignature(const GaitScheduler& gaitScheduler) const;
+    bool hasUsableWarmStart() const;
     void updateWarmStart();
     void validateInputDimensions(const ConvexMPCInputView& input) const;
     static const StateWeightMat& stateWeightForMode(LocomotionMode mode);
@@ -111,6 +111,8 @@ private:
     std::uint64_t _coldStartCount{0};
     std::uint64_t _contactSignatureChangeCount{0};
     std::uint64_t _solveRetryCount{0};
+    bool _loggedNormalWarmStart{false};
+    bool _loggedShiftedWarmStart{false};
 };
 
 #endif  // CONVEX_MPC_H

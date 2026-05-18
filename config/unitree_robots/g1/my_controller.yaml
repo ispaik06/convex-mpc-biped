@@ -20,6 +20,7 @@ mpc:
   torsional_friction_scale: 0.08
   normal_force_max: 1200.0
   normal_force_min: 5.0
+  use_shifted_warm_start: true
   iterations_between_solve: 10
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment

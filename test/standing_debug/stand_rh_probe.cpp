@@ -501,6 +501,9 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
         if (mpc.contains("normal_force_min")) {
             out.mpc.normalForceMin = mpc.at("normal_force_min").get<double>();
         }
+        if (mpc.contains("use_shifted_warm_start")) {
+            out.mpc.useShiftedWarmStart = mpc.at("use_shifted_warm_start").get<bool>();
+        }
         if (mpc.contains("iterations_between_solve")) {
             out.mpc.iterationsBetweenSolve = mpc.at("iterations_between_solve").get<int>();
         }

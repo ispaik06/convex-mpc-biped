@@ -50,6 +50,7 @@ struct MPCParameters {
     double torsionalFrictionScale{0.0657};
     double normalForceMax{200.0};
     double normalForceMin{10.0};
+    bool useShiftedWarmStart{true};
     StateWeightMat walkingStateWeight = StateWeightMat::Identity();
     InputWeightMat walkingInputWeight = InputWeightMat::Identity();
     StateWeightMat standingStateWeight = StateWeightMat::Identity();

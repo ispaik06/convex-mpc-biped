@@ -418,6 +418,7 @@ json controllerConfigJson(const ControllerConfig& config,
     mpc["torsional_friction_scale"] = config.mpc.torsionalFrictionScale;
     mpc["normal_force_max"] = config.mpc.normalForceMax;
     mpc["normal_force_min"] = config.mpc.normalForceMin;
+    mpc["use_shifted_warm_start"] = config.mpc.useShiftedWarmStart;
     mpc["iterations_between_solve"] = config.mpc.iterationsBetweenSolve;
     json walking = json::object();
     walking["contact_wrench_model"] =

@@ -236,6 +236,7 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(mpc, "torsional_friction_scale", params.mpc.torsionalFrictionScale);
     readScalarIfPresent(mpc, "normal_force_max", params.mpc.normalForceMax);
     readScalarIfPresent(mpc, "normal_force_min", params.mpc.normalForceMin);
+    readScalarIfPresent(mpc, "use_shifted_warm_start", params.mpc.useShiftedWarmStart);
     readScalarIfPresent(mpc, "iterations_between_solve", params.mpc.iterationsBetweenSolve);
     const ContactWrenchModel defaultContactWrenchModel =
         parseContactWrenchModel(mpc["contact_wrench_model"], "mpc.contact_wrench_model");
