@@ -244,9 +244,15 @@ void SimulationRunner::init() {
 void SimulationRunner::run() {
 	_keyboardCommandStartAttempted = false;
 	if (_headless) {
+		bool throttleHeadlessRealtime = false;
+		if (const char* realtimeEnv = std::getenv("CONVEXMPC_HEADLESS_REALTIME");
+		    realtimeEnv != nullptr && std::string(realtimeEnv).size() > 0) {
+			const std::string value(realtimeEnv);
+			throttleHeadlessRealtime = value != "0" && value != "false" && value != "FALSE";
+		}
 		// Intentionally runs until the user interrupts it. Headless auto-stop
 		// criteria are deferred because this target is used for manual checking.
-		runPhysicsLoop(false, false);
+		runPhysicsLoop(throttleHeadlessRealtime, false);
 	} else {
 		_stopRequested = false;
 		_mainThread.init();

@@ -1,9 +1,9 @@
 requested_locomotion_mode: walking  # requested startup mode: walking / standing / interactive
 
 timing:
-  cycle: 0.5
-  swing: 0.15
-  stance: 0.35
+  cycle: 0.7
+  swing: 0.3
+  stance: 0.4
   horizon: 0.5
   horizon_steps: 25
 
@@ -15,18 +15,18 @@ model:
 
 mpc:
   friction_coefficient: 1.0
-  foot_half_length: 0.09
-  foot_half_width: 0.04
+  foot_half_length: 0.15
+  foot_half_width: 0.35
   torsional_friction_scale: 0.08
-  normal_force_max: 1200.0
+  normal_force_max: 2000.0
   normal_force_min: 5.0
   use_shifted_warm_start: true
-  iterations_between_solve: 10
+  iterations_between_solve: 5
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   theta  psi  px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
-    state_weight_diag: [9000,  9000,  9000,   30000,  12000,  50000,      10,     10,     10,    100,   100,  900,   1 ]
-    input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
+    state_weight_diag: [900,  900,  900,   3000,  42000,  50000,      10,     10,     10,    10,   10,  90,   1 ]
+    input_weight_diag: [1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7, 1.0e-7]
     # [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
   standing:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
@@ -36,9 +36,9 @@ mpc:
     input_weight_diag: [1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]
 
 swing:
-  natural_frequency: [100.0, 100.0, 40.0]
+  natural_frequency: [100.0, 100.0, 100.0]
   kd_diag: [20.0, 20.0, 23.0]
-  height: 0.06
+  height: 0.09
   min_remaining_time: 0.001
   body_velocity_half_stance_offset: 0.0
   swing_foot_yaw_lead_scale: 1.0
@@ -49,14 +49,14 @@ swing:
   stop_velocity_deadband: 0.02
   stop_braking_latch_clear_ticks: 5
   # G1 has 6-DOF at the leg, so enable swing roll leveling with a tunable gain.
-  roll_kp: 0.0
-  roll_kd: 0.0
-  pitch_kp: 50.0
-  pitch_kd: 8.0
+  roll_kp: 200.0
+  roll_kd: 6.0
+  pitch_kp: 250.0
+  pitch_kd: 18.0
   yaw_kp: 100.0
   yaw_kd: 10.0
-  stance_yaw_kp: 0.0
-  stance_yaw_kd: 0.0
+  stance_yaw_kp: 100.0
+  stance_yaw_kd: 10.0
 
 user_command_filter:
   x_dot_tau: 0.20
@@ -70,7 +70,7 @@ user_command_filter:
 
 reference_trajectory:
   # single_support: legacy behavior, double_support: only when both feet are stance, always: integrate every step
-  yaw_integration_mode: single_support
+  yaw_integration_mode: always
 
 contact_manager:
   contact_force_on_threshold: 10.0
@@ -92,7 +92,7 @@ logging:
 
 startup:
   # If requested_locomotion_mode is walking, hold standing MPC this long after leg PD init before gait starts.
-  post_init_standing_settle_time: 2.0
+  post_init_standing_settle_time: 2.5
 
 joint_tracking:
   leg:
@@ -109,7 +109,7 @@ initial_pose:
   base_position_W: [0.0, 0.0, 0.75]
   base_rpy_W: [0.0, 0.0, 0.0]
   leg_initialization_time: 2.0
-  arm_initialization_time: 1.0
+  arm_initialization_time: 2.0
   # G1 order: [hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll]
   leg_joint_offsets: [-0.09, 0.0, 0.0, 0.42, -0.12, 0.0]
   # G1 order: [shoulder_pitch, shoulder_roll, shoulder_yaw, elbow, wrist_roll]

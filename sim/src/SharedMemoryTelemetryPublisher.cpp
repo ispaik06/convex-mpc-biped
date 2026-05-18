@@ -82,10 +82,17 @@ void SharedMemoryTelemetryPublisher::initializeSharedMemory() {
     }
 
     if (ftruncate(_fd, static_cast<off_t>(sizeof(SharedMemoryLayout))) != 0) {
-        std::cerr << "[SharedMemoryTelemetryPublisher] ftruncate failed for " << _posixName
-                  << ": " << std::strerror(errno) << std::endl;
+        const int firstErrno = errno;
         closeFd(_fd);
-        return;
+        shm_unlink(_posixName.c_str());
+        _fd = shm_open(_posixName.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
+        if (_fd < 0 ||
+            ftruncate(_fd, static_cast<off_t>(sizeof(SharedMemoryLayout))) != 0) {
+            std::cerr << "[SharedMemoryTelemetryPublisher] ftruncate failed for " << _posixName
+                      << ": " << std::strerror(firstErrno) << std::endl;
+            closeFd(_fd);
+            return;
+        }
     }
 
     void* mapped = mmap(nullptr,

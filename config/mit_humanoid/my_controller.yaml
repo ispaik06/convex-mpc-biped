@@ -67,14 +67,14 @@ swing:
   stance_yaw_kd: 4.0
 
 user_command_filter:
-  x_dot_tau: 0.90
-  y_dot_tau: 0.90
+  x_dot_tau: 0.92
+  y_dot_tau: 0.8
   psi_dot_tau: 0.70
   standing_roll_offset_tau: 0.70
   standing_pitch_offset_tau: 0.70
-  x_dot_max: 0.6
+  x_dot_max: 0.7
   y_dot_max: 0.5
-  psi_dot_max: 1.5
+  psi_dot_max: 2.0
 
 reference_trajectory:
   # single_support: legacy behavior, double_support: only when both feet are stance, always: integrate every step
@@ -131,7 +131,7 @@ initial_pose:
   leg_initialization_time: 2.0
   arm_initialization_time: 1.0
   leg_joint_offsets: [0, 0, -0.735, 1.2, -0.70]
-  arm_joint_offsets: [0.0, 0.0, 0.0, -0.65]
+  arm_joint_offsets: [0.0, 0.0, 0.0, -1.65]
 
 gait_swing_hold_test:
   xml_path: models/mit_humanoid/scene_test.xml

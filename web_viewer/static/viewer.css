@@ -1,0 +1,63 @@
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #111318;
+}
+
+#viewer {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#toolbar {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgb(12 14 18 / 72%);
+  backdrop-filter: blur(8px);
+}
+
+.toggle {
+  min-width: 78px;
+  height: 30px;
+  border: 1px solid rgb(232 237 244 / 22%);
+  border-radius: 4px;
+  background: rgb(232 237 244 / 8%);
+  color: #dce3eb;
+  font: 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: rgb(232 237 244 / 14%);
+}
+
+.toggle.active {
+  border-color: rgb(120 190 255 / 80%);
+  background: rgb(66 145 220 / 34%);
+  color: #ffffff;
+}
+
+#status {
+  position: fixed;
+  left: 12px;
+  bottom: 10px;
+  max-width: min(560px, calc(100vw - 24px));
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgb(12 14 18 / 70%);
+  color: #e8edf4;
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

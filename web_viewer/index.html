@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ConvexMPC MuJoCo Viewer</title>
+    <link rel="stylesheet" href="/static/viewer.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js",
+          "three/addons/": "/node_modules/three/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="viewer"></canvas>
+    <div id="toolbar" aria-label="Viewer controls">
+      <button id="toggle-visual" class="toggle active" type="button" aria-pressed="true" title="Toggle visual geoms">Visual</button>
+      <button id="toggle-collision" class="toggle" type="button" aria-pressed="false" title="Toggle collision geoms">Collision</button>
+    </div>
+    <div id="status" aria-live="polite">loading</div>
+    <script type="module" src="/static/viewer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "convexmpc-web-viewer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Fullscreen MuJoCo WASM qpos viewer for ConvexMPC",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 app.py --host 127.0.0.1 --port 8010"
+  },
+  "dependencies": {
+    "mujoco-js": "^0.0.7",
+    "three": "^0.181.0"
+  }
+}
