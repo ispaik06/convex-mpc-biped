@@ -425,6 +425,8 @@ void MyController::initializeRuntimeObjects() {
         config.requestedLocomotionMode,
         config.startup.postInitStandingSettleTime,
         config.transition.brakingSettleSpeedThreshold,
+        config.transition.brakingSettleYawRateThreshold,
+        config.transition.brakingSettleAverageWindow,
         config.transition.brakingSettleHoldTicks,
         config.transition.brakingTimeoutSeconds,
         config.transition.brakingTouchdownCount,
@@ -588,10 +590,15 @@ LocomotionFSMOutput MyController::syncLocomotionFSM() {
         }
     }
 
-    const double planarComSpeed =
-        reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams).head<2>().norm();
+    const Mat3<double> R_TW = _stateEstimate->torsoQuat_W.toRotationMatrix().transpose();
+    const Vec3<double> comVelocityBody =
+        R_TW * reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams);
+    const Vec3<double> omegaBody = R_TW * _stateEstimate->torsoAngVel_W;
     const LocomotionFSMOutput output =
-        _locomotionFSM->update(_stateEstimate->time, planarComSpeed);
+        _locomotionFSM->update(_stateEstimate->time,
+                               comVelocityBody.x(),
+                               comVelocityBody.y(),
+                               omegaBody.z());
     applyLocomotionOutput(output);
     return output;
 }
@@ -601,14 +608,13 @@ UserCommand MyController::dashboardUserCommand() const {
 }
 
 void MyController::updateFilteredUserCommand(const double dt) {
-    if (_zeroMotionCommand) {
-        _filteredUserCommand = UserCommand{};
-        _filteredUserCommandInitialized = true;
-        return;
-    }
-
-    const UserCommand rawCommand =
+    UserCommand rawCommand =
         clampUserCommand((_userCommand != nullptr) ? *_userCommand : UserCommand{});
+    if (_zeroMotionCommand) {
+        rawCommand.x_dot = 0.0;
+        rawCommand.y_dot = 0.0;
+        rawCommand.psi_dot = 0.0;
+    }
     if (!_filteredUserCommandInitialized) {
         _filteredUserCommand = rawCommand;
         _filteredUserCommandInitialized = true;

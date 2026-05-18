@@ -20,13 +20,14 @@ mpc:
   torsional_friction_scale: 0.0657
   normal_force_max: 1500.0
   normal_force_min: 5.0 # Could this cause MPC solve issues? Should this be 0 N instead?
-  iterations_between_solve: 10
+  iterations_between_solve: 7
   walking:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     #                    roll   pitch  yaw    px     py     pz      omega_x  omega_y  omega_z  vx     vy     vz    g
     state_weight_diag: [50000,  8000,  500,   200000,  1009300,  100900,     10,     10,     10,     500,    70,    10,   1 ]
     #                    Fx_L    Fy_L    Fz_L    Fx_R    Fy_R    Fz_R    Mx_L    My_L    Mz_L    Mx_R    My_R    Mz_R
-    input_weight_diag: [1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5, 1.0e-5]
+    input_weight_diag: [1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3]
+    # [1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3]
   standing:
     contact_wrench_model: full_wrench  # full_wrench or no_roll_moment
     # Keep the same baseline for now; tune this separately from walking later.
@@ -70,9 +71,9 @@ user_command_filter:
   psi_dot_tau: 0.70
   standing_roll_offset_tau: 0.70
   standing_pitch_offset_tau: 0.70
-  x_dot_max: 0.55
-  y_dot_max: 0.3
-  psi_dot_max: 0.9
+  x_dot_max: 0.6
+  y_dot_max: 0.5
+  psi_dot_max: 1.5
 
 reference_trajectory:
   # single_support: legacy behavior, double_support: only when both feet are stance, always: integrate every step
@@ -102,9 +103,12 @@ startup:
 
 locomotion_transition:
   # In interactive mode, walking -> standing first zeroes the motion command.
-  # Stay in the low-speed settle phase until the body has been slow for this many ticks,
-  # then wait for either this timeout or this many touchdown events.
-  braking_settle_speed_threshold: 0.05
+  # Stay in the low-motion settle phase until moving-average body speed and yaw rate
+  # have been slow for this many ticks, then wait for either this timeout or this many
+  # touchdown events.
+  braking_settle_speed_threshold: 0.01
+  braking_settle_yaw_rate_threshold: 0.01
+  braking_settle_average_window: 1.0
   braking_settle_hold_ticks: 3
   braking_timeout_seconds: 3.0
   braking_touchdown_count: 5

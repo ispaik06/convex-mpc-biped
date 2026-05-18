@@ -523,6 +523,10 @@ json controllerConfigJson(const ControllerConfig& config,
     json transition = json::object();
     transition["braking_settle_speed_threshold"] =
         config.transition.brakingSettleSpeedThreshold;
+    transition["braking_settle_yaw_rate_threshold"] =
+        config.transition.brakingSettleYawRateThreshold;
+    transition["braking_settle_average_window"] =
+        config.transition.brakingSettleAverageWindow;
     transition["braking_settle_hold_ticks"] = config.transition.brakingSettleHoldTicks;
     transition["braking_timeout_seconds"] = config.transition.brakingTimeoutSeconds;
     transition["braking_touchdown_count"] = config.transition.brakingTouchdownCount;

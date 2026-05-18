@@ -729,6 +729,16 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.transition.brakingSettleSpeedThreshold =
                 transition.at("braking_settle_speed_threshold").get<double>();
         }
+        if (transition.contains("braking_settle_yaw_rate_threshold") &&
+            transition.at("braking_settle_yaw_rate_threshold").is_number()) {
+            out.transition.brakingSettleYawRateThreshold =
+                transition.at("braking_settle_yaw_rate_threshold").get<double>();
+        }
+        if (transition.contains("braking_settle_average_window") &&
+            transition.at("braking_settle_average_window").is_number()) {
+            out.transition.brakingSettleAverageWindow =
+                transition.at("braking_settle_average_window").get<double>();
+        }
         if (transition.contains("braking_settle_hold_ticks") &&
             transition.at("braking_settle_hold_ticks").is_number_integer()) {
             out.transition.brakingSettleHoldTicks =

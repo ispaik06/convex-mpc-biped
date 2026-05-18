@@ -391,6 +391,12 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                         "braking_settle_speed_threshold",
                         params.transition.brakingSettleSpeedThreshold);
     readScalarIfPresent(transition,
+                        "braking_settle_yaw_rate_threshold",
+                        params.transition.brakingSettleYawRateThreshold);
+    readScalarIfPresent(transition,
+                        "braking_settle_average_window",
+                        params.transition.brakingSettleAverageWindow);
+    readScalarIfPresent(transition,
                         "braking_settle_hold_ticks",
                         params.transition.brakingSettleHoldTicks);
     readScalarIfPresent(transition,
@@ -435,6 +441,16 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.transition.brakingSettleSpeedThreshold < 0.0) {
         throw std::runtime_error(
             "locomotion_transition.braking_settle_speed_threshold must be finite and non-negative");
+    }
+    if (!std::isfinite(params.transition.brakingSettleYawRateThreshold) ||
+        params.transition.brakingSettleYawRateThreshold < 0.0) {
+        throw std::runtime_error(
+            "locomotion_transition.braking_settle_yaw_rate_threshold must be finite and non-negative");
+    }
+    if (!std::isfinite(params.transition.brakingSettleAverageWindow) ||
+        params.transition.brakingSettleAverageWindow < 0.0) {
+        throw std::runtime_error(
+            "locomotion_transition.braking_settle_average_window must be finite and non-negative");
     }
     if (params.transition.brakingSettleHoldTicks < 0) {
         throw std::runtime_error(

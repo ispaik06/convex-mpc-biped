@@ -126,6 +126,8 @@ struct StartupParameters {
 
 struct TransitionParameters {
     double brakingSettleSpeedThreshold{0.05};
+    double brakingSettleYawRateThreshold{0.15};
+    double brakingSettleAverageWindow{0.5};
     int brakingSettleHoldTicks{3};
     double brakingTimeoutSeconds{2.0};
     int brakingTouchdownCount{2};

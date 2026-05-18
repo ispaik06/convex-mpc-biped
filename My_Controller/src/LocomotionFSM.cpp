@@ -2,9 +2,36 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <stdexcept>
 
 namespace {
+const char* stateName(const LocomotionState state) {
+    switch (state) {
+        case LocomotionState::StandingSettle:
+            return "standing_settle";
+        case LocomotionState::Standing:
+            return "standing";
+        case LocomotionState::Walking:
+            return "walking";
+        case LocomotionState::BrakingToStanding:
+            return "braking_to_standing";
+    }
+    return "unknown";
+}
+
+const char* modeName(const LocomotionMode mode) {
+    switch (mode) {
+        case LocomotionMode::Walking:
+            return "walking";
+        case LocomotionMode::Standing:
+            return "standing";
+        case LocomotionMode::Interactive:
+            return "interactive";
+    }
+    return "unknown";
+}
+
 LocomotionState stateFromMode(const LocomotionMode mode) {
     switch (mode) {
         case LocomotionMode::Walking:
@@ -21,6 +48,8 @@ LocomotionState stateFromMode(const LocomotionMode mode) {
 LocomotionFSM::LocomotionFSM(const LocomotionMode requestedMode,
                              const double postInitStandingSettleTime,
                              const double brakingSettleSpeedThreshold,
+                             const double brakingSettleYawRateThreshold,
+                             const double brakingSettleAverageWindow,
                              const int brakingSettleHoldTicks,
                              const double brakingTimeoutSeconds,
                              const int brakingTouchdownCount,
@@ -30,6 +59,8 @@ LocomotionFSM::LocomotionFSM(const LocomotionMode requestedMode,
                                                            : LocomotionMode::Standing),
       _postInitStandingSettleTime(std::max(0.0, postInitStandingSettleTime)),
       _brakingSettleSpeedThreshold(std::max(0.0, brakingSettleSpeedThreshold)),
+      _brakingSettleYawRateThreshold(std::max(0.0, brakingSettleYawRateThreshold)),
+      _brakingSettleAverageWindow(std::max(0.0, brakingSettleAverageWindow)),
       _brakingSettleHoldTicksThreshold(
           static_cast<std::size_t>(std::max(0, brakingSettleHoldTicks))),
       _brakingTimeoutSeconds(std::max(0.0, brakingTimeoutSeconds)),
@@ -84,21 +115,36 @@ void LocomotionFSM::transitionTo(const LocomotionState nextState, const double t
         _brakingSettleTicks = 0;
         _brakingReady = false;
         _brakingReadyStartTime = time;
+        _brakingSettleStartTime = time;
         _brakingTouchdownCount = 0;
+        resetBrakingSettleAverage();
     } else {
         _brakingSettleTicks = 0;
         _brakingReady = false;
         _brakingTouchdownCount = 0;
+        resetBrakingSettleAverage();
     }
 }
 
-void LocomotionFSM::requestToggle() {
+bool LocomotionFSM::requestToggle() {
     if (!isInteractive()) {
-        return;
+        return false;
+    }
+
+    const LocomotionMode currentMode = modeForState(_state);
+    if (_state == LocomotionState::StandingSettle ||
+        _state == LocomotionState::BrakingToStanding ||
+        _targetMode != currentMode) {
+        std::cout << "[LocomotionFSM] toggle ignored: transition in progress"
+                  << " state=" << stateName(_state)
+                  << " target=" << modeName(_targetMode)
+                  << std::endl;
+        return false;
     }
 
     _targetMode = (_targetMode == LocomotionMode::Walking) ? LocomotionMode::Standing
                                                             : LocomotionMode::Walking;
+    return true;
 }
 
 void LocomotionFSM::registerBrakingTouchdown() {
@@ -107,12 +153,77 @@ void LocomotionFSM::registerBrakingTouchdown() {
     }
 }
 
-LocomotionFSMOutput LocomotionFSM::update(const double time, const double planarBodySpeed) {
+void LocomotionFSM::resetBrakingSettleAverage() {
+    _brakingSettleSamples.clear();
+    _brakingLastSettleLogTime = -1.0;
+}
+
+bool LocomotionFSM::brakingSettleAveragesReady(const double time,
+                                               const double comVelocityX,
+                                               const double comVelocityY,
+                                               const double yawRate) {
+    _brakingSettleSamples.push_back({time, comVelocityX, comVelocityY, yawRate});
+    const double windowStart = time - _brakingSettleAverageWindow;
+    while (_brakingSettleSamples.size() > 1 &&
+           _brakingSettleSamples.front().time < windowStart) {
+        _brakingSettleSamples.pop_front();
+    }
+    const double averagingElapsed = time - _brakingSettleStartTime;
+    if (_brakingSettleAverageWindow > 0.0 &&
+        averagingElapsed + 1e-9 < _brakingSettleAverageWindow) {
+        if (_brakingLastSettleLogTime < 0.0 ||
+            time - _brakingLastSettleLogTime >= 0.5) {
+            _brakingLastSettleLogTime = time;
+            std::cout << "[LocomotionFSM] braking settle averaging"
+                      << " elapsed=" << averagingElapsed
+                      << " window=" << _brakingSettleAverageWindow
+                      << std::endl;
+        }
+        return false;
+    }
+
+    double comVelocityXSum = 0.0;
+    double comVelocityYSum = 0.0;
+    double yawRateSum = 0.0;
+    for (const auto& sample : _brakingSettleSamples) {
+        comVelocityXSum += sample.comVelocityX;
+        comVelocityYSum += sample.comVelocityY;
+        yawRateSum += sample.yawRate;
+    }
+
+    const double sampleCount = static_cast<double>(_brakingSettleSamples.size());
+    const double comVelocityXMean = comVelocityXSum / sampleCount;
+    const double comVelocityYMean = comVelocityYSum / sampleCount;
+    const double yawRateMean = yawRateSum / sampleCount;
+    const bool ready = std::abs(comVelocityXMean) <= _brakingSettleSpeedThreshold &&
+                       std::abs(comVelocityYMean) <= _brakingSettleSpeedThreshold &&
+                       std::abs(yawRateMean) <= _brakingSettleYawRateThreshold;
+    if (!ready &&
+        (_brakingLastSettleLogTime < 0.0 || time - _brakingLastSettleLogTime >= 0.5)) {
+        _brakingLastSettleLogTime = time;
+        std::cout << "[LocomotionFSM] braking settle waiting"
+                  << " mean_vx=" << comVelocityXMean
+                  << " mean_vy=" << comVelocityYMean
+                  << " mean_wz=" << yawRateMean
+                  << " thresholds(v=" << _brakingSettleSpeedThreshold
+                  << ",wz=" << _brakingSettleYawRateThreshold << ")"
+                  << std::endl;
+    }
+    return ready;
+}
+
+LocomotionFSMOutput LocomotionFSM::update(const double time,
+                                          const double comVelocityX,
+                                          const double comVelocityY,
+                                          const double yawRate) {
     if (!std::isfinite(time)) {
         throw std::runtime_error("LocomotionFSM::update received non-finite time");
     }
-    if (!std::isfinite(planarBodySpeed) || planarBodySpeed < 0.0) {
-        throw std::runtime_error("LocomotionFSM::update received invalid planar body speed");
+    if (!std::isfinite(comVelocityX) || !std::isfinite(comVelocityY)) {
+        throw std::runtime_error("LocomotionFSM::update received invalid COM velocity");
+    }
+    if (!std::isfinite(yawRate)) {
+        throw std::runtime_error("LocomotionFSM::update received invalid yaw rate");
     }
 
     bool justTransitioned = false;
@@ -133,7 +244,10 @@ LocomotionFSMOutput LocomotionFSM::update(const double time, const double planar
             justTransitioned = true;
         } else if (_state == LocomotionState::BrakingToStanding) {
             if (!_brakingReady) {
-                if (planarBodySpeed <= _brakingSettleSpeedThreshold) {
+                if (brakingSettleAveragesReady(time,
+                                               comVelocityX,
+                                               comVelocityY,
+                                               yawRate)) {
                     ++_brakingSettleTicks;
                     if (_brakingSettleTicks >= _brakingSettleHoldTicksThreshold) {
                         _brakingReady = true;
