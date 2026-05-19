@@ -402,6 +402,44 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent);
     }
+    .main-panel.movable .panel-head {
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .main-panel.dragging .panel-head {
+      cursor: grabbing;
+    }
+    .panel-drag-handle {
+      position: relative;
+      align-self: stretch;
+      width: 24px;
+      margin: 0 2px 0 -2px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: rgba(237, 244, 251, 0.34);
+      cursor: grab;
+    }
+    .panel-drag-handle::before {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      width: 8px;
+      height: 18px;
+      transform: translateY(-50%);
+      border-left: 2px solid currentColor;
+      border-right: 2px solid currentColor;
+      border-radius: 2px;
+    }
+    .panel-drag-handle:hover {
+      color: rgba(237, 244, 251, 0.72);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .main-panel.dragging .panel-drag-handle {
+      cursor: grabbing;
+    }
     .panel-head-left,
     .panel-head-right {
       min-width: 0;
@@ -547,17 +585,58 @@
     }
     .main-stack {
       display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 6px;
       margin-bottom: 4px;
+      align-items: start;
     }
     .main-panel {
+      position: relative;
       display: block;
+      grid-column: span var(--main-span, 12);
+      transition:
+        grid-column 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        box-shadow 180ms ease,
+        border-color 180ms ease;
+      will-change: transform;
+    }
+    .main-panel[data-main-index="0"] {
+      grid-column: 1 / -1;
+    }
+    .main-panel.dragging,
+    .main-panel.resizing {
+      z-index: 5;
+      border-color: rgba(125, 211, 252, 0.36);
+      box-shadow:
+        0 0 0 1px rgba(125, 211, 252, 0.10) inset,
+        0 28px 70px rgba(0, 0, 0, 0.42);
     }
     .main-chart-layout {
       display: block;
     }
     .main-chart {
-      height: 300px;
+      height: var(--main-height, 300px);
+      transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .panel-resize-handle {
+      position: absolute;
+      right: 7px;
+      bottom: 7px;
+      width: 18px;
+      height: 18px;
+      border: 0;
+      border-radius: 6px;
+      background:
+        linear-gradient(135deg, transparent 0 45%, rgba(237, 244, 251, 0.22) 46% 54%, transparent 55%),
+        linear-gradient(135deg, transparent 0 62%, rgba(237, 244, 251, 0.34) 63% 71%, transparent 72%);
+      cursor: nwse-resize;
+      opacity: 0.72;
+      touch-action: none;
+    }
+    .panel-resize-handle:hover {
+      opacity: 1;
+      background-color: rgba(125, 211, 252, 0.10);
     }
     .main-chart canvas,
     .chart-plot canvas {
@@ -704,6 +783,12 @@
       }
       .main-chart {
         height: 270px;
+      }
+      .main-stack {
+        grid-template-columns: 1fr;
+      }
+      .main-panel {
+        grid-column: 1 / -1;
       }
       .top-telemetry {
         grid-template-columns: 1fr;

@@ -20,6 +20,7 @@
     const WINDOW_OPTIONS = DASHBOARD_CONFIG.windowOptions || [5, 10, 20, 30];
     const MAX_MAIN_PANELS = DASHBOARD_CONFIG.maxMainPanels ?? 3;
     const MIN_MAIN_PANELS = DASHBOARD_CONFIG.minMainPanels ?? 1;
+    const MAIN_LAYOUT_STORAGE_KEY = "convexmpc.mainPanelLayout.v1";
     const MAIN_PANEL_MODES = {
       raw: "Raw",
       mean: "Mean",
@@ -41,6 +42,7 @@
       angleUnit: "deg",
       mainLabels: [CHART_CONFIGS[0]?.label ?? "roll"],
       mainPanelStates: [{ mode: "raw", movingAverageSeconds: DEFAULT_MAIN_MA_SECONDS }],
+      mainLayouts: [],
       latestSnapshot: null,
       lastSequence: null,
       controllerLastSequence: null,
@@ -248,6 +250,81 @@
       return { mode, movingAverageSeconds };
     }
 
+    function defaultMainLayout(index) {
+      return {
+        span: 12,
+        height: 300,
+        order: index,
+      };
+    }
+
+    function normalizeMainLayout(layout, index) {
+      const base = defaultMainLayout(index);
+      if (index === 0) {
+        return base;
+      }
+      return {
+        span: Math.round(clamp(Number.isFinite(layout?.span) ? layout.span : base.span, 4, 12)),
+        height: Math.round(clamp(Number.isFinite(layout?.height) ? layout.height : base.height, 220, 620)),
+        order: Math.round(clamp(Number.isFinite(layout?.order) ? layout.order : base.order, 1, MAX_MAIN_PANELS - 1)),
+      };
+    }
+
+    function loadMainLayouts() {
+      let saved = [];
+      try {
+        saved = JSON.parse(window.localStorage.getItem(MAIN_LAYOUT_STORAGE_KEY) || "[]");
+      } catch {
+        saved = [];
+      }
+      appState.mainLayouts = Array.from({ length: MAX_MAIN_PANELS }, (_, index) =>
+        normalizeMainLayout(saved[index], index)
+      );
+    }
+
+    function saveMainLayouts() {
+      try {
+        window.localStorage.setItem(MAIN_LAYOUT_STORAGE_KEY, JSON.stringify(appState.mainLayouts));
+      } catch {
+        // Layout persistence is best-effort only.
+      }
+    }
+
+    function getMainLayout(index) {
+      if (!appState.mainLayouts[index]) {
+        appState.mainLayouts[index] = defaultMainLayout(index);
+      }
+      const normalized = normalizeMainLayout(appState.mainLayouts[index], index);
+      appState.mainLayouts[index] = normalized;
+      return normalized;
+    }
+
+    function setMainLayout(index, patch, { persist = true } = {}) {
+      if (index <= 0) {
+        return;
+      }
+      appState.mainLayouts[index] = normalizeMainLayout({ ...getMainLayout(index), ...patch }, index);
+      applyMainPanelLayouts();
+      if (persist) {
+        saveMainLayouts();
+      }
+    }
+
+    function applyMainPanelLayouts() {
+      appState.mainRuntime.forEach((entry, index) => {
+        if (!entry?.panel) {
+          return;
+        }
+        const layout = getMainLayout(index);
+        const visible = index < appState.mainLabels.length;
+        entry.panel.classList.toggle("movable", index > 0);
+        entry.panel.style.setProperty("--main-span", String(layout.span));
+        entry.panel.style.setProperty("--main-height", `${layout.height}px`);
+        entry.panel.style.order = String(layout.order);
+        entry.panel.style.display = visible ? "" : "none";
+      });
+    }
+
     function getMainPanelState(index) {
       const existing = appState.mainPanelStates[index];
       if (existing) {
@@ -354,9 +431,15 @@
       while (appState.mainPanelStates.length < clamped) {
         appState.mainPanelStates.push(normalizeMainPanelState());
       }
+      if (clamped >= 3) {
+        setMainLayout(1, { span: 6, order: 1 }, { persist: false });
+        setMainLayout(2, { span: 6, order: 2 }, { persist: false });
+        saveMainLayouts();
+      }
       syncPrimaryMainLabel();
       ensureMainLabelsVisible();
       updateButtonStates();
+      applyMainPanelLayouts();
       render();
     }
 
@@ -492,11 +575,131 @@
       });
     }
 
+    function startMainPanelDrag(event, index) {
+      if (index <= 0 || event.button !== 0) {
+        return;
+      }
+      const interactive = event.target.closest("button, .segment, .ma-stepper, .main-nav-buttons");
+      const handle = event.target.closest("[data-action='drag-panel']");
+      if (interactive && !handle) {
+        return;
+      }
+
+      const entry = appState.mainRuntime[index];
+      const panel = entry?.panel;
+      const container = document.getElementById("main-panels");
+      if (!panel || !container) {
+        return;
+      }
+
+      event.preventDefault();
+      panel.setPointerCapture?.(event.pointerId);
+      panel.classList.add("dragging");
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let lastX = startX;
+      let lastY = startY;
+
+      const onMove = (moveEvent) => {
+        lastX = moveEvent.clientX;
+        lastY = moveEvent.clientY;
+        const dx = clamp(lastX - startX, -140, 140);
+        const dy = clamp(lastY - startY, -70, 70);
+        panel.style.transform = `translate(${dx}px, ${dy}px) scale(1.012)`;
+      };
+
+      const onUp = () => {
+        panel.releasePointerCapture?.(event.pointerId);
+        panel.classList.remove("dragging");
+        panel.style.transform = "";
+        panel.removeEventListener("pointermove", onMove);
+        panel.removeEventListener("pointerup", onUp);
+        panel.removeEventListener("pointercancel", onUp);
+
+        if (appState.mainLabels.length >= 3) {
+          const otherIndex = index === 1 ? 2 : 1;
+          const centerX = container.getBoundingClientRect().left + container.getBoundingClientRect().width / 2;
+          const draggedLeft = lastX < centerX;
+          setMainLayout(index, { order: draggedLeft ? 1 : 2 }, { persist: false });
+          setMainLayout(otherIndex, { order: draggedLeft ? 2 : 1 }, { persist: false });
+          saveMainLayouts();
+          window.requestAnimationFrame(render);
+        }
+      };
+
+      panel.addEventListener("pointermove", onMove);
+      panel.addEventListener("pointerup", onUp);
+      panel.addEventListener("pointercancel", onUp);
+    }
+
+    function startMainPanelResize(event, index) {
+      if (index <= 0 || event.button !== 0) {
+        return;
+      }
+      const entry = appState.mainRuntime[index];
+      const panel = entry?.panel;
+      const container = document.getElementById("main-panels");
+      if (!panel || !container) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const handle = event.currentTarget;
+      handle.setPointerCapture?.(event.pointerId);
+      panel.classList.add("resizing");
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startLayout = getMainLayout(index);
+      const columnWidth = Math.max(32, container.getBoundingClientRect().width / 12);
+      let frameRequested = false;
+
+      const applyResize = (moveEvent, persist = false) => {
+        const dx = moveEvent.clientX - startX;
+        const dy = moveEvent.clientY - startY;
+        const paired = appState.mainLabels.length >= 3;
+        const span = clamp(Math.round(startLayout.span + dx / columnWidth), 4, paired ? 8 : 12);
+        const height = clamp(startLayout.height + dy, 220, 620);
+        setMainLayout(index, { span, height }, { persist });
+        if (paired) {
+          const otherIndex = index === 1 ? 2 : 1;
+          setMainLayout(otherIndex, { span: 12 - span }, { persist });
+        }
+      };
+
+      const onMove = (moveEvent) => {
+        if (frameRequested) {
+          return;
+        }
+        frameRequested = true;
+        window.requestAnimationFrame(() => {
+          frameRequested = false;
+          applyResize(moveEvent);
+          render();
+        });
+      };
+
+      const onUp = (upEvent) => {
+        handle.releasePointerCapture?.(event.pointerId);
+        panel.classList.remove("resizing");
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        applyResize(upEvent, true);
+        render();
+      };
+
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    }
+
     function buildMainPanels() {
       const container = document.getElementById("main-panels");
       container.innerHTML = Array.from({ length: MAX_MAIN_PANELS }, (_, index) => `
         <article class="panel main-panel" data-main-index="${index}">
           <div class="panel-head">
+            ${index > 0 ? '<button type="button" class="panel-drag-handle" data-action="drag-panel" aria-label="move main panel"></button>' : ''}
             <div class="panel-head-left">
               <div class="panel-kicker" data-role="main-kicker">Main ${index + 1}</div>
               <h2 class="panel-title" data-role="main-title">--</h2>
@@ -536,6 +739,7 @@
               </div>
             </div>
           </div>
+          ${index > 0 ? '<button type="button" class="panel-resize-handle" data-action="resize-panel" aria-label="resize main panel"></button>' : ''}
         </article>
       `).join("");
 
@@ -550,6 +754,14 @@
         const modeButtons = Array.from(panel.querySelectorAll("[data-role='main-mode-segment'] button"));
         const maControl = panel.querySelector("[data-role='main-ma-control']");
         const maValueNode = panel.querySelector("[data-role='main-ma-value']");
+        const panelHead = panel.querySelector(".panel-head");
+        const resizeHandle = panel.querySelector("[data-action='resize-panel']");
+        if (panelHead) {
+          panelHead.addEventListener("pointerdown", (event) => startMainPanelDrag(event, index));
+        }
+        if (resizeHandle) {
+          resizeHandle.addEventListener("pointerdown", (event) => startMainPanelResize(event, index));
+        }
         panel.querySelector("[data-action='prev']").addEventListener("click", () => stepMainPanel(index, -1));
         panel.querySelector("[data-action='next']").addEventListener("click", () => stepMainPanel(index, 1));
         modeButtons.forEach((button) => {
@@ -1407,6 +1619,7 @@
     }
 
     function renderCharts() {
+      applyMainPanelLayouts();
       const visibleConfigs = visibleChartsForView();
       const visibleLabels = new Set(visibleConfigs.map((config) => config.label));
       const historyWindow = appState.history.filter((sample) => sample.t >= (appState.history.length > 0 ? appState.history[appState.history.length - 1].t - appState.windowSeconds : 0));
@@ -1563,6 +1776,8 @@
     }
 
     buildMainPanels();
+    loadMainLayouts();
+    applyMainPanelLayouts();
     buildChartCards();
     bindControls();
     updateButtonStates();
