@@ -15,10 +15,13 @@ const canvas = document.getElementById("viewer");
 const statusEl = document.getElementById("viewer-status") || document.getElementById("status");
 const visualButton = document.getElementById("toggle-visual");
 const collisionButton = document.getElementById("toggle-collision");
+const cameraFreeButton = document.getElementById("camera-free");
+const cameraRobotButton = document.getElementById("camera-robot");
 const params = new URLSearchParams(window.location.search);
 const viewerState = {
   showVisual: params.get("visual") !== "0",
   showCollision: params.get("collision") === "1",
+  cameraMode: params.get("camera") === "robot" ? "robot" : "free",
 };
 const showDebug = params.get("debug") === "1";
 
@@ -43,6 +46,7 @@ controls.target.set(0, 0, 0.58);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.screenSpacePanning = false;
+controls.enablePan = viewerState.cameraMode === "free";
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0x303040, 1.8));
 const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
@@ -453,6 +457,54 @@ function updateGeomTransforms() {
   }
 }
 
+function robotCameraTarget() {
+  if (!data || !model) {
+    return null;
+  }
+
+  const bodyId = model.nbody > 1 ? 1 : 0;
+  const bodyBase = 3 * bodyId;
+  const target = new THREE.Vector3(
+    value(data.xpos, bodyBase + 0, Number.NaN),
+    value(data.xpos, bodyBase + 1, Number.NaN),
+    value(data.xpos, bodyBase + 2, Number.NaN),
+  );
+  if (Number.isFinite(target.x) && Number.isFinite(target.y) && Number.isFinite(target.z)) {
+    return target;
+  }
+
+  const qposTarget = new THREE.Vector3(
+    value(data.qpos, 0, Number.NaN),
+    value(data.qpos, 1, Number.NaN),
+    value(data.qpos, 2, Number.NaN),
+  );
+  return Number.isFinite(qposTarget.x) && Number.isFinite(qposTarget.y) && Number.isFinite(qposTarget.z)
+    ? qposTarget
+    : null;
+}
+
+function moveCameraTarget(target) {
+  const delta = target.clone().sub(controls.target);
+  if (delta.lengthSq() < 1e-12) {
+    controls.target.copy(target);
+    return;
+  }
+  camera.position.add(delta);
+  controls.target.copy(target);
+}
+
+function updateRobotCamera() {
+  if (viewerState.cameraMode !== "robot") {
+    return;
+  }
+
+  const target = robotCameraTarget();
+  if (!target) {
+    return;
+  }
+  moveCameraTarget(target);
+}
+
 function connectQposStream() {
   const events = new EventSource("/events/qpos");
   events.onmessage = (event) => {
@@ -486,6 +538,17 @@ function updateToggleButtons() {
   visualButton.setAttribute("aria-pressed", String(viewerState.showVisual));
   collisionButton.classList.toggle("active", viewerState.showCollision);
   collisionButton.setAttribute("aria-pressed", String(viewerState.showCollision));
+  cameraFreeButton.classList.toggle("active", viewerState.cameraMode === "free");
+  cameraFreeButton.setAttribute("aria-pressed", String(viewerState.cameraMode === "free"));
+  cameraRobotButton.classList.toggle("active", viewerState.cameraMode === "robot");
+  cameraRobotButton.setAttribute("aria-pressed", String(viewerState.cameraMode === "robot"));
+}
+
+function setCameraMode(mode) {
+  viewerState.cameraMode = mode === "robot" ? "robot" : "free";
+  controls.enablePan = viewerState.cameraMode === "free";
+  updateRobotCamera();
+  updateToggleButtons();
 }
 
 visualButton.addEventListener("click", () => {
@@ -499,6 +562,16 @@ collisionButton.addEventListener("click", () => {
   buildScene();
   updateGeomTransforms();
 });
+
+cameraFreeButton.addEventListener("click", () => {
+  setCameraMode("free");
+});
+
+cameraRobotButton.addEventListener("click", () => {
+  setCameraMode("robot");
+});
+
+updateToggleButtons();
 
 function animate(now) {
   requestAnimationFrame(animate);
@@ -515,13 +588,14 @@ function animate(now) {
     processedSequence = latestSequence;
   }
 
+  updateRobotCamera();
   controls.update();
   renderer.render(scene, camera);
 
   if (latestInfo?.ok) {
     const simTime = Number.isFinite(latestInfo.sim_time) ? latestInfo.sim_time.toFixed(3) : "--";
     setStatus(
-      `${latestInfo.robot_name || "MIT Humanoid"} | sim ${simTime}s | fps ${fps}`,
+      `${latestInfo.robot_name || "MIT Humanoid"} | sim ${simTime}s | camera ${viewerState.cameraMode} | fps ${fps}`,
     );
   } else {
     setStatus(`${latestInfo?.message || "waiting for qpos"} | fps ${fps}`);

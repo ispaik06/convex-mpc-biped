@@ -24,11 +24,22 @@ body.viewer-standalone #viewer {
   top: 12px;
   left: 12px;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  max-width: calc(100% - 24px);
   padding: 6px;
   border-radius: 6px;
   background: rgb(12 14 18 / 72%);
   backdrop-filter: blur(8px);
+}
+
+.camera-mode {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 2px;
+  padding-left: 8px;
+  border-left: 1px solid rgb(232 237 244 / 16%);
 }
 
 .toggle {
@@ -50,6 +61,10 @@ body.viewer-standalone #viewer {
   border-color: rgb(120 190 255 / 80%);
   background: rgb(66 145 220 / 34%);
   color: #ffffff;
+}
+
+.camera-mode .toggle {
+  min-width: 58px;
 }
 
 #status,
