@@ -12,7 +12,7 @@ const GEOM = {
 };
 
 const canvas = document.getElementById("viewer");
-const statusEl = document.getElementById("status");
+const statusEl = document.getElementById("viewer-status") || document.getElementById("status");
 const visualButton = document.getElementById("toggle-visual");
 const collisionButton = document.getElementById("toggle-collision");
 const params = new URLSearchParams(window.location.search);
@@ -108,7 +108,7 @@ function makeMaterial(model, geomId, group) {
   }
 
   const color = rgba(model, geomId);
-  const alpha = group === 3 ? Math.min(color[3], 0.25) : color[3];
+  const alpha = group === 3 ? Math.max(color[3], 0.55) : color[3];
   return new THREE.MeshStandardMaterial({
     color: new THREE.Color(color[0], color[1], color[2]),
     roughness: 0.55,
@@ -471,8 +471,11 @@ function connectQposStream() {
 }
 
 function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+  const canvasBounds = canvas.getBoundingClientRect();
+  const parentBounds = canvas.parentElement?.getBoundingClientRect();
+  const bounds = canvasBounds.width > 0 && canvasBounds.height > 0 ? canvasBounds : parentBounds;
+  const width = Math.max(1, Math.floor(bounds.width || window.innerWidth));
+  const height = Math.max(1, Math.floor(bounds.height || window.innerHeight));
   renderer.setSize(width, height, false);
   camera.aspect = width / Math.max(height, 1);
   camera.updateProjectionMatrix();

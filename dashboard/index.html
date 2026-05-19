@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ConvexMPC Dashboard</title>
   <link rel="stylesheet" href="/static/dashboard.css" />
+  <link rel="stylesheet" href="/static/viewer.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/node_modules/three/build/three.module.js",
+        "three/addons/": "/node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
   <script>
     window.__DASHBOARD_CONFIG__ = {
       chartConfigs: %CHART_CONFIG%,
@@ -15,6 +24,7 @@
       minMainPanels: %MIN_MAIN_PANELS%,
     };
   </script>
+  <script type="module" src="/static/viewer.js"></script>
   <script defer src="/static/dashboard.js"></script>
 </head>
 <body>
@@ -39,6 +49,34 @@
       </div>
     </header>
 
+    <div class="top-telemetry" aria-label="telemetry summary">
+      <div class="toolbar-chip">
+        <div class="toolbar-chip-label">Robot</div>
+        <div class="toolbar-chip-value" id="toolbar-robot">--</div>
+      </div>
+      <div class="toolbar-chip">
+        <div class="toolbar-chip-label">Iteration</div>
+        <div class="toolbar-chip-value" id="toolbar-iteration">--</div>
+      </div>
+      <div class="toolbar-chip">
+        <div class="toolbar-chip-label">Sim Time</div>
+        <div class="toolbar-chip-value" id="toolbar-sim-time">--</div>
+      </div>
+      <div class="toolbar-chip">
+        <div class="toolbar-chip-label">Seq</div>
+        <div class="toolbar-chip-value" id="toolbar-sequence">--</div>
+      </div>
+    </div>
+
+    <section class="viewer-panel">
+      <canvas id="viewer"></canvas>
+      <div id="toolbar" aria-label="Viewer controls">
+        <button id="toggle-visual" class="toggle active" type="button" aria-pressed="true" title="Toggle visual geoms">Visual</button>
+        <button id="toggle-collision" class="toggle" type="button" aria-pressed="false" title="Toggle collision geoms">Collision</button>
+      </div>
+      <div id="viewer-status" aria-live="polite">loading viewer</div>
+    </section>
+
     <div class="toolbar">
       <div class="toolbar-left">
         <div class="segment" id="view-buttons" aria-label="view mode">
@@ -60,26 +98,6 @@
           <button type="button" id="main-count-dec" aria-label="remove main chart">-</button>
           <div class="count-chip-value" id="main-count-label">1 / 3</div>
           <button type="button" id="main-count-inc" aria-label="add main chart">+</button>
-        </div>
-      </div>
-      <div class="toolbar-right">
-        <div class="toolbar-telemetry" aria-label="telemetry summary">
-          <div class="toolbar-chip">
-            <div class="toolbar-chip-label">Robot</div>
-            <div class="toolbar-chip-value" id="toolbar-robot">--</div>
-          </div>
-          <div class="toolbar-chip">
-            <div class="toolbar-chip-label">Iteration</div>
-            <div class="toolbar-chip-value" id="toolbar-iteration">--</div>
-          </div>
-          <div class="toolbar-chip">
-            <div class="toolbar-chip-label">Sim Time</div>
-            <div class="toolbar-chip-value" id="toolbar-sim-time">--</div>
-          </div>
-          <div class="toolbar-chip">
-            <div class="toolbar-chip-label">Seq</div>
-            <div class="toolbar-chip-value" id="toolbar-sequence">--</div>
-          </div>
         </div>
       </div>
     </div>

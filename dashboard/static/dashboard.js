@@ -1109,7 +1109,7 @@
       } else {
         dot.classList.add("busy");
         statusText.textContent = "memory waiting";
-        heroSubtitle.textContent = data.message || "Waiting for the controller to publish samples.";
+        heroSubtitle.textContent = data?.message || "Waiting for the controller to publish samples.";
       }
 
       if (controllerBadge && controllerDot && controllerText) {

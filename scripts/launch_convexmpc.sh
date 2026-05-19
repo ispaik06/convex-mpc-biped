@@ -314,6 +314,10 @@ if [[ "${dashboard_enabled}" == false ]]; then
     dashboard_script=""
 fi
 
+if [[ -n "${dashboard_script}" && "${web_viewer_enabled}" == true ]]; then
+    web_viewer_script=""
+fi
+
 if [[ "${web_viewer_enabled}" == false ]]; then
     web_viewer_script=""
 fi
@@ -341,11 +345,12 @@ trap cleanup EXIT INT TERM
 echo "[launch] main: ${main_bin} ${robot} ${viewer}"
 
 if [[ -n "${dashboard_script}" ]]; then
-    echo "[launch] dashboard: ${python_bin} ${dashboard_script} --host 127.0.0.1 --port ${dashboard_port} --shared-memory ${CONVEXMPC_SHM_NAME}"
+    echo "[launch] dashboard: ${python_bin} ${dashboard_script} --host 127.0.0.1 --port ${dashboard_port} --shared-memory ${CONVEXMPC_SHM_NAME} --qpos-shm ${CONVEXMPC_QPOS_SHM_NAME}"
     "${python_bin}" "${dashboard_script}" \
         --host 127.0.0.1 \
         --port "${dashboard_port}" \
-        --shared-memory "${CONVEXMPC_SHM_NAME}" &
+        --shared-memory "${CONVEXMPC_SHM_NAME}" \
+        --qpos-shm "${CONVEXMPC_QPOS_SHM_NAME}" &
     dashboard_pid=$!
 fi
 
