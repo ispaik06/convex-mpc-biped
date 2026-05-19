@@ -1377,7 +1377,7 @@
     function drawYawArc(ctx, cx, cy, radius, psiDot, maxYaw) {
       const amount = clamp(Math.abs(psiDot) / maxYaw, 0, 1);
       const sweep = Math.max(0.12, amount * Math.PI * 1.45);
-      const direction = psiDot >= 0 ? 1 : -1;
+      const direction = psiDot >= 0 ? -1 : 1;
       const start = -Math.PI / 2;
       const end = start + direction * sweep;
       const color = psiDot >= 0 ? "rgba(244, 114, 182, 0.94)" : "rgba(251, 191, 36, 0.94)";
