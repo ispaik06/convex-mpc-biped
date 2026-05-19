@@ -257,13 +257,6 @@
     .toolbar-right {
       justify-content: flex-end;
     }
-    .top-telemetry {
-      display: grid;
-      width: 100%;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-      margin: 8px 0 6px;
-    }
     .toolbar-chip {
       min-width: 0;
       padding: 8px 10px;
@@ -725,10 +718,6 @@
       .toolbar-right {
         justify-content: flex-start;
       }
-      .top-telemetry {
-        width: 100%;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
     }
     @media (max-width: 780px) {
       .hero,
@@ -760,8 +749,5 @@
       }
       .main-panel {
         grid-column: 1 / -1;
-      }
-      .top-telemetry {
-        grid-template-columns: 1fr;
       }
     }

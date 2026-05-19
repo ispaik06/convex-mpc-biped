@@ -1691,10 +1691,6 @@
         controllerText.textContent = controllerLabel;
       }
 
-      setTextContent("toolbar-robot", connected ? (data.robot_name || "--") : "--");
-      setTextContent("toolbar-iteration", connected ? String(data.iteration ?? "--") : "--");
-      setTextContent("toolbar-sim-time", connected ? formatNumber(data.sim_time, 3) : "--");
-      setTextContent("toolbar-sequence", connected ? `seq ${data.sequence}` : "seq --");
       document.getElementById("history-label").textContent = `history ${appState.history.length}`;
     }
 

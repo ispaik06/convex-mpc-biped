@@ -519,9 +519,9 @@ function animate(now) {
   renderer.render(scene, camera);
 
   if (latestInfo?.ok) {
+    const simTime = Number.isFinite(latestInfo.sim_time) ? latestInfo.sim_time.toFixed(3) : "--";
     setStatus(
-      `${latestInfo.robot_name || "MIT Humanoid"} | qpos ${latestInfo.qpos_dim}/${model.nq} | ` +
-      `iter ${latestInfo.iteration} | fps ${fps}`,
+      `${latestInfo.robot_name || "MIT Humanoid"} | sim ${simTime}s | fps ${fps}`,
     );
   } else {
     setStatus(`${latestInfo?.message || "waiting for qpos"} | fps ${fps}`);
