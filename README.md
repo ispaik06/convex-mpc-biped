@@ -324,7 +324,9 @@ requested_locomotion_mode: interactive
 ### Notes
 
 - Keyboard commands are filtered before they reach the controller.
-- Walking mode accepts both planar velocity commands and body pose offsets.
+- Walking mode treats planar `x_dot`, `y_dot`, and `psi_dot` as velocity commands. The MPC
+  reference is rebuilt from the current estimated state on each solve, while height/roll/pitch
+  remain pose offsets.
 - Standing mode still ignores `w / s`, `a / d`, and `q / e`.
 - `interactive` mode starts in standing, and `t` switches between walking and standing.
 - Walking -> standing first zeroes the command while keeping the walking gait active, then waits until the body has been slow for a few ticks before it starts counting touchdown events or a timeout.

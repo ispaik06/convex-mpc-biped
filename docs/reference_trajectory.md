@@ -4,14 +4,15 @@ This note explains how the controller builds the horizon-wise body reference tha
 
 The key idea is simple:
 
-1. seed the trajectory from the current desired body pose,
+1. seed standing from the pose target and walking from the current estimated reduced-body state,
 2. advance planar position in the body-yaw frame,
 3. advance yaw only when the gait is not in double support,
 4. carry the resulting body pose into the horizon state and foot-relative geometry.
 
 > [!IMPORTANT]
 > **`ReferenceTrajectory` is not a standalone planner.**
-> It unrolls a horizon from the current body target and filtered user command.
+> It unrolls a horizon from a controller-selected seed and filtered user command.
+> Walking uses a receding seed anchored to the state estimator, not a persistent world-frame body target.
 >
 > The yaw rule is delegated to `BodyMotionReference`, which uses the gait schedule as a gate.
 
@@ -48,12 +49,17 @@ $$
 
 ## 2. Seed State and Command Inputs
 
-The controller does not build the horizon from the measured torso pose alone.
-Before `ReferenceTrajectory::build()` is called, the controller splices the current desired body pose into the seed state:
+The controller selects the seed before `ReferenceTrajectory::build()` is called.
+That selection is mode dependent:
 
-- orientation comes from the body target yaw,
-- position comes from the body target position,
-- the rest of the seed remains aligned with the current reduced-body state.
+- `Standing`: roll, pitch, yaw, planar position, and nominal height come from the body target.
+- `Walking`: planar position and yaw stay anchored to the current reduced-body estimate `x0`.
+- `Walking`: roll, pitch, and nominal height remain target quantities.
+- In both modes, velocity and gravity remain aligned with the current reduced-body state.
+
+This split is intentional. Walking is velocity-commanded, so a disturbance should not leave the
+MPC chasing a stale world-frame pose target. The planar reference is rebuilt from the estimator
+on every MPC update and then rolled forward by the command velocity over the horizon.
 
 The command input is
 
@@ -66,9 +72,9 @@ u_{\text{cmd}}^B =
 \dot \psi_{\text{cmd}} \in \mathbb{R}.
 $$
 
-The controller forwards the filtered `z_dot` command into the trajectory builder.
-That keeps the seed body height and the horizon vertical velocity consistent with the
-current keyboard input.
+The controller forwards the filtered body-height offset into the trajectory builder. The seed
+height is the nominal height, and `ReferenceTrajectory` adds `body_height_offset_m` exactly once.
+The height command is a pose offset, not a vertical velocity command.
 
 ## 3. Yaw Reference
 
@@ -156,7 +162,9 @@ $$
 So planar translation is always integrated, but the direction of travel follows the current reference heading.
 
 The vertical position is not integrated in this helper.
-The seed height is preserved in `p_z`, which keeps the reference consistent with the reduced-body model used by the MPC.
+The seed height is nominal height. The body-height offset is applied on top of it and then
+preserved across the horizon. This keeps the height setpoint independent of planar receding
+position resets.
 
 The corresponding world velocity is
 
@@ -262,16 +270,23 @@ If you are debugging a trajectory plot:
 
 If yaw looks too aggressive, the first thing to check is whether the robot is spending too much time outside double support or whether `psi_dot` is being filtered too weakly upstream.
 
+If walking position error grows after a push, check that the first reference sample is anchored
+near the current estimated planar position. A walking rollout should not keep chasing a body
+target that was integrated before the disturbance.
+
 ## 9. Code References
 
 - Yaw gating and the recurrence for `psi_k` are implemented in [BodyMotionReference::shouldAdvanceYaw](../My_Controller/src/BodyMotionReference.cpp#L16), [BodyMotionReference::advanceYaw](../My_Controller/src/BodyMotionReference.cpp#L20), and [BodyMotionReference::yawRate](../My_Controller/src/BodyMotionReference.cpp#L31); they are called from [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8).
 - Planar propagation of `p_k^W` and `v_k^W` lives in [BodyMotionReference::advancePlanarPosition](../My_Controller/src/BodyMotionReference.cpp#L35) and is consumed in [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8).
 - Horizon assembly for `X_ref`, `psi`, `tk`, `r_left`, and `r_right` is done in [ReferenceTrajectory::build](../My_Controller/src/ReferenceTrajectory.cpp#L8).
-- The body-target seed that the trajectory starts from is updated in [MyController::updateBodyTarget](../My_Controller/src/My_Controller.cpp#L695).
+- The mode-dependent seed policy is applied in [MyController::maybeUpdateMpc](../My_Controller/src/My_Controller.cpp#L942).
+- The walking body target is anchored to the current reduced-body estimate in [MyController::updateBodyTarget](../My_Controller/src/My_Controller.cpp#L708), so swing touchdown planning does not consume a stale integrated target.
 
 ## 10. Summary
 
-- `ReferenceTrajectory` turns a body target and a filtered command into horizon arrays.
+- `ReferenceTrajectory` turns a mode-dependent seed and a filtered command into horizon arrays.
+- Walking uses state-estimator anchored receding references for planar position and yaw.
+- Height remains `nominalHeight + body_height_offset_m`, not current-height tracking.
 - Yaw advances only when the gait is not in double support.
 - Planar position is integrated in the body-yaw frame and written to world coordinates.
 - The foot offsets are horizon-relative contact lever arms, not swing-foot path points.

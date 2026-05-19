@@ -228,7 +228,10 @@ If turning still looks strange after that, inspect the contact wrench constraint
 
 ## 9. Summary
 
-- Keep desired body target and final foot target in world coordinates.
+- Keep final foot targets in world coordinates.
+- In walking, keep planar body reference receding and state-estimator anchored; do not chase a
+  persistent world-frame body target.
+- Keep height, roll, and pitch as pose setpoints.
 - Keep user command semantics and nominal offsets in the body-yaw frame.
 - Keep dynamics in world coordinates.
 - Apply the MPC cost transform only to position, velocity, and angular-velocity blocks.

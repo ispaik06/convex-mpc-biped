@@ -2,7 +2,10 @@
 
 This note explains how `SwingFootPlanner` computes the red touchdown marker used by swing feet. The planner is body-yaw aware, latches a touchdown target once per swing, and no longer uses the old `legacy_com_yaw_corrected` path.
 
-Keyboard commands enter the controller through `user_command_filter` before they reach the planner. The same filtered command stream updates the body target, and the planner consumes the resulting body position/yaw when placing touchdown targets.
+Keyboard commands enter the controller through `user_command_filter` before they reach the planner.
+Walking keeps the body target anchored to the current reduced-body estimate, so the planner consumes
+current body position/yaw plus a command-velocity preview instead of a persistent integrated
+world-frame target.
 
 > [!IMPORTANT]
 > The planner keeps **touchdown position** in world coordinates, **nominal spacing** in the body-yaw frame, and **swing-foot yaw** as a separate heading problem.
@@ -16,20 +19,23 @@ Touchdown targets should satisfy these constraints:
 1. Forward motion should keep placing the next foot forward.
 2. Backward motion should keep placing the next foot backward.
 3. Lateral motion should shift the whole footprint left or right.
-4. Once the robot stops, the average of both feet should converge to the desired body marker, `debug_body_target`.
+4. Once the robot stops, the average of both feet should converge around the current body-centered footprint target.
 5. When the robot is transitioning into a stop, touchdown should move slightly farther in the direction of travel so the robot brakes instead of coasting past the target.
 
 The key design choice is:
 
 > [!NOTE]
-> The planner deliberately moves the **touchdown target** toward the desired body marker instead of pulling the body marker toward the feet.
+> Walking touchdown placement is current-state anchored. The planner moves the **touchdown target**
+> using body-frame velocity preview instead of pulling the body marker toward a stale world target.
 
 ```text
-Do not pull the desired body marker toward the feet.
-Instead, move the swing-foot touchdown target toward the desired body marker.
+Do not integrate a world-frame body target and force the feet to chase it.
+Instead, anchor the touchdown center to the current body/footprint state and add command preview.
 ```
 
-That matters because the reduced-body MPC reference is built from `_bodyTarget`. If the desired body marker is already ahead of the feet and the feet remain behind, the MPC keeps moving the COM toward the marker while the support polygon lags behind. That is an easy way to lose balance during stopping.
+That matters because the reduced-body MPC walking reference is now rebuilt from the estimator on
+each MPC update. If the touchdown planner kept using an old integrated marker while the MPC used a
+current-state seed, the support polygon and body reference would disagree after disturbances.
 
 ## 2. Coordinate Frames
 
@@ -44,7 +50,9 @@ That matters because the reduced-body MPC reference is built from `_bodyTarget`.
 - User commands `[x_dot, y_dot]` are interpreted in this frame.
 - Nominal foot offsets are stored in this frame.
 
-The current code uses the desired body yaw from the SRB reference when possible, not a full floating-base pose. In practice, touchdown position and swing-foot yaw are computed around the desired body marker that the MPC is trying to track.
+The current code uses the body-yaw target supplied by the controller, not a full floating-base pose.
+In walking this yaw is anchored to the current estimator yaw; in standing it can still represent a
+pose-hold target.
 
 ## 3. Nominal Foot Offsets
 
@@ -185,6 +193,8 @@ Where:
 This nominal offset term is evaluated once when the touchdown target is latched for the swing.
 
 If the body target has not been seeded yet, the planner falls back to the last known footprint center.
+During walking, the seeded body target is refreshed from the current reduced-body state every
+control tick before touchdown targets are requested.
 
 ### 7.1 Tangential Lead for Turning
 

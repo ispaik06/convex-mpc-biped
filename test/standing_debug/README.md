@@ -87,6 +87,11 @@ cmake --build build --target stand_rh_probe
 
 This is the actual receding-horizon replay path. It reads the logged `x0`, logged command, initial reference, desired foot positions, foot local x axes, and logged reduced-body mass and inertia. Then every rollout step rebuilds the reference trajectory, gait constraints, SRB formulation, and QP before solving again. The first predicted state from that solve becomes the next rollout state.
 
+For walking logs, the replay matches the online controller's receding-reference policy: each step
+seeds planar position and yaw from the rollout state, while roll, pitch, and nominal height come
+from the logged first reference. The logged body-height offset is applied again inside
+`ReferenceTrajectory`, so the replay seed removes that offset before building the horizon.
+
 The first-solve mismatch in the Markdown report compares the rebuilt solve against the source log while using the current `config/my_controller.yaml`. If weights or constraints changed after the log was captured, this comparison will not be zero.
 
 Outputs are saved under `logs/debug/{standing_mpc,walking_mpc}/receding_horizon/` based on the log mode:

@@ -1132,30 +1132,27 @@ LocomotionMode locomotionModeFromLog(const json& log, const LocomotionMode fallb
     return fallback;
 }
 
-Vec13<double> referenceSeedForStep(const Vec13<double>& state,
-                                   const Vec13<double>& referenceTarget) {
-    Vec13<double> seed = state;
-    seed.segment<3>(0) = referenceTarget.segment<3>(0);
-    seed.segment<3>(3) = referenceTarget.segment<3>(3);
-    seed[12] = referenceTarget[12];
-    return seed;
+double nominalSeedHeightFromReference(const Vec13<double>& referenceTarget,
+                                      const UserCommand& command) {
+    return referenceTarget[5] - command.body_height_offset_m;
 }
 
-void advanceReferenceTarget(Vec13<double>& target,
-                            const UserCommand& command,
-                            const LocomotionMode locomotionMode,
-                            const double dt) {
-    if (dt <= 0.0) {
-        return;
-    }
-
+Vec13<double> referenceSeedForStep(const Vec13<double>& state,
+                                   const Vec13<double>& referenceTarget,
+                                   const UserCommand& command,
+                                   const LocomotionMode locomotionMode) {
+    Vec13<double> seed = state;
     if (locomotionMode == LocomotionMode::Standing) {
-        return;
+        seed.segment<3>(0) = referenceTarget.segment<3>(0);
+        seed.segment<3>(3) = referenceTarget.segment<3>(3);
+        seed[5] = nominalSeedHeightFromReference(referenceTarget, command);
+    } else {
+        seed[0] = referenceTarget[0];
+        seed[1] = referenceTarget[1];
+        seed[5] = nominalSeedHeightFromReference(referenceTarget, command);
     }
-
-    const Vec3<double> vCmd_B(command.x_dot, command.y_dot, 0.0);
-    target.segment<3>(3) += Rz(target[2]) * vCmd_B * dt;
-    target[2] += command.psi_dot * dt;
+    seed[12] = referenceTarget[12];
+    return seed;
 }
 
 RolloutRow makeRowSkeleton(const int step,
@@ -1228,7 +1225,10 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     for (int step = 0; step < rolloutSteps; ++step) {
         horizonClock.reset(result.sourceClockT0 + static_cast<double>(step) * dtMpc());
 
-        const Vec13<double> referenceSeed = referenceSeedForStep(state, referenceTarget);
+        const Vec13<double> referenceSeed = referenceSeedForStep(state,
+                                                                 referenceTarget,
+                                                                 result.userCommand,
+                                                                 result.locomotionMode);
         ReferenceTrajectory(
             &result.userCommand,
             referenceSeed,
@@ -1303,7 +1303,6 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
         }
 
         state = row.nextState;
-        advanceReferenceTarget(referenceTarget, result.userCommand, result.locomotionMode, dtMpc());
         result.rows.push_back(row);
     }
 

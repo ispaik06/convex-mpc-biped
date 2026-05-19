@@ -705,21 +705,10 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         return;
     }
 
-    const double x_dot = _filteredUserCommand.x_dot;
-    const double y_dot = _filteredUserCommand.y_dot;
-    const double psi_dot = _filteredUserCommand.psi_dot;
-
-    _bodyTarget.nominalPosition_W =
-        BodyMotionReference::advancePlanarPosition(_bodyTarget.nominalPosition_W,
-                                                   _bodyTarget.euler_W[2],
-                                                   Vec2<double>(x_dot, y_dot),
-                                                   dt);
-    _bodyTarget.euler_W[2] = BodyMotionReference::advanceYaw(_gaitScheduler.get(),
-                                                             _bodyTarget.euler_W[2],
-                                                             psi_dot,
-                                                             dt,
-                                                             _stateEstimate->time,
-                                                             yawIntegrationMode);
+    // Walking is velocity-commanded. Keep the body target anchored to the current
+    // state so disturbances do not create a stale world-frame pose target.
+    _bodyTarget.nominalPosition_W.template head<2>() = x0.template segment<2>(3);
+    _bodyTarget.euler_W[2] = x0[2];
     applyPoseOffsets();
 }
 
@@ -951,8 +940,18 @@ void MyController::maybeUpdateMpc(const Vec13<double>& x0,
             }
 
             Vec13<double> referenceSeed = x0;
-            referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
-            referenceSeed.template segment<3>(3) = _bodyTarget.position_W;
+            if (_locomotionMode == LocomotionMode::Standing) {
+                referenceSeed.template segment<3>(0) = _bodyTarget.euler_W;
+                referenceSeed.template segment<3>(3) = _bodyTarget.nominalPosition_W;
+                referenceSeed[5] = _bodyTarget.nominalHeight_W;
+            } else {
+                // Walking references are receding-horizon velocity rollouts from the
+                // estimated state. Only pose quantities that are true setpoints remain
+                // target-based; planar position and yaw stay anchored to x0.
+                referenceSeed[0] = _bodyTarget.euler_W[0];
+                referenceSeed[1] = _bodyTarget.euler_W[1];
+                referenceSeed[5] = _bodyTarget.nominalHeight_W;
+            }
 
             UserCommand referenceCommand = _filteredUserCommand;
             {
