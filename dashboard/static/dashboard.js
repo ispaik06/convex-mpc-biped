@@ -11,6 +11,11 @@
       pitch: { label: "target_pitch", baseLabel: "pitch", index: 4, title: "Target pitch", valueLabel: "Target", color: "#c4b5fd" },
       pos_z: { label: "target_pos_z", baseLabel: "pos_z", index: 5, title: "Target pos_z", valueLabel: "Target", color: "#93c5fd" },
     };
+    const COMMAND_STATE_INDEX = {
+      xDot: STATE_LABELS.indexOf("cmd_vel_x"),
+      yDot: STATE_LABELS.indexOf("cmd_vel_y"),
+      psiDot: STATE_LABELS.indexOf("cmd_psi_dot"),
+    };
     const DEFAULT_WINDOW_SECONDS = DASHBOARD_CONFIG.defaultWindowSeconds ?? 10;
     const WINDOW_OPTIONS = DASHBOARD_CONFIG.windowOptions || [5, 10, 20, 30];
     const MAX_MAIN_PANELS = DASHBOARD_CONFIG.maxMainPanels ?? 3;
@@ -177,6 +182,29 @@
       const g = parseInt(clean.slice(2, 4), 16);
       const b = parseInt(clean.slice(4, 6), 16);
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function prepareCanvas(canvas) {
+      if (!canvas) {
+        return null;
+      }
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(rect.width));
+      const height = Math.max(1, Math.floor(rect.height));
+      const targetWidth = Math.max(1, Math.floor(width * dpr));
+      const targetHeight = Math.max(1, Math.floor(height * dpr));
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return null;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      return { ctx, width, height };
     }
 
     function niceStep(range, targetTicks) {
@@ -972,6 +1000,169 @@
       ctx.restore();
     }
 
+    function latestCommandValues() {
+      const state = appState.latestSnapshot?.state;
+      if (!Array.isArray(state)) {
+        return null;
+      }
+      const xDot = Number(state[COMMAND_STATE_INDEX.xDot]);
+      const yDot = Number(state[COMMAND_STATE_INDEX.yDot]);
+      const psiDot = Number(state[COMMAND_STATE_INDEX.psiDot]);
+      if (![xDot, yDot, psiDot].every(Number.isFinite)) {
+        return null;
+      }
+      return { xDot, yDot, psiDot };
+    }
+
+    function drawArrow(ctx, startX, startY, endX, endY, color) {
+      const angle = Math.atan2(endY - startY, endX - startX);
+      const head = 10;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(125, 211, 252, 0.34)";
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(endX, endY);
+      ctx.lineTo(endX - Math.cos(angle - Math.PI / 6) * head, endY - Math.sin(angle - Math.PI / 6) * head);
+      ctx.lineTo(endX - Math.cos(angle + Math.PI / 6) * head, endY - Math.sin(angle + Math.PI / 6) * head);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawYawArc(ctx, cx, cy, radius, psiDot, maxYaw) {
+      const amount = clamp(Math.abs(psiDot) / maxYaw, 0, 1);
+      const sweep = Math.max(0.12, amount * Math.PI * 1.45);
+      const direction = psiDot >= 0 ? 1 : -1;
+      const start = -Math.PI / 2;
+      const end = start + direction * sweep;
+      const color = psiDot >= 0 ? "rgba(244, 114, 182, 0.94)" : "rgba(251, 191, 36, 0.94)";
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.shadowColor = color.replace("0.94", "0.24");
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, start, end, direction < 0);
+      ctx.stroke();
+
+      const tangent = end + direction * Math.PI / 2;
+      const tipX = cx + Math.cos(end) * radius;
+      const tipY = cy + Math.sin(end) * radius;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - Math.cos(tangent - Math.PI / 5) * 9, tipY - Math.sin(tangent - Math.PI / 5) * 9);
+      ctx.lineTo(tipX - Math.cos(tangent + Math.PI / 5) * 9, tipY - Math.sin(tangent + Math.PI / 5) * 9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawCommandCompass() {
+      const canvas = document.getElementById("command-compass-canvas");
+      const prepared = prepareCanvas(canvas);
+      if (!prepared) {
+        return;
+      }
+
+      const { ctx, width, height } = prepared;
+      const size = Math.min(width, height);
+      const cx = width / 2;
+      const cy = height / 2;
+      const radius = Math.max(42, size * 0.34);
+      const innerRadius = radius * 0.72;
+      const values = latestCommandValues();
+      const xDot = values?.xDot ?? 0;
+      const yDot = values?.yDot ?? 0;
+      const psiDot = values?.psiDot ?? 0;
+      const speed = values ? Math.hypot(xDot, yDot) : NaN;
+      const maxLinear = 0.7;
+      const maxYaw = Math.max(1.5, Math.abs(psiDot) * 1.18);
+      const vectorScale = clamp(Math.hypot(xDot, yDot) / maxLinear, 0, 1);
+      const endX = cx + (yDot / maxLinear) * innerRadius;
+      const endY = cy - (xDot / maxLinear) * innerRadius;
+
+      const bg = ctx.createRadialGradient(cx, cy, radius * 0.1, cx, cy, radius * 1.22);
+      bg.addColorStop(0, "rgba(125, 211, 252, 0.10)");
+      bg.addColorStop(1, "rgba(255, 255, 255, 0.015)");
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 1.18, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+      ctx.lineWidth = 1;
+      for (const scale of [0.38, 0.68, 1.0]) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.moveTo(cx - radius, cy);
+      ctx.lineTo(cx + radius, cy);
+      ctx.moveTo(cx, cy - radius);
+      ctx.lineTo(cx, cy + radius);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+      ctx.font = "700 10px Avenir Next, SF Pro Text, Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("+x", cx, cy - radius - 11);
+      ctx.fillText("-x", cx, cy + radius + 12);
+      ctx.fillText("-y", cx + radius + 13, cy);
+      ctx.fillText("+y", cx - radius - 13, cy);
+      ctx.restore();
+
+      drawYawArc(ctx, cx, cy, radius * 1.05, psiDot, maxYaw);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(237, 244, 251, 0.92)";
+      ctx.fill();
+      ctx.restore();
+
+      if (values && vectorScale > 0.01) {
+        drawArrow(ctx, cx, cy, endX, endY, "rgba(125, 211, 252, 0.96)");
+      } else {
+        ctx.save();
+        ctx.strokeStyle = "rgba(125, 211, 252, 0.38)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.fillStyle = values ? "rgba(237, 244, 251, 0.84)" : "rgba(237, 244, 251, 0.38)";
+      ctx.font = "650 11px Avenir Next, SF Pro Text, Segoe UI, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(values ? `${formatNumber(speed, 2)} m/s` : "waiting", cx, cy + radius * 0.48);
+      ctx.restore();
+
+      setTextContent("command-speed", values ? `${formatNumber(speed, 2)} m/s` : "-- m/s");
+      setTextContent("command-x-dot", values ? `${formatNumber(xDot, 3)} m/s` : "--");
+      setTextContent("command-y-dot", values ? `${formatNumber(yDot, 3)} m/s` : "--");
+      const psiDisplay = appState.angleUnit === "deg" ? psiDot * 180 / Math.PI : psiDot;
+      setTextContent("command-psi-dot", values ? `${formatNumber(psiDisplay, appState.angleUnit === "deg" ? 1 : 3)} ${appState.angleUnit}/s` : "--");
+    }
+
     function drawAxes(ctx, plot, yDomain, xTicks, yTicks, config, focused) {
       const renderedConfig = displayConfig(config);
       ctx.save();
@@ -1300,6 +1491,7 @@
 
     function render() {
       updateConnectionPanel();
+      drawCommandCompass();
       renderCharts();
     }
 

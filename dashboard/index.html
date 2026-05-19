@@ -68,13 +68,39 @@
       </div>
     </div>
 
-    <section class="viewer-panel">
-      <canvas id="viewer"></canvas>
-      <div id="toolbar" aria-label="Viewer controls">
-        <button id="toggle-visual" class="toggle active" type="button" aria-pressed="true" title="Toggle visual geoms">Visual</button>
-        <button id="toggle-collision" class="toggle" type="button" aria-pressed="false" title="Toggle collision geoms">Collision</button>
+    <section class="viewer-row">
+      <div class="viewer-panel">
+        <canvas id="viewer"></canvas>
+        <div id="toolbar" aria-label="Viewer controls">
+          <button id="toggle-visual" class="toggle active" type="button" aria-pressed="true" title="Toggle visual geoms">Visual</button>
+          <button id="toggle-collision" class="toggle" type="button" aria-pressed="false" title="Toggle collision geoms">Collision</button>
+        </div>
+        <div id="viewer-status" aria-live="polite">loading viewer</div>
       </div>
-      <div id="viewer-status" aria-live="polite">loading viewer</div>
+      <aside class="command-compass" aria-label="filtered command velocity">
+        <div class="command-compass-head">
+          <div>
+            <div class="command-kicker">Filtered command</div>
+            <h2 class="command-title">Velocity</h2>
+          </div>
+          <div class="command-speed" id="command-speed">-- m/s</div>
+        </div>
+        <canvas id="command-compass-canvas"></canvas>
+        <div class="command-readouts">
+          <div>
+            <span>x_dot</span>
+            <strong id="command-x-dot">--</strong>
+          </div>
+          <div>
+            <span>y_dot</span>
+            <strong id="command-y-dot">--</strong>
+          </div>
+          <div>
+            <span>psi_dot</span>
+            <strong id="command-psi-dot">--</strong>
+          </div>
+        </div>
+      </aside>
     </section>
 
     <div class="toolbar">
