@@ -208,7 +208,7 @@ current walking command scale:
 
 $$
 \ell =
-\operatorname{clip}\left(
+\mathrm{clip}\left(
 \frac{\sqrt{\dot x_{\text{cmd}}^2 + \dot y_{\text{cmd}}^2}}{0.7},
 0,
 1
