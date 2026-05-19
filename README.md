@@ -68,6 +68,22 @@ The same controller can be retargeted across robots through robot-specific MuJoC
 <br>
 <sub>Combined locomotion demo</sub>
 
+<br>
+<br>
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/assets/readme/20260519_dashboard_1.png" alt="ConvexMPC web dashboard with MuJoCo WASM viewer and telemetry charts" width="100%">
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/assets/readme/20260519_dashboard_2.png" alt="ConvexMPC web dashboard with draggable telemetry panels" width="100%">
+    </td>
+  </tr>
+</table>
+
+<sub>Web dashboard: telemetry plots, command compass, and MuJoCo WASM viewer. See <a href="docs/web_dashboard.md">Web Dashboard</a> for setup and implementation details.</sub>
+
 </div>
 
 > [!TIP]
@@ -212,6 +228,7 @@ should be treated as validated defaults.
 
 Key technical notes in `docs/`:
 
+- [Web dashboard](docs/web_dashboard.md): browser telemetry, command compass, draggable charts, and MuJoCo WASM viewer setup.
 - [MPC frame convention](docs/mpc_frame_convention.md): state, wrench, and frame conventions used by the MPC.
 - [Reference trajectory](docs/reference_trajectory.md): desired body-state rollout and command integration.
 - [Swing-foot touchdown planning](docs/swing_foot_touchdown_planner.md): foot placement, touchdown rules, and braking offsets.
@@ -243,6 +260,16 @@ When `dashboard/app.py` is present, the launcher starts it automatically on the 
 dashboard port at or above `8001`, then opens the browser unless
 `CONVEXMPC_DASHBOARD_OPEN_BROWSER=0` is set. If you need a specific port, set
 `CONVEXMPC_DASHBOARD_PORT`.
+
+To run the controller headless with the browser dashboard and embedded MuJoCo
+WASM viewer:
+
+```bash
+./scripts/launch_convexmpc.sh --web-viewer m n
+```
+
+See [Web dashboard](docs/web_dashboard.md) for the Python/Node requirements,
+standalone viewer mode, shared-memory streams, and implementation details.
 
 Robot selection:
 

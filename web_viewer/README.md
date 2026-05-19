@@ -1,26 +1,38 @@
 # ConvexMPC Web Viewer
 
-This is a separate MuJoCo WASM viewer test, independent from `dashboard/`.
-It focuses on fast fullscreen rendering of the MIT humanoid from the qpos shared
-memory stream published by `apps/main_zero.cpp`.
+This is the standalone MuJoCo WASM viewer server. The normal dashboard path now
+embeds the same viewer above the telemetry plots.
 
-## Run
+For the integrated telemetry + viewer dashboard, see
+[docs/web_dashboard.md](../docs/web_dashboard.md).
 
-```sh
-cmake --build build --target main_zero
-./build/apps/main_zero
-```
+## Install
 
-In another terminal:
-
-```sh
-cd web_viewer
+```bash
 npm install
-python3 app.py --host 127.0.0.1 --port 8010
 ```
 
-Open `http://127.0.0.1:8010`.
+## Run Through The Launcher
 
-By default, visual geoms (`group="1"`) and the floor (`group="2"`) are rendered.
-Collision geoms (`group="3"`) and debug geoms (`group="4"`) are hidden to keep the
-view light. Add `?collision=1` or `?debug=1` to show them.
+From the repository root:
+
+```bash
+./scripts/launch_convexmpc.sh --no-dashboard --web-viewer m n
+```
+
+Open the URL printed by the launcher, usually:
+
+```text
+http://127.0.0.1:8010
+```
+
+For a zero-command spawn test:
+
+```bash
+cmake --build build --target main_zero -j
+./scripts/launch_convexmpc.sh --zero-command --no-dashboard --web-viewer m n
+```
+
+The standalone server serves the MIT humanoid XML/STL assets, streams `qpos` from
+the POSIX shared-memory buffer, and renders visual/collision MuJoCo geometry in a
+fullscreen Three.js scene.
