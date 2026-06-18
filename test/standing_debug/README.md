@@ -83,16 +83,22 @@ Outputs are saved under `logs/debug/{standing_mpc,walking_mpc}/wrench_reconstruc
 cmake --build build --target stand_rh_probe
 ./build/test/standing_debug/stand_rh_probe
 ./build/test/standing_debug/stand_rh_probe -n 80 logs/debug/walking_mpc/walking_mpc_debug_YYYYMMDD_HHMMSS.json
+./build/test/standing_debug/stand_rh_probe -n 120 --x-dot-final 0.7 logs/debug/walking_mpc/walking_mpc_debug_YYYYMMDD_HHMMSS.json
 ```
 
-This is the actual receding-horizon replay path. It reads the logged `x0`, logged command, initial reference, desired foot positions, foot local x axes, and logged reduced-body mass and inertia. Then every rollout step rebuilds the reference trajectory, gait constraints, SRB formulation, and QP before solving again. The first predicted state from that solve becomes the next rollout state.
+This is the actual receding-horizon replay path. It reads the logged `x0`, logged command, initial reference, foot local x axes, and logged reduced-body mass and inertia. Then every rollout step rebuilds the reference trajectory, gait constraints, walking foot targets, SRB formulation, and QP before solving again. The first predicted state from that solve becomes the next rollout state.
 
 For walking logs, the replay matches the online controller's receding-reference policy: each step
 seeds planar position and yaw from the rollout state, while roll, pitch, and nominal height come
 from the logged first reference. The logged body-height offset is applied again inside
 `ReferenceTrajectory`, so the replay seed removes that offset before building the horizon.
+The walking foot targets are seeded from the logged targets, then recomputed by `SwingFootPlanner`
+as the replay phase advances; pass `--fixed-foot-points` only when you need the older fixed-anchor
+behavior. Use `--x-dot-final MPS` for a linear raw-command ramp from the logged `x_dot`, or
+`--x-dot-rate MPS2` with an optional `--x-dot-final MPS` cap. The CSV records the filtered command
+used by the MPC, the gait phase/contact state, and the desired foot targets for every row.
 
-The first-solve mismatch in the Markdown report compares the rebuilt solve against the source log while using the current `config/my_controller.yaml`. If weights or constraints changed after the log was captured, this comparison will not be zero.
+The first-solve mismatch in the Markdown report compares the rebuilt solve against the source log while using the current replay policy and the logged `controller_config` snapshot when available. If weights, constraints, command schedule, contact phase sampling, or foot-target policy differ from the captured solve, this comparison will not be zero.
 
 Outputs are saved under `logs/debug/{standing_mpc,walking_mpc}/receding_horizon/` based on the log mode:
 
@@ -112,6 +118,7 @@ The general wrapper runs the MPC horizon plot, contact probe, wrench reconstruct
 ./scripts/run_mpc_debug.sh --walking -n 80
 ./scripts/run_mpc_debug.sh --all-latest -n 80
 ./scripts/run_mpc_debug.sh -l logs/debug/walking_mpc/walking_mpc_debug_YYYYMMDD_HHMMSS.json -n 80
+./scripts/run_mpc_debug.sh --walking -n 120 --x-dot-final 0.7
 ```
 
 The wrapper captures each analysis' detailed stdout/stderr and prints only a per-analysis status summary. `[OK]` means the expected artifacts were generated, `[SKIP]` means the analysis wrote a report explaining why a plot/CSV was not possible for that log, and `[FAIL]` means the command failed or an expected artifact was missing.

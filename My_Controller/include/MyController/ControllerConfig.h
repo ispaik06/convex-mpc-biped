@@ -66,8 +66,13 @@ struct SwingParameters {
     double height{0.06};
     double minRemainingTime{1e-3};
     double bodyVelocityHalfStanceOffset{0.0};
+    double midSpeedBodyVelocityHalfStanceOffset{0.0};
+    double bodyVelocityHalfStanceOffsetSwitchSpeed{
+        std::numeric_limits<double>::infinity()};
+    double highSpeedBodyVelocityHalfStanceOffset{0.0};
+    double highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed{
+        std::numeric_limits<double>::infinity()};
     double swingFootYawLeadScale{1.0};
-    double turnTangentialLeadScale{0.0};
     bool enableStanceFootYawHold{false};
     std::vector<Vec3<double>> nominalFootOffsets_B;
     bool hasStopBrakingOffset{false};

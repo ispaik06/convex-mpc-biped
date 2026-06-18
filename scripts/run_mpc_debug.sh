@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: run_mpc_debug.sh -n STEPS (--standing | --walking | --all-latest | -l LOG) [-h]
+Usage: run_mpc_debug.sh -n STEPS (--standing | --walking | --all-latest | -l LOG) [RH_OPTIONS] [-h]
 
 Run MPC debug post-processing for a standing or walking JSON log.
 
@@ -14,6 +14,11 @@ Options:
   --walking      Use the latest walking_mpc log.
   --all-latest   Use the newest log across both directories.
   -n STEPS       Receding-horizon rollout steps. Required.
+  --x-dot-rate V Receding-horizon raw x_dot ramp rate in m/s^2.
+  --x-dot-final V
+                 Receding-horizon raw x_dot target/cap in m/s.
+  --fixed-foot-points
+                 Keep the legacy fixed logged foot targets in the RH probe.
   -h, --help     Show this help and exit.
 EOF
 }
@@ -31,6 +36,7 @@ readonly rh_bin="${repo_root}/build/test/standing_debug/stand_rh_probe"
 rh_steps=""
 log_path=""
 selection_mode=""
+rh_extra_args=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -78,6 +84,26 @@ while [[ $# -gt 0 ]]; do
             fi
             rh_steps="$2"
             shift 2
+            ;;
+        --x-dot-rate)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --x-dot-rate requires a numeric value" >&2
+                exit 1
+            fi
+            rh_extra_args+=("--x-dot-rate" "$2")
+            shift 2
+            ;;
+        --x-dot-final)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --x-dot-final requires a numeric value" >&2
+                exit 1
+            fi
+            rh_extra_args+=("--x-dot-final" "$2")
+            shift 2
+            ;;
+        --fixed-foot-points)
+            rh_extra_args+=("--fixed-foot-points")
+            shift
             ;;
         -h|--help)
             usage
@@ -381,7 +407,7 @@ run_analysis "wrench_reconstruction" \
 run_analysis "receding_horizon" \
              "Receding horizon" \
              "summarize_receding_horizon" \
-             "${rh_bin}" -n "${rh_steps}" "${log_path}" || overall_status=1
+             "${rh_bin}" -n "${rh_steps}" "${rh_extra_args[@]}" "${log_path}" || overall_status=1
 
 if [[ "${overall_status}" -eq 0 ]]; then
     echo "MPC debug analyses completed."

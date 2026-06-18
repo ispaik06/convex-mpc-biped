@@ -440,8 +440,15 @@ json controllerConfigJson(const ControllerConfig& config,
     swing["height"] = config.swing.height;
     swing["min_remaining_time"] = config.swing.minRemainingTime;
     swing["body_velocity_half_stance_offset"] = config.swing.bodyVelocityHalfStanceOffset;
+    swing["mid_speed_body_velocity_half_stance_offset"] =
+        config.swing.midSpeedBodyVelocityHalfStanceOffset;
+    swing["body_velocity_half_stance_offset_switch_speed"] =
+        config.swing.bodyVelocityHalfStanceOffsetSwitchSpeed;
+    swing["high_speed_body_velocity_half_stance_offset"] =
+        config.swing.highSpeedBodyVelocityHalfStanceOffset;
+    swing["high_speed_body_velocity_half_stance_offset_switch_speed"] =
+        config.swing.highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed;
     swing["swing_foot_yaw_lead_scale"] = config.swing.swingFootYawLeadScale;
-    swing["turn_tangential_lead_scale"] = config.swing.turnTangentialLeadScale;
     swing["enable_stance_foot_yaw_hold"] = config.swing.enableStanceFootYawHold;
     if (!config.swing.nominalFootOffsets_B.empty()) {
         swing["nominal_foot_offsets_B"] = vec3VectorToJson(config.swing.nominalFootOffsets_B);

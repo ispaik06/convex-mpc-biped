@@ -270,6 +270,18 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
     readScalarIfPresent(swing,
                         "body_velocity_half_stance_offset",
                         params.swing.bodyVelocityHalfStanceOffset);
+    readScalarIfPresent(swing,
+                        "mid_speed_body_velocity_half_stance_offset",
+                        params.swing.midSpeedBodyVelocityHalfStanceOffset);
+    readScalarIfPresent(swing,
+                        "body_velocity_half_stance_offset_switch_speed",
+                        params.swing.bodyVelocityHalfStanceOffsetSwitchSpeed);
+    readScalarIfPresent(swing,
+                        "high_speed_body_velocity_half_stance_offset",
+                        params.swing.highSpeedBodyVelocityHalfStanceOffset);
+    readScalarIfPresent(swing,
+                        "high_speed_body_velocity_half_stance_offset_switch_speed",
+                        params.swing.highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed);
     if (swing && swing["swing_foot_yaw_lead_scale"]) {
         params.swing.swingFootYawLeadScale =
             swing["swing_foot_yaw_lead_scale"].as<double>();
@@ -278,9 +290,6 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
                             "touchdown_yaw_lead_scale",
                             params.swing.swingFootYawLeadScale);
     }
-    readScalarIfPresent(swing,
-                        "turn_tangential_lead_scale",
-                        params.swing.turnTangentialLeadScale);
     readScalarIfPresent(swing,
                         "enable_stance_foot_yaw_hold",
                         params.swing.enableStanceFootYawHold);
@@ -489,8 +498,13 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         throw std::runtime_error("MPC normal force max must be >= min");
     }
     if (!std::isfinite(params.swing.bodyVelocityHalfStanceOffset) ||
+        !std::isfinite(params.swing.midSpeedBodyVelocityHalfStanceOffset) ||
+        !isNonNegativeFiniteOrPositiveInfinity(
+            params.swing.bodyVelocityHalfStanceOffsetSwitchSpeed) ||
+        !std::isfinite(params.swing.highSpeedBodyVelocityHalfStanceOffset) ||
+        !isNonNegativeFiniteOrPositiveInfinity(
+            params.swing.highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed) ||
         !std::isfinite(params.swing.swingFootYawLeadScale) ||
-        !std::isfinite(params.swing.turnTangentialLeadScale) ||
         (!params.swing.nominalFootOffsets_B.empty() &&
          !std::all_of(params.swing.nominalFootOffsets_B.begin(),
                       params.swing.nominalFootOffsets_B.end(),
@@ -513,8 +527,11 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         !std::isfinite(params.swing.stanceYawKp) ||
         !std::isfinite(params.swing.stanceYawKd) ||
         params.swing.bodyVelocityHalfStanceOffset < 0.0 ||
+        params.swing.midSpeedBodyVelocityHalfStanceOffset < 0.0 ||
+        params.swing.highSpeedBodyVelocityHalfStanceOffset < 0.0 ||
+        params.swing.highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed <
+            params.swing.bodyVelocityHalfStanceOffsetSwitchSpeed ||
         params.swing.swingFootYawLeadScale < 0.0 ||
-        params.swing.turnTangentialLeadScale < 0.0 ||
         params.swing.stopCapturePointGain < 0.0 ||
         params.swing.stopCapturePointMaxOffset < 0.0 ||
         params.swing.stopVelocityDeadband < 0.0 ||
@@ -529,8 +546,13 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
         params.swing.yawKp < 0.0 || params.swing.yawKd < 0.0 ||
         params.swing.stanceYawKp < 0.0 || params.swing.stanceYawKd < 0.0) {
         throw std::runtime_error(
-            "swing.body_velocity_half_stance_offset, swing.swing_foot_yaw_lead_scale, "
-            "swing.turn_tangential_lead_scale, swing.nominal_foot_offsets_B, "
+            "swing.body_velocity_half_stance_offset, "
+            "swing.mid_speed_body_velocity_half_stance_offset, "
+            "swing.body_velocity_half_stance_offset_switch_speed, "
+            "swing.high_speed_body_velocity_half_stance_offset, "
+            "swing.high_speed_body_velocity_half_stance_offset_switch_speed, "
+            "swing.swing_foot_yaw_lead_scale, "
+            "swing.nominal_foot_offsets_B, "
             "swing.stop_braking_offset_B, swing.stop_capture_point_gain, "
             "swing.stop_capture_point_max_offset, swing.stop_velocity_deadband, "
             "swing.stop_braking_latch_clear_ticks, swing.roll_kp, swing.roll_kd, "
@@ -542,8 +564,10 @@ ControllerConfig loadControllerConfigFromYaml(const RobotType robotType) {
             "user_command_filter.standing_pitch_offset_tau must be finite; "
             "user_command_filter.x_dot_max, user_command_filter.y_dot_max, and "
             "user_command_filter.psi_dot_max must be finite or positive infinity; "
-            "offsets, turn gains, time constants, stop-braking gains, and attitude gains "
-            "must be non-negative; stop_braking_latch_clear_ticks must be positive");
+            "offsets, speed blend bounds, turn gains, time constants, stop-braking gains, "
+            "and attitude gains must be non-negative; "
+            "touchdown_speed_blend_end must be >= touchdown_speed_blend_start; "
+            "stop_braking_latch_clear_ticks must be positive");
     }
     if (!std::isfinite(params.contactManager.contactForceOnThreshold) ||
         !std::isfinite(params.contactManager.contactForceOffThreshold) ||

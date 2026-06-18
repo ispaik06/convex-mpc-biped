@@ -27,6 +27,7 @@ public:
           _userCommand(userCommand) {}
 
     void reset();
+    void seedTouchdownTargets(const DesiredFootPositions& desiredFootPositions);
     void setBodyTargetWorld(const Vec3<double>& position_W, double yaw_W);
     DesiredFootPositions desiredFootPositions();
 
@@ -35,16 +36,18 @@ private:
     void ensureSwingTouchdownCache();
     void ensureNominalFootOffsets();
     Vec2<double> currentPlanarCommandBodyFrame() const;
+    double selectedBodyVelocityHalfStanceOffset(const Vec2<double>& currentPlanarCommand) const;
     double bodyYawTargetWorld() const;
-    double touchdownPreviewTime() const;
-    Vec3<double> touchdownOffsetBodyFrame(std::size_t legIndex, double previewTime) const;
+    double touchdownPreviewTime(const Vec2<double>& currentPlanarCommand) const;
+    bool stopRecenterRequested(const Vec2<double>& currentPlanarCommand) const;
+    bool stopRecenterActive(const Vec2<double>& currentPlanarCommand);
+    double computeStopRecenterXBody() const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
-    bool shouldApplyBrakingOffset(const Vec2<double>& currentPlanarCommand) const;
-    Vec2<double> computeStopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
-    Vec2<double> stopBrakingOffsetBodyFrame(const Vec2<double>& currentPlanarCommand) const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex,
                                                             const Vec2<double>& currentPlanarCommand,
-                                                            double* touchdownYaw_W_out = nullptr) const;
+                                                            bool stopRecenter,
+                                                            double* touchdownYaw_W_out = nullptr,
+                                                            Vec3<double>* effectiveTouchdownOffset_B_out = nullptr) const;
     void recordSequentialTouchdown(const Vec3<double>& target_W,
                                    double touchdownYaw_W,
                                    const Vec3<double>& touchdownOffset_B);
@@ -65,12 +68,7 @@ private:
     bool _bodyPositionTargetValid{false};
     double _bodyYawTarget_W{0.0};
     bool _bodyYawTargetValid{false};
-    Vec2<double> _latchedBrakingOffset_B = Vec2<double>::Zero();
-    bool _latchedBrakingOffsetValid{false};
-    int _brakingOffsetDeadbandHoldTicks{0};
-    Vec2<double> _previousPlanarCommand_B = Vec2<double>::Zero();
-    bool _previousPlanarCommandValid{false};
-    bool _previousBrakingOffsetActive{false};
+    int _stopRecenterClearTicks{0};
 };
 
 #endif  // SWING_FOOT_PLANNER_H

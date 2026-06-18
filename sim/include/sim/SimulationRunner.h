@@ -48,6 +48,7 @@ private:
 	void applyRobotCommand();
 	void updateDebugVisualization();
 	bool maybeStartKeyboardCommand(double simTime);
+	void applyHeadlessUserCommandSchedule(double simTime);
 	void writeHeadlessTelemetry();
 
 	struct DebugMocapBinding {
@@ -88,6 +89,7 @@ private:
     bool _headlessTelemetryInitialized{false};
     double _telemetryInterval{0.05};
     double _nextTelemetryTime{0.0};
+    bool _headlessScheduleAnnounced{false};
     profiling::TimingStats _mjStepTime;
 };
 

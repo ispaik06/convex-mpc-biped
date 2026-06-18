@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include <Eigen/Geometry>
 #include <nlohmann/json.hpp>
 
 #include "ConvexMPC.h"
@@ -25,6 +26,7 @@
 #include "ControllerConfig.h"
 #include "Robot/RobotParams.h"
 #include "RobotConfig.h"
+#include "SwingFootPlanner.h"
 #include "Utilities/MatrixUtils.h"
 #include "Utilities/UserCommand.h"
 
@@ -62,6 +64,9 @@ struct OutputPaths {
 struct Options {
     std::filesystem::path logPath;
     int steps{kDefaultRolloutSteps};
+    std::optional<double> xDotRate;
+    std::optional<double> xDotFinal;
+    bool fixedFootPoints{false};
 };
 
 struct RolloutRow {
@@ -74,6 +79,12 @@ struct RolloutRow {
     Vec13<double> error = Vec13<double>::Zero();
     Vec13<double> nextState = Vec13<double>::Zero();
     Vec12<double> firstWrench = Vec12<double>::Zero();
+    UserCommand command;
+    DesiredFootPositions desiredFootPositions;
+    double leftPhase{0.0};
+    double rightPhase{0.0};
+    bool leftStance{true};
+    bool rightStance{true};
     double errorNormRpy{0.0};
     double errorNormPosition{0.0};
     double errorNormOmega{0.0};
@@ -384,6 +395,16 @@ LocomotionMode locomotionModeFromStateString(const std::string& value) {
     throw std::runtime_error("Invalid metadata.locomotion_state: " + value);
 }
 
+Side sideFromString(const std::string& value) {
+    if (value == "left") {
+        return Side::Left;
+    }
+    if (value == "right") {
+        return Side::Right;
+    }
+    throw std::runtime_error("Only left/right legs are supported in stand_rh_probe: " + value);
+}
+
 FootEndEffectorSource footEndEffectorSourceFromString(const std::string& value) {
     if (value == "site") {
         return FootEndEffectorSource::Site;
@@ -605,16 +626,28 @@ std::optional<ControllerConfig> controllerConfigFromLog(const json& log) {
             out.swing.bodyVelocityHalfStanceOffset =
                 swing.at("body_velocity_half_stance_offset").get<double>();
         }
+        if (swing.contains("mid_speed_body_velocity_half_stance_offset")) {
+            out.swing.midSpeedBodyVelocityHalfStanceOffset =
+                swing.at("mid_speed_body_velocity_half_stance_offset").get<double>();
+        }
+        if (swing.contains("high_speed_body_velocity_half_stance_offset")) {
+            out.swing.highSpeedBodyVelocityHalfStanceOffset =
+                swing.at("high_speed_body_velocity_half_stance_offset").get<double>();
+        }
+        if (swing.contains("body_velocity_half_stance_offset_switch_speed")) {
+            out.swing.bodyVelocityHalfStanceOffsetSwitchSpeed =
+                swing.at("body_velocity_half_stance_offset_switch_speed").get<double>();
+        }
+        if (swing.contains("high_speed_body_velocity_half_stance_offset_switch_speed")) {
+            out.swing.highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed =
+                swing.at("high_speed_body_velocity_half_stance_offset_switch_speed").get<double>();
+        }
         if (swing.contains("swing_foot_yaw_lead_scale")) {
             out.swing.swingFootYawLeadScale =
                 swing.at("swing_foot_yaw_lead_scale").get<double>();
         } else if (swing.contains("touchdown_yaw_lead_scale")) {
             out.swing.swingFootYawLeadScale =
                 swing.at("touchdown_yaw_lead_scale").get<double>();
-        }
-        if (swing.contains("turn_tangential_lead_scale")) {
-            out.swing.turnTangentialLeadScale =
-                swing.at("turn_tangential_lead_scale").get<double>();
         }
         if (swing.contains("enable_stance_foot_yaw_hold")) {
             out.swing.enableStanceFootYawHold =
@@ -993,6 +1026,37 @@ RobotParams<double> robotParamsFromLog(const json& log) {
             vec3FromJson(log.at("model").at("body_com_location_yaw_frame"),
                          "model.body_com_location_yaw_frame");
     }
+    if (log.contains("feet") && log.at("feet").contains("legs") &&
+        log.at("feet").at("legs").is_array()) {
+        for (const auto& legJson : log.at("feet").at("legs")) {
+            if (!legJson.contains("side") || !legJson.at("side").is_string()) {
+                continue;
+            }
+            LegParams<double> leg;
+            leg.side = sideFromString(legJson.at("side").get<std::string>());
+            if (legJson.contains("q_indices")) {
+                leg.joints.q_idx =
+                    legJson.at("q_indices").get<std::vector<int>>();
+            }
+            if (legJson.contains("qd_indices")) {
+                leg.joints.qd_idx =
+                    legJson.at("qd_indices").get<std::vector<int>>();
+            }
+            if (legJson.contains("actuator_indices")) {
+                leg.joints.actuator_idx =
+                    legJson.at("actuator_indices").get<std::vector<int>>();
+            }
+            params.legs.push_back(std::move(leg));
+        }
+    }
+    if (params.legs.empty()) {
+        LegParams<double> left;
+        left.side = Side::Left;
+        LegParams<double> right;
+        right.side = Side::Right;
+        params.legs.push_back(std::move(left));
+        params.legs.push_back(std::move(right));
+    }
     return params;
 }
 
@@ -1137,6 +1201,28 @@ double nominalSeedHeightFromReference(const Vec13<double>& referenceTarget,
     return referenceTarget[5] - command.body_height_offset_m;
 }
 
+double wrapYaw(const double yaw) {
+    return std::atan2(std::sin(yaw), std::cos(yaw));
+}
+
+double lowPassBlendAlpha(const double tau, const double dt) {
+    if (!(tau > 0.0) || !(dt > 0.0)) {
+        return 1.0;
+    }
+    return std::clamp(-std::expm1(-dt / tau), 0.0, 1.0);
+}
+
+Quat<double> quatFromRollPitchYaw(const Vec3<double>& rpy) {
+    const Eigen::AngleAxisd yaw(rpy[2], Vec3<double>::UnitZ());
+    const Eigen::AngleAxisd pitch(rpy[1], Vec3<double>::UnitY());
+    const Eigen::AngleAxisd roll(rpy[0], Vec3<double>::UnitX());
+    return Quat<double>(yaw * pitch * roll);
+}
+
+Vec3<double> xAxisFromYaw(const double yaw_W) {
+    return Rz(yaw_W).col(0);
+}
+
 Vec13<double> referenceSeedForStep(const Vec13<double>& state,
                                    const Vec13<double>& referenceTarget,
                                    const UserCommand& command,
@@ -1153,6 +1239,129 @@ Vec13<double> referenceSeedForStep(const Vec13<double>& state,
     }
     seed[12] = referenceTarget[12];
     return seed;
+}
+
+UserCommand commandForStep(const UserCommand& loggedCommand,
+                           const Options& options,
+                           const int step) {
+    UserCommand command = loggedCommand;
+    const double rolloutTime = static_cast<double>(step) * dtMpc();
+    if (options.xDotRate.has_value()) {
+        command.x_dot = loggedCommand.x_dot + *options.xDotRate * rolloutTime;
+        if (options.xDotFinal.has_value()) {
+            if (*options.xDotRate >= 0.0) {
+                command.x_dot = std::min(command.x_dot, *options.xDotFinal);
+            } else {
+                command.x_dot = std::max(command.x_dot, *options.xDotFinal);
+            }
+        }
+    } else if (options.xDotFinal.has_value()) {
+        const double denominator =
+            std::max(dtMpc(), static_cast<double>(std::max(options.steps - 1, 1)) * dtMpc());
+        const double alpha = std::clamp(rolloutTime / denominator, 0.0, 1.0);
+        command.x_dot = loggedCommand.x_dot + alpha * (*options.xDotFinal - loggedCommand.x_dot);
+    }
+    return clampUserCommand(command);
+}
+
+UserCommand filteredCommandStep(const UserCommand& previous,
+                                const UserCommand& raw,
+                                const double dt) {
+    const auto& filter = getControllerConfig().userCommandFilter;
+    UserCommand out = raw;
+    out.x_dot = previous.x_dot +
+                lowPassBlendAlpha(filter.xDotTau, dt) * (raw.x_dot - previous.x_dot);
+    out.y_dot = previous.y_dot +
+                lowPassBlendAlpha(filter.yDotTau, dt) * (raw.y_dot - previous.y_dot);
+    out.psi_dot = previous.psi_dot +
+                  lowPassBlendAlpha(filter.psiDotTau, dt) * (raw.psi_dot - previous.psi_dot);
+    out.standing_roll_offset_rad =
+        previous.standing_roll_offset_rad +
+        lowPassBlendAlpha(filter.standingRollOffsetTau, dt) *
+            (raw.standing_roll_offset_rad - previous.standing_roll_offset_rad);
+    out.standing_pitch_offset_rad =
+        previous.standing_pitch_offset_rad +
+        lowPassBlendAlpha(filter.standingPitchOffsetTau, dt) *
+            (raw.standing_pitch_offset_rad - previous.standing_pitch_offset_rad);
+    out.body_height_offset_m = raw.body_height_offset_m;
+    return clampUserCommand(out);
+}
+
+ContactScheduleOverride buildNominalContactOverride(const GaitScheduler& gaitScheduler,
+                                                    const HorizonClock& sampleClock) {
+    ContactScheduleOverride out;
+    out.steps.resize(static_cast<std::size_t>(horizonSteps()));
+    for (int k = 0; k < horizonSteps(); ++k) {
+        ContactScheduleOverrideStep& step = out.steps[static_cast<std::size_t>(k)];
+        step.enabled = true;
+        step.leftContact = gaitScheduler.c(Side::Left, sampleClock.tk(k));
+        step.rightContact = gaitScheduler.c(Side::Right, sampleClock.tk(k));
+        step.leftNormalForceMinScale = 1.0;
+        step.rightNormalForceMinScale = 1.0;
+    }
+    return out;
+}
+
+double touchdownYawForSide(const GaitScheduler& gaitScheduler,
+                           const Side side,
+                           const Vec13<double>& state,
+                           const UserCommand& command,
+                           const double time) {
+    const double remainingSwing =
+        std::clamp(cycleTime() * (1.0 - gaitScheduler.p(side, time)), 0.0, swingTime());
+    return state[2] + command.psi_dot * remainingSwing;
+}
+
+void updateReplayStateEstimate(StateEstimate<double>& stateEstimate,
+                               const RobotParams<double>& robotParams,
+                               const Vec13<double>& state,
+                               const double time,
+                               const DesiredFootPositions& currentFootPositions,
+                               const double leftFootYaw_W,
+                               const double rightFootYaw_W,
+                               const bool leftStance,
+                               const bool rightStance) {
+    stateEstimate.time = time;
+    stateEstimate.yaw_W_unwrapped = state[2];
+    stateEstimate.yaw_W_wrapped = wrapYaw(state[2]);
+    stateEstimate.psi = stateEstimate.yaw_W_unwrapped;
+    stateEstimate.yawRate_W = state[8];
+    const Vec3<double> rpy = state.segment<3>(0);
+    stateEstimate.torsoQuat_W = quatFromRollPitchYaw(rpy);
+    stateEstimate.torsoAngVel_W = state.segment<3>(6);
+
+    const Vec3<double> bodyOffset_W = Rz(state[2]) * robotParams.bodyComLocation;
+    stateEstimate.torsoPos_W = state.segment<3>(3) - bodyOffset_W;
+    stateEstimate.torsoLinVel_W =
+        state.segment<3>(9) - stateEstimate.torsoAngVel_W.cross(bodyOffset_W);
+    stateEstimate.torsoLinAcc_W.setZero();
+    stateEstimate.torsoAngAcc_W.setZero();
+
+    if (stateEstimate.legs.size() != robotParams.legs.size()) {
+        stateEstimate.resize(robotParams);
+    }
+    for (std::size_t leg = 0; leg < robotParams.legs.size(); ++leg) {
+        RobotLegState<double>& legState = stateEstimate.legs[leg];
+        switch (robotParams.legs[leg].side) {
+            case Side::Left:
+                legState.footPos_W = currentFootPositions.left_des_W;
+                legState.footEndPos_W = currentFootPositions.left_des_W;
+                legState.R_WF = Rz(leftFootYaw_W);
+                legState.contact = leftStance;
+                break;
+            case Side::Right:
+                legState.footPos_W = currentFootPositions.right_des_W;
+                legState.footEndPos_W = currentFootPositions.right_des_W;
+                legState.R_WF = Rz(rightFootYaw_W);
+                legState.contact = rightStance;
+                break;
+            default:
+                throw std::runtime_error("stand_rh_probe only supports left/right legs");
+        }
+        legState.footVel_W.setZero();
+        legState.footEndVel_W.setZero();
+        legState.hasFootFrame = true;
+    }
 }
 
 RolloutRow makeRowSkeleton(const int step,
@@ -1174,7 +1383,7 @@ RolloutRow makeRowSkeleton(const int step,
     return row;
 }
 
-RolloutResult runRollout(const json& log, const int rolloutSteps) {
+RolloutResult runRollout(const json& log, const Options& options) {
     const json metadata = log.value("metadata", json::object());
     const ControllerConfig& config = getControllerConfig();
 
@@ -1205,35 +1414,116 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
     result.sourceDtMpc = metadataDoubleOr(metadata, "dt_mpc", 0.0);
 
     RobotParams<double> robotParams = robotParamsFromLog(log);
-    HorizonClock horizonClock(result.sourceClockT0);
-    GaitScheduler gaitScheduler(&horizonClock);
+    HorizonClock phaseClock(result.sourceClockT0);
+    GaitScheduler gaitScheduler(&phaseClock);
     gaitScheduler.setLocomotionMode(result.locomotionMode);
     gaitScheduler.setFootLocalXAxesWorld(result.leftFootXAxis_W, result.rightFootXAxis_W);
+    HorizonClock sampleClock(result.sourceControllerTime);
+    StateEstimate<double> stateEstimate;
+    stateEstimate.resize(robotParams);
     MPCFormulation formulation(&robotParams);
     MPCFormulationOutput formulationOutput;
     ReferenceTrajectoryOutput referenceOutput;
     ConvexMPC mpc;
+    UserCommand filteredCommand = result.userCommand;
 
     Vec13<double> state = vec13FromJson(log.at("initial_state").at("x0"), "initial_state.x0");
     Vec13<double> referenceTarget = result.fixedReference;
+    DesiredFootPositions currentFootPositions = result.desiredFootPositions;
+    double leftFootYaw_W = footYawFromXAxis(result.leftFootXAxis_W);
+    double rightFootYaw_W = footYawFromXAxis(result.rightFootXAxis_W);
+    double leftTouchdownYaw_W =
+        std::isfinite(result.leftTouchdownYaw_W) ? result.leftTouchdownYaw_W : leftFootYaw_W;
+    double rightTouchdownYaw_W =
+        std::isfinite(result.rightTouchdownYaw_W) ? result.rightTouchdownYaw_W : rightFootYaw_W;
+    bool previousLeftStance = gaitScheduler.c(Side::Left, result.sourceControllerTime);
+    bool previousRightStance = gaitScheduler.c(Side::Right, result.sourceControllerTime);
     const std::optional<DVec<double>> loggedWrenchHorizon =
         optionalSolutionVector(log, "wrench_horizon_vector", "wrench_horizon");
     const std::optional<DVec<double>> loggedPredictedHorizon =
         optionalSolutionVector(log, "predicted_state_horizon_vector", "predicted_state_horizon");
 
-    result.rows.reserve(static_cast<std::size_t>(std::max(rolloutSteps, 0)));
-    for (int step = 0; step < rolloutSteps; ++step) {
-        horizonClock.reset(result.sourceClockT0 + static_cast<double>(step) * dtMpc());
+    updateReplayStateEstimate(stateEstimate,
+                              robotParams,
+                              state,
+                              result.sourceControllerTime,
+                              currentFootPositions,
+                              leftFootYaw_W,
+                              rightFootYaw_W,
+                              previousLeftStance,
+                              previousRightStance);
+    SwingFootPlanner swingFootPlanner(
+        &gaitScheduler,
+        &phaseClock,
+        &stateEstimate,
+        &robotParams,
+        &filteredCommand);
+    swingFootPlanner.seedTouchdownTargets(result.desiredFootPositions);
+
+    result.rows.reserve(static_cast<std::size_t>(std::max(options.steps, 0)));
+    for (int step = 0; step < options.steps; ++step) {
+        const double currentTime =
+            result.sourceControllerTime + static_cast<double>(step) * dtMpc();
+        phaseClock.sync(currentTime);
+        sampleClock.reset(currentTime);
+        const UserCommand rawCommand = commandForStep(result.userCommand, options, step);
+        filteredCommand =
+            (step == 0) ? rawCommand : filteredCommandStep(filteredCommand, rawCommand, dtMpc());
+
+        const double leftPhase = gaitScheduler.p(Side::Left, currentTime);
+        const double rightPhase = gaitScheduler.p(Side::Right, currentTime);
+        const bool leftStance = gaitScheduler.c(Side::Left, currentTime);
+        const bool rightStance = gaitScheduler.c(Side::Right, currentTime);
+        if (!leftStance) {
+            leftTouchdownYaw_W =
+                touchdownYawForSide(gaitScheduler, Side::Left, state, filteredCommand, currentTime);
+        } else if (!previousLeftStance) {
+            leftFootYaw_W = leftTouchdownYaw_W;
+        }
+        if (!rightStance) {
+            rightTouchdownYaw_W =
+                touchdownYawForSide(gaitScheduler, Side::Right, state, filteredCommand, currentTime);
+        } else if (!previousRightStance) {
+            rightFootYaw_W = rightTouchdownYaw_W;
+        }
+        gaitScheduler.setFootLocalXAxesWorld(
+            xAxisFromYaw(leftFootYaw_W),
+            xAxisFromYaw(rightFootYaw_W));
+
+        updateReplayStateEstimate(stateEstimate,
+                                  robotParams,
+                                  state,
+                                  currentTime,
+                                  currentFootPositions,
+                                  leftFootYaw_W,
+                                  rightFootYaw_W,
+                                  leftStance,
+                                  rightStance);
+
+        DesiredFootPositions desiredFootPositions = result.desiredFootPositions;
+        if (result.locomotionMode == LocomotionMode::Standing || options.fixedFootPoints) {
+            desiredFootPositions = result.desiredFootPositions;
+        } else {
+            const Vec3<double> bodyTarget_W = state.segment<3>(3);
+            swingFootPlanner.setBodyTargetWorld(bodyTarget_W, state[2]);
+            desiredFootPositions = swingFootPlanner.desiredFootPositions();
+        }
+        if (leftStance) {
+            currentFootPositions.left_des_W = desiredFootPositions.left_des_W;
+        }
+        if (rightStance) {
+            currentFootPositions.right_des_W = desiredFootPositions.right_des_W;
+        }
 
         const Vec13<double> referenceSeed = referenceSeedForStep(state,
                                                                  referenceTarget,
-                                                                 result.userCommand,
+                                                                 filteredCommand,
                                                                  result.locomotionMode);
         ReferenceTrajectory(
-            &result.userCommand,
+            &filteredCommand,
             referenceSeed,
-            result.desiredFootPositions,
-            &horizonClock,
+            desiredFootPositions,
+            &sampleClock,
             &gaitScheduler)
             .build(referenceOutput);
 
@@ -1242,18 +1532,25 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
             result.sourceControllerTime,
             state,
             referenceOutput.X_ref.segment<kStateDim>(0));
+        row.command = filteredCommand;
+        row.desiredFootPositions = desiredFootPositions;
+        row.leftPhase = leftPhase;
+        row.rightPhase = rightPhase;
+        row.leftStance = leftStance;
+        row.rightStance = rightStance;
 
         try {
-            const double leftFootYaw_W =
-                gaitScheduler.c(Side::Left, horizonClock.t0())
-                    ? footYawFromXAxis(result.leftFootXAxis_W)
-                    : result.leftTouchdownYaw_W;
-            const double rightFootYaw_W =
-                gaitScheduler.c(Side::Right, horizonClock.t0())
-                    ? footYawFromXAxis(result.rightFootXAxis_W)
-                    : result.rightTouchdownYaw_W;
+            const double leftConstraintFootYaw_W =
+                leftStance ? leftFootYaw_W : leftTouchdownYaw_W;
+            const double rightConstraintFootYaw_W =
+                rightStance ? rightFootYaw_W : rightTouchdownYaw_W;
 
-            gaitScheduler.buildConstraintMatrices(nullptr, leftFootYaw_W, rightFootYaw_W);
+            const ContactScheduleOverride contactOverride =
+                buildNominalContactOverride(gaitScheduler, sampleClock);
+            gaitScheduler.buildConstraintMatrices(
+                &contactOverride,
+                leftConstraintFootYaw_W,
+                rightConstraintFootYaw_W);
             formulation.build(referenceOutput, formulationOutput);
             mpc.updateInput(
                 gaitScheduler,
@@ -1304,6 +1601,8 @@ RolloutResult runRollout(const json& log, const int rolloutSteps) {
 
         state = row.nextState;
         result.rows.push_back(row);
+        previousLeftStance = leftStance;
+        previousRightStance = rightStance;
     }
 
     return result;
@@ -1379,8 +1678,10 @@ void writeReport(std::ostream& out,
         << contactWrenchModelName(contactWrenchModel(result.locomotionMode)) << "` |\n\n"
         << "## Method\n\n"
         << "This is an SRB-only true receding-horizon replay. At each step it solves MPC again using "
-        << "the logged command and fixed logged foot points, then advances the reduced state with the "
-        << "first solved wrench.\n\n"
+        << "the command schedule, the current gait phase, and "
+        << (options.fixedFootPoints ? "fixed logged foot points"
+                                    : "swing-planner recomputed touchdown foot points")
+        << ", then advances the reduced state with the first solved wrench.\n\n"
         << "$$\n"
         << "x_{k+1} = A_{qp} x_k + B_{qp} w_k\n"
         << "$$\n\n"
@@ -1396,7 +1697,16 @@ void writeReport(std::ostream& out,
         << "| config dt_mpc | " << dtMpc() << " |\n"
         << "| source dt_mpc | " << result.sourceDtMpc << " |\n"
         << "| source controller time | " << result.sourceControllerTime << " |\n"
-        << "| source clock t0 | " << result.sourceClockT0 << " |\n\n";
+        << "| source clock t0 | " << result.sourceClockT0 << " |\n"
+        << "| foot point policy | `"
+        << (options.fixedFootPoints ? "fixed_logged" : "swing_planner_recomputed") << "` |\n";
+    if (options.xDotRate.has_value()) {
+        out << "| x_dot rate | " << *options.xDotRate << " |\n";
+    }
+    if (options.xDotFinal.has_value()) {
+        out << "| x_dot final | " << *options.xDotFinal << " |\n";
+    }
+    out << "\n";
 
     out << "## Logged Foot Points\n\n"
         << "| Quantity | x | y | z |\n"
@@ -1446,7 +1756,11 @@ void writeReport(std::ostream& out,
 }
 
 void writeCsvHeader(std::ostream& out) {
-    out << "step,time,sim_time,solve_ok";
+    out << "step,time,sim_time,solve_ok,"
+        << "cmd_x_dot,cmd_y_dot,cmd_psi_dot,"
+        << "left_phase,right_phase,left_stance,right_stance,"
+        << "desired_left_foot_x,desired_left_foot_y,desired_left_foot_z,"
+        << "desired_right_foot_x,desired_right_foot_y,desired_right_foot_z";
     for (const char* name : kStateNames) {
         out << ',' << name;
     }
@@ -1488,6 +1802,14 @@ void writeCsv(std::ostream& out,
     out << "# config_dt_mpc=" << dtMpc() << '\n';
     out << "# source_controller_time=" << result.sourceControllerTime << '\n';
     out << "# source_clock_t0=" << result.sourceClockT0 << '\n';
+    out << "# foot_point_policy="
+        << (options.fixedFootPoints ? "fixed_logged" : "swing_planner_recomputed") << '\n';
+    if (options.xDotRate.has_value()) {
+        out << "# x_dot_rate=" << *options.xDotRate << '\n';
+    }
+    if (options.xDotFinal.has_value()) {
+        out << "# x_dot_final=" << *options.xDotFinal << '\n';
+    }
     out << "# contact_wrench_model="
         << contactWrenchModelName(contactWrenchModel(result.locomotionMode)) << '\n';
     out << "# state_order=" << joinNames(kStateNames) << '\n';
@@ -1498,7 +1820,16 @@ void writeCsv(std::ostream& out,
         out << row.step << ','
             << row.time << ','
             << row.simTime << ','
-            << (row.solveOk ? 1 : 0);
+            << (row.solveOk ? 1 : 0)
+            << ',' << row.command.x_dot
+            << ',' << row.command.y_dot
+            << ',' << row.command.psi_dot
+            << ',' << row.leftPhase
+            << ',' << row.rightPhase
+            << ',' << (row.leftStance ? 1 : 0)
+            << ',' << (row.rightStance ? 1 : 0);
+        writeEigenVectorCsv(out, row.desiredFootPositions.left_des_W);
+        writeEigenVectorCsv(out, row.desiredFootPositions.right_des_W);
         writeEigenVectorCsv(out, row.state);
         writeEigenVectorCsv(out, row.reference);
         writeEigenVectorCsv(out, row.error);
@@ -1540,6 +1871,8 @@ void runPlotScript(const OutputPaths& outputPaths) {
         shellQuote(outputPaths.statesPlot) + " " +
         shellQuote(outputPaths.wrenchPlot) + " " +
         shellQuote(outputPaths.metricsPlot);
+    std::cout.flush();
+    std::cerr.flush();
     const int status = std::system(command.c_str());
     if (status == 0) {
         std::cout << "states plot: "
@@ -1559,7 +1892,9 @@ Options parseArgs(int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         const std::string arg = argv[index];
         if (arg == "-h" || arg == "--help") {
-            std::cout << "Usage: stand_rh_probe [-n STEPS] [mpc_debug.json]\n"
+            std::cout << "Usage: stand_rh_probe [-n STEPS] "
+                      << "[--x-dot-rate MPS2] [--x-dot-final MPS] "
+                      << "[--fixed-foot-points] [mpc_debug.json]\n"
                       << "  If the log path is omitted, the latest standing_mpc or walking_mpc log is used.\n";
             std::exit(EXIT_SUCCESS);
         }
@@ -1571,6 +1906,30 @@ Options parseArgs(int argc, char** argv) {
             if (options.steps <= 0) {
                 throw std::runtime_error("-n requires a positive integer");
             }
+            continue;
+        }
+        if (arg == "--x-dot-rate") {
+            if (index + 1 >= argc) {
+                throw std::runtime_error("--x-dot-rate requires a numeric value");
+            }
+            options.xDotRate = std::stod(argv[++index]);
+            if (!std::isfinite(*options.xDotRate)) {
+                throw std::runtime_error("--x-dot-rate requires a finite numeric value");
+            }
+            continue;
+        }
+        if (arg == "--x-dot-final") {
+            if (index + 1 >= argc) {
+                throw std::runtime_error("--x-dot-final requires a numeric value");
+            }
+            options.xDotFinal = std::stod(argv[++index]);
+            if (!std::isfinite(*options.xDotFinal)) {
+                throw std::runtime_error("--x-dot-final requires a finite numeric value");
+            }
+            continue;
+        }
+        if (arg == "--fixed-foot-points") {
+            options.fixedFootPoints = true;
             continue;
         }
         if (!options.logPath.empty()) {
@@ -1604,7 +1963,7 @@ int main(int argc, char** argv) {
         }
         const std::string robotType = robotTypeLabelFromLog(log);
 
-        const RolloutResult result = runRollout(log, options.steps);
+        const RolloutResult result = runRollout(log, options);
         const OutputPaths outputPaths = defaultOutputPaths(result.locomotionMode);
 
         writeReport(std::cout, options.logPath, options, robotType, result, outputPaths);

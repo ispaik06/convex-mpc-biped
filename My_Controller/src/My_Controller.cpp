@@ -32,6 +32,18 @@ double lowPassBlendAlpha(const double tau, const double dt) {
     return std::clamp(-std::expm1(-dt / tau), 0.0, 1.0);
 }
 
+double selectedBodyVelocityHalfStanceOffset(const SwingParameters& swing,
+                                            const Vec2<double>& planarCommand_B) {
+    const double speed = planarCommand_B.norm();
+    if (speed > swing.highSpeedBodyVelocityHalfStanceOffsetSwitchSpeed) {
+        return swing.highSpeedBodyVelocityHalfStanceOffset;
+    }
+    if (speed > swing.bodyVelocityHalfStanceOffsetSwitchSpeed) {
+        return swing.midSpeedBodyVelocityHalfStanceOffset;
+    }
+    return swing.bodyVelocityHalfStanceOffset;
+}
+
 Vec3<double> desiredFootPositionForSide(const DesiredFootPositions& desiredFootPositions,
                                         const Side side) {
     switch (side) {
@@ -613,15 +625,21 @@ void MyController::updateFilteredUserCommand(const double dt) {
     _filteredUserCommand = rawCommand;
 
     const auto& filter = getControllerConfig().userCommandFilter;
-    _filteredUserCommand.x_dot = previousCommand.x_dot +
-                                 lowPassBlendAlpha(filter.xDotTau, dt) *
-                                     (rawCommand.x_dot - previousCommand.x_dot);
-    _filteredUserCommand.y_dot = previousCommand.y_dot +
-                                 lowPassBlendAlpha(filter.yDotTau, dt) *
-                                     (rawCommand.y_dot - previousCommand.y_dot);
-    _filteredUserCommand.psi_dot = previousCommand.psi_dot +
-                                   lowPassBlendAlpha(filter.psiDotTau, dt) *
-                                       (rawCommand.psi_dot - previousCommand.psi_dot);
+    if (rawCommand.x_dot == 0.0 && rawCommand.y_dot == 0.0 && rawCommand.psi_dot == 0.0) {
+        _filteredUserCommand.x_dot = 0.0;
+        _filteredUserCommand.y_dot = 0.0;
+        _filteredUserCommand.psi_dot = 0.0;
+    } else {
+        _filteredUserCommand.x_dot = previousCommand.x_dot +
+                                     lowPassBlendAlpha(filter.xDotTau, dt) *
+                                         (rawCommand.x_dot - previousCommand.x_dot);
+        _filteredUserCommand.y_dot = previousCommand.y_dot +
+                                     lowPassBlendAlpha(filter.yDotTau, dt) *
+                                         (rawCommand.y_dot - previousCommand.y_dot);
+        _filteredUserCommand.psi_dot = previousCommand.psi_dot +
+                                       lowPassBlendAlpha(filter.psiDotTau, dt) *
+                                           (rawCommand.psi_dot - previousCommand.psi_dot);
+    }
     _filteredUserCommand.body_height_offset_m = rawCommand.body_height_offset_m;
     _filteredUserCommand.standing_roll_offset_rad =
         previousCommand.standing_roll_offset_rad +
@@ -705,10 +723,15 @@ void MyController::updateBodyTarget(const Vec13<double>& x0, const double dt) {
         return;
     }
 
-    // Walking is velocity-commanded. Keep the body target anchored to the current
-    // state so disturbances do not create a stale world-frame pose target.
+    // Walking is velocity-commanded. Keep planar position anchored to the current
+    // state, but keep yaw command-tracked so passive yaw drift is corrected.
     _bodyTarget.nominalPosition_W.template head<2>() = x0.template segment<2>(3);
-    _bodyTarget.euler_W[2] = x0[2];
+    _bodyTarget.euler_W[2] = BodyMotionReference::advanceYaw(_gaitScheduler.get(),
+                                                             _bodyTarget.euler_W[2],
+                                                             _filteredUserCommand.psi_dot,
+                                                             dt,
+                                                             _stateEstimate->time,
+                                                             yawIntegrationMode);
     applyPoseOffsets();
 }
 
@@ -870,12 +893,13 @@ double MyController::swingFootYawTargetWorld() const {
         throw std::runtime_error("MyController::swingFootYawTargetWorld requires state estimate");
     }
 
+    const auto& swing = getControllerConfig().swing;
     const double psi_dot = _filteredUserCommand.psi_dot;
     const double baseYaw_W = _stateEstimate->yaw_W_unwrapped;
-    const double leadScale = getControllerConfig().swing.swingFootYawLeadScale;
-    const double previewTime =
-        std::max(0.0, (0.5 + getControllerConfig().swing.bodyVelocityHalfStanceOffset) *
-                          stanceTime());
+    const double leadScale = swing.swingFootYawLeadScale;
+    const Vec2<double> planarCommand_B(_filteredUserCommand.x_dot, _filteredUserCommand.y_dot);
+    const double previewTime = std::max(
+        0.0, (0.5 + selectedBodyVelocityHalfStanceOffset(swing, planarCommand_B)) * stanceTime());
     return baseYaw_W + leadScale * psi_dot * previewTime;
 }
 

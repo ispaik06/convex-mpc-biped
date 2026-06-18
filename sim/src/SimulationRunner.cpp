@@ -9,6 +9,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 
@@ -118,6 +119,41 @@ std::string robotTypeName(const RobotType type) {
 			return "Unitree H1";
 	}
 	return "Unknown";
+}
+
+bool parseProfilePoint(const std::string& token, double& time, double& value) {
+	const std::size_t separator = token.find(':');
+	if (separator == std::string::npos) {
+		return false;
+	}
+	const std::string timeToken = token.substr(0, separator);
+	const std::string valueToken = token.substr(separator + 1);
+	char* endTime = nullptr;
+	char* endValue = nullptr;
+	time = std::strtod(timeToken.c_str(), &endTime);
+	value = std::strtod(valueToken.c_str(), &endValue);
+	return endTime != timeToken.c_str() && *endTime == '\0' &&
+	       endValue != valueToken.c_str() && *endValue == '\0' &&
+	       std::isfinite(time) && std::isfinite(value);
+}
+
+std::vector<std::pair<double, double>> parseCommandProfile(const char* profileEnv) {
+	std::vector<std::pair<double, double>> profile;
+	if (profileEnv == nullptr || std::string(profileEnv).empty()) {
+		return profile;
+	}
+
+	std::stringstream stream(profileEnv);
+	std::string token;
+	while (std::getline(stream, token, ',')) {
+		double time = 0.0;
+		double value = 0.0;
+		if (parseProfilePoint(token, time, value)) {
+			profile.emplace_back(time, value);
+		}
+	}
+	std::sort(profile.begin(), profile.end());
+	return profile;
 }
 
 int legControlModeCode(const LegControlMode mode) {
@@ -376,6 +412,7 @@ void SimulationRunner::runRobotControl() {
 	_stateEstimator.update(_cheaterState, _stateEstimate);
 	const bool keyboardStartedNow = maybeStartKeyboardCommand(_stateEstimate.time);
 	_userCommand = _keyboardCommand.getUserCommand();
+	applyHeadlessUserCommandSchedule(_stateEstimate.time);
 	_robotRunner->prepareController(_stateEstimate);
 	const bool standingControls =
 		standingKeyboardControlsFromRequest(_robotRunner->legDynamicsRequest());
@@ -412,6 +449,91 @@ bool SimulationRunner::maybeStartKeyboardCommand(const double simTime) {
 
 	_keyboardCommandStartAttempted = true;
 	return _keyboardCommand.start();
+}
+
+void SimulationRunner::applyHeadlessUserCommandSchedule(const double simTime) {
+	if (!_headless) {
+		return;
+	}
+
+	const char* enableEnv = std::getenv("CONVEXMPC_HEADLESS_AUTO_WALK");
+	if (enableEnv == nullptr || std::string(enableEnv).empty() ||
+	    std::string(enableEnv) == "0" || std::string(enableEnv) == "false" ||
+	    std::string(enableEnv) == "FALSE") {
+		return;
+	}
+
+	double startTime = _keyboardInputEnableTime;
+	if (const char* startEnv = std::getenv("CONVEXMPC_HEADLESS_X_DOT_START_TIME");
+	    startEnv != nullptr && std::string(startEnv).size() > 0) {
+		const double parsed = std::atof(startEnv);
+		if (std::isfinite(parsed) && parsed >= 0.0) {
+			startTime = parsed;
+		}
+	}
+
+	double toggleTime = _keyboardInputEnableTime + 0.2;
+	if (const char* toggleEnv = std::getenv("CONVEXMPC_HEADLESS_WALK_TOGGLE_TIME");
+	    toggleEnv != nullptr && std::string(toggleEnv).size() > 0) {
+		const double parsed = std::atof(toggleEnv);
+		if (std::isfinite(parsed) && parsed >= 0.0) {
+			toggleTime = parsed;
+		}
+	}
+
+	double finalXDot = 0.0;
+	if (const char* finalEnv = std::getenv("CONVEXMPC_HEADLESS_X_DOT_FINAL");
+	    finalEnv != nullptr && std::string(finalEnv).size() > 0) {
+		const double parsed = std::atof(finalEnv);
+		if (std::isfinite(parsed)) {
+			finalXDot = parsed;
+		}
+	}
+
+	double rate = 0.0;
+	if (const char* rateEnv = std::getenv("CONVEXMPC_HEADLESS_X_DOT_RATE");
+	    rateEnv != nullptr && std::string(rateEnv).size() > 0) {
+		const double parsed = std::atof(rateEnv);
+		if (std::isfinite(parsed) && parsed > 0.0) {
+			rate = parsed;
+		}
+	}
+
+	if (simTime >= toggleTime) {
+		_userCommand.locomotion_mode_toggle_request = 1;
+	}
+	const std::vector<std::pair<double, double>> xDotProfile =
+		parseCommandProfile(std::getenv("CONVEXMPC_HEADLESS_X_DOT_PROFILE"));
+	if (!xDotProfile.empty()) {
+		double profiledXDot = xDotProfile.front().second;
+		for (const auto& point : xDotProfile) {
+			if (simTime + 1e-12 < point.first) {
+				break;
+			}
+			profiledXDot = point.second;
+		}
+		_userCommand.x_dot = profiledXDot;
+	} else if (simTime >= startTime) {
+		const double rampedXDot = rate > 0.0
+		                              ? std::copysign(
+		                                    std::min(std::abs(finalXDot),
+		                                             rate * (simTime - startTime)),
+		                                    finalXDot)
+		                              : finalXDot;
+		_userCommand.x_dot = rampedXDot;
+	}
+
+	if (!_headlessScheduleAnnounced) {
+		std::cout << "[HeadlessCommandSchedule] auto walking enabled, x_dot final="
+		          << finalXDot << " m/s, rate=" << rate
+		          << " m/s^2, toggle_time=" << toggleTime
+		          << " sec, start_time=" << startTime << " sec";
+		if (!xDotProfile.empty()) {
+			std::cout << ", profile=" << std::getenv("CONVEXMPC_HEADLESS_X_DOT_PROFILE");
+		}
+		std::cout << '\n';
+		_headlessScheduleAnnounced = true;
+	}
 }
 
 void SimulationRunner::writeHeadlessTelemetry() {

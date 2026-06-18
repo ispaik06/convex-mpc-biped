@@ -379,6 +379,7 @@ Run the wrapper to generate the full set:
 ./scripts/run_mpc_debug.sh --walking -n 80
 ./scripts/run_mpc_debug.sh --all-latest -n 80
 ./scripts/run_mpc_debug.sh -l logs/debug/walking_mpc/walking_mpc_debug_20260501_140727.json -n 80
+./scripts/run_mpc_debug.sh --walking -n 120 --x-dot-final 0.7
 ```
 
 Each pass writes a **report**, a **CSV** where relevant, and the corresponding plot
@@ -422,8 +423,11 @@ not contain `wrench_to_tau_jacobian`, the script rebuilds it from MuJoCo foot Ja
 ### Receding horizon
 
 This is the closed-loop replay path. At every rollout step it rebuilds the reference
-trajectory, gait constraints, SRB formulation, and QP, then advances from the first
-state of the new solve. The output plots are `states.png`, `wrench.png`, and
+trajectory, gait constraints, walking foot targets, SRB formulation, and QP, then
+advances from the first state of the new solve. The walking foot targets are seeded
+from the logged solve and then recomputed as gait phase advances; pass
+`--fixed-foot-points` only for the older fixed-anchor replay. Use `--x-dot-final`
+or `--x-dot-rate` to sweep the raw forward command during the rollout. The output plots are `states.png`, `wrench.png`, and
 `metrics.png`, which show state tracking, first-wrench evolution, and stability
 metrics over time.
 
