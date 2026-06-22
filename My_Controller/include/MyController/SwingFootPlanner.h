@@ -28,7 +28,7 @@ public:
 
     void reset();
     void seedTouchdownTargets(const DesiredFootPositions& desiredFootPositions);
-    void setBodyTargetWorld(const Vec3<double>& position_W, double yaw_W);
+    void setBodyYawTargetWorld(double yaw_W);
     DesiredFootPositions desiredFootPositions();
 
 private:
@@ -41,16 +41,11 @@ private:
     double touchdownPreviewTime(const Vec2<double>& currentPlanarCommand) const;
     bool stopRecenterRequested(const Vec2<double>& currentPlanarCommand) const;
     bool stopRecenterActive(const Vec2<double>& currentPlanarCommand);
-    double computeStopRecenterXBody() const;
+    Vec3<double> computeStopStanceCenterWorld() const;
     Vec3<double> currentFootTouchdownTarget(std::size_t legIndex) const;
     Vec3<double> touchdownTargetWorldBodyVelocityHalfStance(std::size_t legIndex,
                                                             const Vec2<double>& currentPlanarCommand,
-                                                            bool stopRecenter,
-                                                            double* touchdownYaw_W_out = nullptr,
-                                                            Vec3<double>* effectiveTouchdownOffset_B_out = nullptr) const;
-    void recordSequentialTouchdown(const Vec3<double>& target_W,
-                                   double touchdownYaw_W,
-                                   const Vec3<double>& touchdownOffset_B);
+                                                            bool stopRecenter) const;
 
     GaitScheduler* _gaitScheduler = nullptr;
     HorizonClock* _horizonClock = nullptr;
@@ -62,13 +57,16 @@ private:
     std::vector<Vec3<double>> _nominalFootOffsets_B;
     std::vector<bool> _nominalFootOffsetValid;
     std::vector<bool> _wasInStance;
-    Vec3<double> _footprintCenter_W = Vec3<double>::Zero();
-    bool _footprintCenterValid{false};
-    Vec3<double> _bodyPositionTarget_W = Vec3<double>::Zero();
-    bool _bodyPositionTargetValid{false};
     double _bodyYawTarget_W{0.0};
     bool _bodyYawTargetValid{false};
     int _stopRecenterClearTicks{0};
+    bool _stopRecenterWasActive{false};
+    Vec2<double> _previousPlanarCommand_B = Vec2<double>::Zero();
+    double _previousYawRateCommand{0.0};
+    bool _previousCommandValid{false};
+    Vec3<double> _turnStopCenter_W = Vec3<double>::Zero();
+    double _turnStopYaw_W{0.0};
+    bool _turnStopFrameValid{false};
 };
 
 #endif  // SWING_FOOT_PLANNER_H

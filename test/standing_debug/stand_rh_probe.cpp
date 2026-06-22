@@ -1504,8 +1504,7 @@ RolloutResult runRollout(const json& log, const Options& options) {
         if (result.locomotionMode == LocomotionMode::Standing || options.fixedFootPoints) {
             desiredFootPositions = result.desiredFootPositions;
         } else {
-            const Vec3<double> bodyTarget_W = state.segment<3>(3);
-            swingFootPlanner.setBodyTargetWorld(bodyTarget_W, state[2]);
+            swingFootPlanner.setBodyYawTargetWorld(state[2]);
             desiredFootPositions = swingFootPlanner.desiredFootPositions();
         }
         if (leftStance) {

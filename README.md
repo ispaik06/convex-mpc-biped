@@ -432,7 +432,7 @@ or `--x-dot-rate` to sweep the raw forward command during the rollout. The outpu
 metrics over time.
 
 <p align="center">
-  <img src="docs/assets/readme/walk_rh_20260501_140742_states.png" alt="Receding horizon states plot" width="75%">
+  <img src="docs/assets/readme/walk_rh_20260520_053536_states.png" alt="Receding horizon states plot" width="75%">
 </p>
 
 > [!TIP]

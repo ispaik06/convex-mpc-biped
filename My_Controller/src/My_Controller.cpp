@@ -1391,7 +1391,7 @@ void MyController::runController() {
     updateFilteredUserCommand(dt);
     updateBodyTarget(x0, dt);
     if (_bodyTarget.initialized) {
-        _swingFootPlanner->setBodyTargetWorld(_bodyTarget.position_W, _bodyTarget.euler_W[2]);
+        _swingFootPlanner->setBodyYawTargetWorld(_bodyTarget.euler_W[2]);
     }
     const auto standingFootTarget = [&](const Side side) {
         Vec3<double> target = _stateEstimate->legs[findLegIndex(side)].footPos_W;

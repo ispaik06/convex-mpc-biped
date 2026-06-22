@@ -2,23 +2,31 @@
 
 This note documents the current `SwingFootPlanner` touchdown target equation.
 
-The planner is now reduced to a basic Raibert-style preview:
+The planner uses a Raibert-style command preview while remaining consistent with velocity-tracking
+MPC:
 
-- zero planar command should step at the nominal foot offsets,
+- walking footholds are anchored to the estimated reduced-body COM, not a persistent position
+  target,
+- zero command uses a velocity-aware stop center,
 - pure in-place turning should rotate the nominal offsets,
 - translational walking should use only filtered command preview,
 - the touchdown timing is `0.5 + offset`, with optional mid/high-speed switches.
 
 ## 1. Inputs and Latching
 
-`MyController::runController()` updates the filtered user command, updates the body target, passes
-that body target into `SwingFootPlanner`, and then asks the planner for desired foot positions.
+`MyController::runController()` updates the filtered user command and passes only the commanded yaw
+reference into `SwingFootPlanner`. Planar foothold placement comes directly from the estimated
+reduced-body COM position and velocity. The walking body position target is deliberately not an
+input to the planner.
 
-During walking, each swing leg gets a touchdown target only when it has just left stance or when no
-valid target exists yet. After that, the target is cached for the rest of that swing:
+During ordinary walking, each swing leg gets a touchdown target only when it has just left stance or
+when no valid target exists yet. A zero-command edge immediately replans a foot that is already in
+swing. During turn-stop recovery, the active swing target follows the estimated body frame:
 
 ```cpp
-const bool shouldUpdateTouchdownTarget = wasInStance || !_touchdownTargetValid[leg];
+const bool shouldUpdateTouchdownTarget =
+    wasInStance || !_touchdownTargetValid[leg] || stopRecenterJustActivated ||
+    _turnStopFrameValid;
 ```
 
 For stance legs, the planner returns the cached touchdown target. If no cache exists yet, it seeds
@@ -27,8 +35,9 @@ from the current measured foot position.
 ## 2. Frames
 
 - `W`: world frame. The final touchdown target is returned as `target_W`.
-- `B`: body-yaw frame. This is a planar frame using the controller's body yaw target, not full
-  roll/pitch.
+- `B`: body-yaw frame. During normal walking this uses the commanded yaw reference. During a
+  turn-dominant stop it follows the estimated unwrapped body yaw so the feet align with the actual
+  body, not a stale desired heading.
 
 The planner stores nominal left/right foot spacing in `B`, while final foot positions are stored in
 `W`.
@@ -122,7 +131,8 @@ R_z(\psi_0)^T \Delta p_{\text{step}}^W
 + R_z(\psi_{\text{td}} - \psi_0) o_{\text{leg}}^B
 $$
 
-The final target is:
+For ordinary walking, `p_center_W` is the estimated reduced-body COM position. It is not the
+walking body position target. The final target is:
 
 $$
 p_{\text{td}}^W = p_{\text{center}}^W + R_z(\psi_0)o_{\text{planned}}^B
@@ -147,16 +157,17 @@ pure yaw stepping, where `Rz(psi_td - psi0) * o_leg_B` should remain the nominal
 
 ## 7. Behavior by Command
 
-### Zero planar command
+### Zero command after translating
 
-When `x_dot = 0` and `y_dot = 0`:
+When `x_dot`, `y_dot`, and `psi_dot` enter the configured deadband, the step preview is removed.
+The planner derives a stop center from estimated reduced-body COM position and velocity. The
+body-frame velocity is multiplied by `swing.stop_capture_point_gain` and limited by
+`swing.stop_capture_point_max_offset`; a configured `stop_braking_offset_B` replaces that velocity
+term.
 
-$$
-\Delta p_{\text{step}}^W = 0
-$$
-
-So the target is the current center plus nominal foot spacing. This is the expected in-place stepping
-behavior after pressing `space`.
+Each new swing uses the current state-derived stop center, while its target remains fixed for that
+swing. Both feet receive only their nominal offsets about this center, so their converged
+body-frame fore-aft coordinates are equal without sacrificing braking authority.
 
 The controller also snaps filtered `x_dot`, `y_dot`, and `psi_dot` to zero when the raw command is
 fully zero, so `space` no longer leaves a decaying filtered command that can pull touchdown targets
@@ -181,6 +192,21 @@ $$
 So pure turning rotates the nominal left/right offsets around the footprint center, without the old
 extra tangential lead.
 
+### Stopping after in-place turning
+
+The planner remembers the previous filtered command. On a zero-command edge it classifies the stop
+as turn-dominant when the previous yaw command is nonzero and planar speed is no greater than the
+nominal-foot tangential speed plus the stop deadband.
+
+For a turn-dominant stop, both feet use one shared stop frame. Its center and yaw follow the
+estimated reduced-body COM and unwrapped body yaw while the gait finishes aligning the feet. The
+active swing target is updated continuously in this phase. Since both nominal offsets have zero
+forward component, the feet converge to equal fore-aft coordinates in the actual body frame.
+
+Following the estimated frame is intentional. Freezing the stop frame in world coordinates can let
+the body walk away from its support polygon, while choosing a different yaw only at each liftoff can
+leave one foot visibly ahead of the other.
+
 ### Translating
 
 When `x_dot` or `y_dot` is nonzero, translation preview comes from the filtered command:
@@ -193,9 +219,9 @@ $$
 
 ## 8. Code References
 
-- Command filtering and zero-command snap: [My_Controller/src/My_Controller.cpp](../My_Controller/src/My_Controller.cpp#L598)
-- Walking body target anchor: [My_Controller/src/My_Controller.cpp](../My_Controller/src/My_Controller.cpp#L711)
-- Planner call site: [My_Controller/src/My_Controller.cpp](../My_Controller/src/My_Controller.cpp#L1370)
+- Command filtering and zero-command snap: [My_Controller/src/My_Controller.cpp](../My_Controller/src/My_Controller.cpp#L610)
+- Velocity-tracking body reference: [My_Controller/src/My_Controller.cpp](../My_Controller/src/My_Controller.cpp#L677)
+- Planner call site: [My_Controller/src/My_Controller.cpp](../My_Controller/src/My_Controller.cpp#L1394)
 - `space` raw command reset: [common/src/Utilities/KeyboardCommand.cpp](../common/src/Utilities/KeyboardCommand.cpp#L355)
-- Full touchdown equation: [My_Controller/src/SwingFootPlanner.cpp](../My_Controller/src/SwingFootPlanner.cpp#L243)
-- Swing target latching: [My_Controller/src/SwingFootPlanner.cpp](../My_Controller/src/SwingFootPlanner.cpp#L322)
+- Full touchdown equation: [My_Controller/src/SwingFootPlanner.cpp](../My_Controller/src/SwingFootPlanner.cpp#L235)
+- Swing target latching: [My_Controller/src/SwingFootPlanner.cpp](../My_Controller/src/SwingFootPlanner.cpp#L347)

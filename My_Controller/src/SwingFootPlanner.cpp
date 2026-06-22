@@ -8,6 +8,22 @@
 
 namespace {
 constexpr double kSwingFootTargetZ = -0.005;
+
+Vec3<double> reducedBodyOffsetWorld(const StateEstimate<double>& stateEstimate,
+                                    const RobotParams<double>& robotParams) {
+    return Rz(stateEstimate.yaw_W_unwrapped) * robotParams.bodyComLocation;
+}
+
+Vec3<double> reducedBodyComWorld(const StateEstimate<double>& stateEstimate,
+                                 const RobotParams<double>& robotParams) {
+    return stateEstimate.torsoPos_W + reducedBodyOffsetWorld(stateEstimate, robotParams);
+}
+
+Vec3<double> reducedBodyComVelocityWorld(const StateEstimate<double>& stateEstimate,
+                                         const RobotParams<double>& robotParams) {
+    const Vec3<double> bodyOffset_W = reducedBodyOffsetWorld(stateEstimate, robotParams);
+    return stateEstimate.torsoLinVel_W + stateEstimate.torsoAngVel_W.cross(bodyOffset_W);
+}
 }  // namespace
 
 void SwingFootPlanner::reset() {
@@ -16,11 +32,15 @@ void SwingFootPlanner::reset() {
     _nominalFootOffsets_B.clear();
     _nominalFootOffsetValid.clear();
     _wasInStance.clear();
-    _footprintCenter_W.setZero();
-    _footprintCenterValid = false;
-    _bodyPositionTargetValid = false;
     _bodyYawTargetValid = false;
     _stopRecenterClearTicks = 0;
+    _stopRecenterWasActive = false;
+    _previousPlanarCommand_B.setZero();
+    _previousYawRateCommand = 0.0;
+    _previousCommandValid = false;
+    _turnStopCenter_W.setZero();
+    _turnStopYaw_W = 0.0;
+    _turnStopFrameValid = false;
 }
 
 void SwingFootPlanner::seedTouchdownTargets(const DesiredFootPositions& desiredFootPositions) {
@@ -45,21 +65,14 @@ void SwingFootPlanner::seedTouchdownTargets(const DesiredFootPositions& desiredF
         _touchdownTargetValid[leg] = true;
         _wasInStance[leg] = _gaitScheduler->c(_robotParams->legs[leg].side, _stateEstimate->time);
     }
-
-    _footprintCenter_W =
-        0.5 * (desiredFootPositions.left_des_W + desiredFootPositions.right_des_W);
-    _footprintCenterValid = true;
 }
 
-void SwingFootPlanner::setBodyTargetWorld(const Vec3<double>& position_W, const double yaw_W) {
-    if (!position_W.allFinite() || !std::isfinite(yaw_W)) {
-        _bodyPositionTargetValid = false;
+void SwingFootPlanner::setBodyYawTargetWorld(const double yaw_W) {
+    if (!std::isfinite(yaw_W)) {
         _bodyYawTargetValid = false;
         return;
     }
 
-    _bodyPositionTarget_W = position_W;
-    _bodyPositionTargetValid = true;
     _bodyYawTarget_W = yaw_W;
     _bodyYawTargetValid = true;
 }
@@ -91,8 +104,6 @@ void SwingFootPlanner::ensureSwingTouchdownCache() {
     _nominalFootOffsets_B.assign(legCount, Vec3<double>::Zero());
     _nominalFootOffsetValid.assign(legCount, false);
     _wasInStance.assign(legCount, true);
-    _footprintCenter_W.setZero();
-    _footprintCenterValid = false;
 }
 
 void SwingFootPlanner::ensureNominalFootOffsets() {
@@ -113,11 +124,6 @@ void SwingFootPlanner::ensureNominalFootOffsets() {
         footCenter_W += _stateEstimate->legs[leg].footPos_W;
     }
     footCenter_W /= static_cast<double>(_robotParams->legs.size());
-    if (!_footprintCenterValid) {
-        _footprintCenter_W = footCenter_W;
-        _footprintCenterValid = true;
-    }
-
     const auto& swing = getControllerConfig().swing;
     if (!swing.nominalFootOffsets_B.empty()) {
         if (swing.nominalFootOffsets_B.size() != _robotParams->legs.size()) {
@@ -185,6 +191,11 @@ bool SwingFootPlanner::stopRecenterActive(const Vec2<double>& currentPlanarComma
         return true;
     }
 
+    if (!_stopRecenterWasActive) {
+        _stopRecenterClearTicks = 0;
+        return false;
+    }
+
     if (_stopRecenterClearTicks < swing.stopBrakingLatchClearTicks) {
         ++_stopRecenterClearTicks;
         return true;
@@ -193,34 +204,44 @@ bool SwingFootPlanner::stopRecenterActive(const Vec2<double>& currentPlanarComma
     return false;
 }
 
-double SwingFootPlanner::computeStopRecenterXBody() const {
+Vec3<double> SwingFootPlanner::computeStopStanceCenterWorld() const {
     const auto& swing = getControllerConfig().swing;
+    const double yaw_W = _turnStopFrameValid ? _turnStopYaw_W : bodyYawTargetWorld();
+    Vec3<double> stoppingOffset_B = Vec3<double>::Zero();
     if (swing.hasStopBrakingOffset) {
-        return swing.stopBrakingOffset_B.x();
+        stoppingOffset_B = swing.stopBrakingOffset_B;
+    } else {
+        const Vec3<double> velocity_B =
+            Rz(yaw_W).transpose() * reducedBodyComVelocityWorld(*_stateEstimate, *_robotParams);
+        stoppingOffset_B.template head<2>() =
+            swing.stopCapturePointGain * velocity_B.template head<2>();
+
+        const double planarNorm = stoppingOffset_B.template head<2>().norm();
+        if (swing.stopCapturePointMaxOffset > 0.0 &&
+            planarNorm > swing.stopCapturePointMaxOffset) {
+            stoppingOffset_B.template head<2>() *=
+                swing.stopCapturePointMaxOffset / planarNorm;
+        }
     }
 
-    const double yaw0 = bodyYawTargetWorld();
-    const Vec3<double> velocity_B =
-        Rz(yaw0).transpose() * _stateEstimate->torsoLinVel_W;
-    const double captureX =
-        swing.stopCapturePointGain * velocity_B.x();
-    return std::clamp(captureX,
-                      -swing.stopCapturePointMaxOffset,
-                      swing.stopCapturePointMaxOffset);
+    Vec3<double> center_W = _turnStopFrameValid
+                                ? _turnStopCenter_W
+                                : reducedBodyComWorld(*_stateEstimate, *_robotParams) +
+                                      Rz(yaw_W) * stoppingOffset_B;
+    center_W.z() = kSwingFootTargetZ;
+    return center_W;
 }
 
 Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     const std::size_t legIndex,
     const Vec2<double>& currentPlanarCommand,
-    const bool stopRecenter,
-    double* touchdownYaw_W_out,
-    Vec3<double>* effectiveTouchdownOffset_B_out) const {
+    const bool stopRecenter) const {
     const Vec3<double> previewVelocity_B(currentPlanarCommand.x(),
                                          currentPlanarCommand.y(),
                                          0.0);
     const double previewTime = touchdownPreviewTime(currentPlanarCommand);
     const double psi_dot = (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
-    const double yaw0 = bodyYawTargetWorld();
+    const double yaw0 = _turnStopFrameValid ? _turnStopYaw_W : bodyYawTargetWorld();
     const double translationYaw_W = yaw0 + 0.5 * psi_dot * previewTime;
     // Use the remaining swing time to estimate the yaw at the eventual touchdown instant.
     const double remainingSwingTime =
@@ -229,26 +250,18 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
                    0.0,
                    swingTime());
     const double touchdownYaw_W = yaw0 + psi_dot * remainingSwingTime;
-    if (touchdownYaw_W_out != nullptr) {
-        *touchdownYaw_W_out = touchdownYaw_W;
-    }
     const Vec3<double> step_W = Rz(translationYaw_W) * previewVelocity_B * previewTime;
     const Vec3<double> currentCenter_W =
-        (_bodyPositionTargetValid
-             ? _bodyPositionTarget_W
-             : (_footprintCenterValid ? _footprintCenter_W
-                                      : currentFootTouchdownTarget(legIndex)));
+        stopRecenter ? computeStopStanceCenterWorld()
+                     : reducedBodyComWorld(*_stateEstimate, *_robotParams);
     const Vec3<double>& touchdownOffset_B = _nominalFootOffsets_B[legIndex];
     Vec3<double> plannedOffset_B =
         Rz(yaw0).transpose() * step_W +
         Rz(touchdownYaw_W - yaw0) * touchdownOffset_B;
-    Vec3<double> effectiveTouchdownOffset_B = touchdownOffset_B;
     if (stopRecenter) {
-        plannedOffset_B.x() = computeStopRecenterXBody();
-        effectiveTouchdownOffset_B.x() = plannedOffset_B.x();
-    }
-    if (effectiveTouchdownOffset_B_out != nullptr) {
-        *effectiveTouchdownOffset_B_out = effectiveTouchdownOffset_B;
+        // Both feet use a shared state-derived stop center rather than preserving the
+        // preceding stride in the sequential footprint.
+        plannedOffset_B = Rz(touchdownYaw_W - yaw0) * touchdownOffset_B;
     }
     const double nominalLateralOffset = touchdownOffset_B.y();
     if (nominalLateralOffset > 0.0) {
@@ -259,14 +272,6 @@ Vec3<double> SwingFootPlanner::touchdownTargetWorldBodyVelocityHalfStance(
     Vec3<double> target = currentCenter_W + Rz(yaw0) * plannedOffset_B;
     target.z() = kSwingFootTargetZ;
     return target;
-}
-
-void SwingFootPlanner::recordSequentialTouchdown(const Vec3<double>& target_W,
-                                                 const double touchdownYaw_W,
-                                                 const Vec3<double>& touchdownOffset_B) {
-    _footprintCenter_W = target_W - Rz(touchdownYaw_W) * touchdownOffset_B;
-    _footprintCenter_W.z() = target_W.z();
-    _footprintCenterValid = true;
 }
 
 DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
@@ -280,8 +285,39 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
     ensureNominalFootOffsets();
 
     const Vec2<double> currentPlanarCommand = currentPlanarCommandBodyFrame();
-    const double previewTime = touchdownPreviewTime(currentPlanarCommand);
+    const double currentYawRateCommand =
+        (_userCommand != nullptr) ? _userCommand->psi_dot : 0.0;
     const bool shouldStopRecenter = stopRecenterActive(currentPlanarCommand);
+    const bool stopRecenterJustActivated =
+        shouldStopRecenter && !_stopRecenterWasActive;
+    if (stopRecenterJustActivated && _previousCommandValid) {
+        double nominalFootRadius = 0.0;
+        for (const Vec3<double>& offset_B : _nominalFootOffsets_B) {
+            nominalFootRadius = std::max(nominalFootRadius, offset_B.template head<2>().norm());
+        }
+        const auto& swing = getControllerConfig().swing;
+        const double previousTurnTangentialSpeed =
+            std::abs(_previousYawRateCommand) * nominalFootRadius;
+        const bool wasTurnDominant =
+            std::abs(_previousYawRateCommand) > swing.stopVelocityDeadband &&
+            _previousPlanarCommand_B.norm() <=
+                previousTurnTangentialSpeed + swing.stopVelocityDeadband;
+        if (wasTurnDominant) {
+            _turnStopCenter_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
+            _turnStopCenter_W.z() = kSwingFootTargetZ;
+            _turnStopYaw_W = _stateEstimate->yaw_W_unwrapped;
+            _turnStopFrameValid = true;
+        }
+    } else if (!shouldStopRecenter) {
+        _turnStopCenter_W.setZero();
+        _turnStopYaw_W = 0.0;
+        _turnStopFrameValid = false;
+    }
+    if (shouldStopRecenter && _turnStopFrameValid) {
+        _turnStopCenter_W = reducedBodyComWorld(*_stateEstimate, *_robotParams);
+        _turnStopCenter_W.z() = kSwingFootTargetZ;
+        _turnStopYaw_W = _stateEstimate->yaw_W_unwrapped;
+    }
     const double time = _stateEstimate->time;
     auto computeDesiredFootPos = [&](Side side) -> Vec3<double> {
         int legIndex = -1;
@@ -308,20 +344,15 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
 
         const bool wasInStance = _wasInStance[leg];
         _wasInStance[leg] = false;
-        const bool shouldUpdateTouchdownTarget = wasInStance || !_touchdownTargetValid[leg];
+        const bool shouldUpdateTouchdownTarget =
+            wasInStance || !_touchdownTargetValid[leg] || stopRecenterJustActivated ||
+            _turnStopFrameValid;
 
         if (shouldUpdateTouchdownTarget) {
-            double touchdownYaw_W = 0.0;
-            Vec3<double> effectiveTouchdownOffset_B = _nominalFootOffsets_B[leg];
             _touchdownTargets[leg] = touchdownTargetWorldBodyVelocityHalfStance(
                 leg,
                 currentPlanarCommand,
-                shouldStopRecenter,
-                &touchdownYaw_W,
-                &effectiveTouchdownOffset_B);
-            recordSequentialTouchdown(_touchdownTargets[leg],
-                                      touchdownYaw_W,
-                                      effectiveTouchdownOffset_B);
+                shouldStopRecenter);
             _touchdownTargetValid[leg] = true;
         }
 
@@ -331,5 +362,9 @@ DesiredFootPositions SwingFootPlanner::desiredFootPositions() {
     DesiredFootPositions desiredFootPositions;
     desiredFootPositions.left_des_W = computeDesiredFootPos(Side::Left);
     desiredFootPositions.right_des_W = computeDesiredFootPos(Side::Right);
+    _stopRecenterWasActive = shouldStopRecenter;
+    _previousPlanarCommand_B = currentPlanarCommand;
+    _previousYawRateCommand = currentYawRateCommand;
+    _previousCommandValid = true;
     return desiredFootPositions;
 }

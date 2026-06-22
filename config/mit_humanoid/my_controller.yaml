@@ -56,7 +56,7 @@ swing:
   # Optional fixed override for the stop-braking offset added at touchdown.
   # Uncomment to replace the capture-point braking heuristic with a constant body-frame offset.
   # stop_braking_offset_B: [0.0, 0.0, 0.0]
-  stop_capture_point_gain: 0.0
+  stop_capture_point_gain: 0.2
   stop_capture_point_max_offset: 0.08
   stop_velocity_deadband: 0.02
   stop_braking_latch_clear_ticks: 5
