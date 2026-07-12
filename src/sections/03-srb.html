@@ -1,0 +1,203 @@
+<h2 id="srb-model"><span class="secno">3</span>The Single-Rigid-Body Model and Frame Conventions</h2>
+
+<p>
+The predictive model deliberately forgets that the robot has legs. It sees one rigid body — the
+torso, carrying the full mass and a fixed body-frame inertia — acted on by gravity and by a
+contact wrench at each foot. For the Cheetah this approximation was justified by light legs
+(≈10% of total mass); a humanoid's legs are heavier, and part of this project's debugging
+apparatus (<a href="#debugging">§12</a>) exists precisely to measure how far reality drifts from
+this model before the controller stops being able to hide the difference.
+</p>
+
+<h3 id="state-input">3.1&ensp;State and input</h3>
+
+<p>The MPC state is the 13-vector</p>
+
+$$
+\mathbf{x} \;=\;
+\begin{bmatrix}
+\phi & \theta & \psi &
+p_x & p_y & p_z &
+\omega_x & \omega_y & \omega_z &
+v_x & v_y & v_z &
+g
+\end{bmatrix}^{\!\top}
+$$
+
+<p>
+— Z-Y-X Euler orientation $\boldsymbol{\Theta} = [\phi\;\theta\;\psi]^\top$ (roll, pitch, yaw),
+COM position $\mathbf{p}^W$, angular velocity $\boldsymbol{\omega}^W$, COM velocity
+$\mathbf{v}^W$, and a constant gravity state $g$ appended so that gravity enters the dynamics as
+part of a homogeneous linear system rather than as an affine offset. The input stacks both feet's
+wrenches, forces first:
+</p>
+
+$$
+\mathbf{u} \;=\;
+\begin{bmatrix}
+\mathbf{F}_L^W \\[2pt] \mathbf{F}_R^W \\[2pt] \mathbf{M}_L^W \\[2pt] \mathbf{M}_R^W
+\end{bmatrix} \in \mathbb{R}^{12},
+\qquad
+\mathbf{w}^W = \begin{bmatrix} F_x & F_y & F_z & M_x & M_y & M_z \end{bmatrix}^{\!\top}
+\text{ per foot.}
+$$
+
+<div class="callout warn">
+<span class="co-title">Convention that will matter later</span>
+<p>
+Each foot's moment $\mathbf{M}^W$ is expressed in world axes but taken <em>about that foot's
+contact-frame origin</em>, not about the COM. The CoP constraints of <a href="#constraints">§5</a>
+and the torque mapping of <a href="#torque">§9</a> are only consistent because both respect this
+reference point; mixing it up produces wrenches that look feasible to the QP and tip the foot in
+simulation. The debugging contact probe (<a href="#debugging">§12.3</a>) measures its realized
+moment about this same point for exactly this reason.
+</p>
+</div>
+
+<h3 id="frames">3.2&ensp;The three-frame split</h3>
+
+<p>
+Three frames appear throughout the controller, and the discipline about <em>which quantity lives
+where</em> is one of the central design decisions of the project:
+</p>
+
+<div class="tbl-wrap">
+<table>
+  <caption><span class="figno">Table 3</span>Frame assignment. World for dynamics and geometry,
+  body-yaw for meaning, foot for contact feasibility.</caption>
+  <thead><tr><th>Frame</th><th>Symbol</th><th>What lives here</th></tr></thead>
+  <tbody>
+    <tr><td>World</td><td>$W$</td><td>SRB dynamics, COM state, touchdown positions, MPC wrench
+    decision variables, debug markers</td></tr>
+    <tr><td>Body-yaw</td><td>$B$</td><td>User command semantics, nominal foot offsets,
+    capture-point braking offsets, the <em>meaning</em> of planar tracking costs</td></tr>
+    <tr><td>Foot</td><td>$F$</td><td>Friction pyramid, rectangular CoP region, torsional
+    friction limit</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+The body-yaw frame is a bookkeeping frame, not a full 6-DoF body frame: it shares the world's
+vertical axis and only rotates by the yaw $\psi$. Commands transform into the world frame
+through
+</p>
+
+$$
+\mathbf{v}^{W}_{\mathrm{cmd}} = R_z(\psi)\, \mathbf{v}^{B}_{\mathrm{cmd}},
+\qquad
+R_z(\psi) =
+\begin{bmatrix}
+\cos\psi & -\sin\psi & 0\\
+\sin\psi & \cos\psi & 0\\
+0 & 0 & 1
+\end{bmatrix},
+$$
+
+<p>
+foot-frame contact quantities relate to the world through the foot yaw $\psi_F$,
+$\mathbf{F}^F = R_z(\psi_F)^\top \mathbf{F}^W$ (and identically for moments), and the tracking
+error is weighted in a frame rotated by the <em>reference</em> yaw
+(<a href="#cost-transform">§4.3</a>). Keeping only yaw — never roll or pitch — in these
+transforms avoids mixing tilt into the vertical axis of a reduced model that has no business
+reasoning about tilted support surfaces.
+</p>
+
+<h3 id="orientation-dynamics">3.3&ensp;Linearized orientation kinematics</h3>
+
+<p>
+The exact relation between Euler-angle rates and world angular velocity, for Z-Y-X angles and
+$\cos\theta \neq 0$, is
+</p>
+
+$$
+\begin{bmatrix} \dot\phi \\ \dot\theta \\ \dot\psi \end{bmatrix}
+=
+\begin{bmatrix}
+\cos\psi/\cos\theta & \sin\psi/\cos\theta & 0\\
+-\sin\psi & \cos\psi & 0\\
+\cos\psi\tan\theta & \sin\psi\tan\theta & 1
+\end{bmatrix}
+\boldsymbol{\omega}^W .
+$$
+
+<p>
+For walking, roll and pitch stay near zero — the reference holds them at the pose target, and the
+weights of <a href="#results">Table&nbsp;7</a> punish deviations hard — so the small-angle form
+is used, which is exact in yaw and first-order in tilt:
+</p>
+
+$$
+\dot{\boldsymbol{\Theta}} \;\approx\; R_z(\psi)^\top \boldsymbol{\omega}^W .
+$$
+
+<p>
+Similarly, the rotational dynamics
+$\tfrac{d}{dt}(\mathbf{I}\boldsymbol{\omega}) = \sum_i \mathbf{r}_i \times \mathbf{F}_i + \sum_i \mathbf{M}_i$
+drop the gyroscopic term $\boldsymbol{\omega} \times (\mathbf{I}\boldsymbol{\omega})$ — small at
+humanoid walking speeds — and use the <strong>yaw-rotated inertia</strong>
+</p>
+
+$$
+\hat{\mathbf{I}}(\psi) \;=\; R_z(\psi)\, {}^{B}\!\mathbf{I}\, R_z(\psi)^{\!\top},
+$$
+
+<p>
+which is the world-frame inertia of the body-frame tensor ${}^{B}\mathbf{I}$ under the
+small-tilt assumption. Both approximations are inherited from [1]; what is <em>not</em> inherited
+is where $\psi$ comes from — each horizon step $k$ uses its own reference yaw $\psi_k$
+(<a href="#convex-mpc">§4</a>), which is what lets the same QP remain honest during sustained
+in-place turning at 1.3&nbsp;rad/s.
+</p>
+
+<h3 id="continuous-dynamics">3.4&ensp;Continuous-time model</h3>
+
+<p>
+Assembling the pieces, with foot lever arms $\mathbf{r}_L, \mathbf{r}_R$ (foot position minus
+reference body position, <a href="#reference-trajectory">§6.4</a>) and mass $m$:
+</p>
+
+$$
+\dot{\mathbf{x}} = A_c(\psi)\,\mathbf{x} + B_c(\mathbf{r}_L, \mathbf{r}_R, \psi)\,\mathbf{u},
+$$
+
+$$
+A_c =
+\begin{bmatrix}
+\mathbf{0}_3 & \mathbf{0}_3 & R_z(\psi)^\top & \mathbf{0}_3 & \mathbf{0}\\
+\mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{1}_3 & \mathbf{0}\\
+\mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}\\
+\mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{e}_z\\
+\mathbf{0} & \mathbf{0} & \mathbf{0} & \mathbf{0} & 0
+\end{bmatrix}
+\in \mathbb{R}^{13\times13},
+$$
+
+$$
+B_c =
+\begin{bmatrix}
+\mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3\\
+\mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3 & \mathbf{0}_3\\
+\hat{\mathbf{I}}^{-1}[\mathbf{r}_L]_\times & \hat{\mathbf{I}}^{-1}[\mathbf{r}_R]_\times &
+\hat{\mathbf{I}}^{-1} & \hat{\mathbf{I}}^{-1}\\
+\mathbf{1}_3/m & \mathbf{1}_3/m & \mathbf{0}_3 & \mathbf{0}_3\\
+\mathbf{0} & \mathbf{0} & \mathbf{0} & \mathbf{0}
+\end{bmatrix}
+\in \mathbb{R}^{13\times12},
+$$
+
+<p>
+where $[\mathbf{r}]_\times$ is the skew-symmetric cross-product matrix and $\mathbf{e}_z$ routes
+the gravity state into $\dot{v}_z$. The two right-hand block columns of $B_c$ are the humanoid
+extension in its most compact form: <strong>foot moments act on the body directly through
+$\hat{\mathbf{I}}^{-1}$</strong>, independent of the lever arms. This is what gives a biped in
+single support its authority over roll and pitch — and it is exactly the channel that the CoP
+constraints of <a href="#constraints">§5</a> must keep physically honest, because the model
+itself would happily request a moment the foot cannot deliver.
+</p>
+
+<p>
+Given yaw and lever arms along the reference trajectory, $A_c$ and $B_c$ are known
+<em>functions of time step</em>, not of the decision variables — the dynamics become linear
+time-varying, and the MPC stays convex.
+</p>

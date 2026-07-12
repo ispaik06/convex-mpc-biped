@@ -1,0 +1,49 @@
+<h2 id="limitations"><span class="secno">14</span>Limitations and Future Work</h2>
+
+<p>Being precise about what this project does <em>not</em> do is part of doing it honestly:</p>
+
+<ul>
+  <li><strong>Ground-truth state estimation.</strong> The estimator is cheater-state: exact body
+  pose and twist from the simulator. Every result inherits that assumption. Sensor-based
+  estimation (IMU + kinematics fusion) is the first prerequisite for any hardware claim, and the
+  architecture reserves the seam for it — the controller consumes a <code>StateEstimate</code>
+  interface, not simulator internals.</li>
+  <li><strong>Flat ground only.</strong> Touchdown targets assume a horizontal plane at $z = 0$;
+  the yaw-only foot frame of §5 assumes level contact. Uneven terrain needs terrain-adaptive
+  foot placement and a contact frame with full orientation.</li>
+  <li><strong>Velocity tracking, weak absolute position.</strong> The receding reference design
+  (§6) deliberately forgets world position, so drift is unregulated by construction. A loose
+  outer position loop feeding velocity commands is the natural extension for waypoint
+  behaviors.</li>
+  <li><strong>Modest speed envelope.</strong> The validated gait is conservative (32% double
+  support, 0.7&nbsp;m/s command cap). Faster walking wants gait-timing adaptation and likely a
+  flight-capable schedule, neither attempted here.</li>
+  <li><strong>Tuning maturity.</strong> The MIT Humanoid configuration is validated; the Unitree
+  G1/H1 configurations are integration scaffolding awaiting robot-specific tuning passes.</li>
+</ul>
+
+<p>
+The near-term roadmap follows directly: sensor-based state estimation, terrain-adaptive foothold
+selection, and hardware validation — in that order, because each is a precondition for honestly
+attempting the next.
+</p>
+
+<h2 id="closing"><span class="secno">15</span>Closing Thoughts</h2>
+
+<p>
+The Cheetah&nbsp;3 paper's deepest claim was never about quadrupeds — it was that a drastically
+simplified model, solved <em>exactly</em> and <em>fast</em>, beats a faithful model solved slowly
+and approximately. This project is an extended test of that claim on a much less forgiving
+platform, and the claim survives — provided the simplifications are chosen with care at the
+interfaces. The SRB model did not need to become nonlinear to walk a biped; it needed honest
+constraints (§5), an honest cost frame (§4.3), honest contact bookkeeping (§7), and honest
+accounting of what the legs can actually do (§9.3). Every one of those adjectives was earned by
+a specific failure, and nearly every failure was found by the debugging discipline of §12 rather
+than by staring at a falling robot.
+</p>
+
+<p>
+If a single lesson carries beyond this codebase: <em>make the optimizer's beliefs inspectable.</em>
+A convex QP will always give you the exactly-optimal answer to the question you asked; the
+engineering is in noticing, quickly and reproducibly, when you asked the wrong question.
+</p>

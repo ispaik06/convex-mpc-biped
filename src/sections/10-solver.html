@@ -1,0 +1,89 @@
+<h2 id="solver"><span class="secno">10</span>Solver Engineering</h2>
+
+<p>
+A 500&nbsp;Hz control loop with a 71&nbsp;Hz QP leaves roughly a dozen milliseconds of budget per
+solve — including building the problem. The solver is OSQP through the OsqpEigen interface
+(ADMM, warm-startable, polish off, 200-iteration cap, adaptive $\rho$); the engineering is in
+what gets rebuilt, what gets reused, and what never gets materialized at all.
+</p>
+
+<h3 id="problem-size">10.1&ensp;Shape of the problem</h3>
+
+<div class="tbl-wrap">
+<table class="tbl-num">
+  <caption><span class="figno">Table 4</span>QP dimensions at $H = 25$.</caption>
+  <thead><tr><th>Quantity</th><th>Expression</th><th>Size</th></tr></thead>
+  <tbody>
+    <tr><td>Decision variables (wrench horizon)</td><td>$12H$</td><td>300</td></tr>
+    <tr><td>Inequality rows (friction + CoP + bounds)</td><td>$24H$</td><td>600</td></tr>
+    <tr><td>Equality rows (swing-zero / no-roll)</td><td>$12H$</td><td>300</td></tr>
+    <tr><td>Hessian</td><td>$12H \times 12H$, dense</td><td>300 × 300</td></tr>
+    <tr><td>Constraint matrix</td><td>$36H \times 12H$, block-sparse</td><td>900 × 300, ~1.6% dense</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+The Hessian $\mathbf{H} = 2(B_{\mathrm{qp}}^\top L B_{\mathrm{qp}} + K)$ is genuinely dense —
+condensing trades constraint sparsity for a small dense Hessian, and at 300×300 that is the
+right trade. The constraint matrix is the opposite: overwhelmingly structural zeros, and
+everything below is about never touching them.
+</p>
+
+<h3 id="sparsity">10.2&ensp;Row-level sparsity that survives yaw rotation</h3>
+
+<p>
+OSQP updates matrix <em>values</em> cheaply but treats a changed <em>sparsity pattern</em> as a
+new problem requiring full re-setup. So the pattern is designed once, as the union of every
+nonzero any runtime state can produce — and the subtlety is that the yaw rotation of
+<a href="#yaw-rotation">§5.5</a> changes which entries are nonzero. A friction row in the foot
+frame touches $\{F_x, F_z\}$; after rotation it touches $\{F_x, F_y, F_z\}$. A CoP row grows
+from $\{F_z, M_x\}$ to $\{F_z, M_x, M_y\}$. The committed pattern is therefore <em>row-level</em>:
+</p>
+
+<div class="tbl-wrap">
+<table>
+  <caption><span class="figno">Table 5</span>Per-row sparse pattern for one foot's inequality
+  block, in local wrench columns $\{F_x, F_y, F_z, M_x, M_y, M_z\}$.</caption>
+  <thead><tr><th>Rows</th><th>Constraint</th><th>Pattern</th></tr></thead>
+  <tbody>
+    <tr><td>0–3</td><td>Friction pyramid</td><td>$\{F_x, F_y, F_z\}$</td></tr>
+    <tr><td>4–5</td><td>Normal-force bounds</td><td>$\{F_z\}$</td></tr>
+    <tr><td>6–9</td><td>CoP polygon</td><td>$\{F_z, M_x, M_y\}$</td></tr>
+    <tr><td>10–11</td><td>Torsional friction</td><td>$\{F_z, M_z\}$</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+Equality rows are diagonal except the two no-roll slots, which reserve all three moment columns
+of their leg because the foot's $x$-axis rotates freely. A debug-build assertion sweeps every
+dense value against the committed pattern and throws if a future constraint would silently fall
+outside it — cheap insurance that has already paid for itself.
+</p>
+
+<h3 id="direct-fill">10.3&ensp;Direct fills, signatures, and warm starts</h3>
+
+<p>Three mechanisms keep the per-solve cost flat:</p>
+
+<ul>
+  <li><strong>Direct sparse fill.</strong> The dense $900\times300$ constraint matrix is never
+  assembled. A value function maps (row, column) → coefficient straight from the per-step gait
+  data — stance flags, foot yaws, foot axes — and the fill iterates once over the compressed
+  sparse storage in order, writing each nonzero in place. The same in-order trick fills the
+  Hessian's upper triangle. Assembly cost scales with the nonzero count, not the matrix
+  area.</li>
+  <li><strong>Contact-signature cold starts.</strong> The stance/swing pattern across the horizon
+  is hashed into a signature $(c_{L,k}, c_{R,k})_{k=1}^{H}$. Unchanged signature — the
+  overwhelmingly common case — means the constraint <em>structure</em> is identical, and the
+  solver takes the cheap path: update values, gradient, and bounds in place. A changed signature
+  (a gait event entered or left the horizon window, or the contact manager overrode the near
+  term) triggers a clean OSQP re-initialization, because warm-starting ADMM across a structural
+  flip converges <em>worse</em> than starting cold.</li>
+  <li><strong>Shifted warm starts.</strong> Between solves with a stable signature, the previous
+  solution is shifted one step — $\mathbf{u}^{\mathrm{ws}}_k = \mathbf{u}^\ast_{k+1}$, last step
+  duplicated — matching how the horizon actually slides in time. If a solve still fails to
+  converge, one retry runs from a fresh cold initialization before the controller treats it as a
+  hard fault. Cold starts, signature changes, and retries are all counted and reported by the
+  built-in profiler, so solver health is a number, not a feeling.</li>
+</ul>

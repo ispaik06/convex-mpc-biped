@@ -1,0 +1,41 @@
+<h2 id="robot-independent"><span class="secno">11</span>A Robot-Independent Controller Core</h2>
+
+<p>
+Nothing in the controller core knows a joint ID, an actuator index, or a fixed
+joints-per-leg count. All robot specifics enter through two narrow interfaces, resolved once at
+startup:
+</p>
+
+<ul>
+  <li><strong>A <code>RobotMujocoSpec</code></strong> — a small name-mapping class per robot that
+  identifies the torso body, foot links and contact sites, leg and arm joint chains in the MJCF.
+  Everything quantitative — masses, the body inertia tensor, joint/velocity/actuator indices,
+  limb topology, foot Jacobians, reduced leg mass matrices and bias terms — is <em>extracted from
+  the MuJoCo model itself</em>, never hand-copied into configuration.</li>
+  <li><strong>A per-robot YAML</strong> — gait timing, MPC weights and wrench model, swing and
+  contact-manager tuning, command limits, initial pose. The controller reads it once at startup,
+  and every MPC debug snapshot embeds the full parameter set, so a logged solve can always be
+  traced to the exact tuning that produced it.</li>
+</ul>
+
+<figure>
+  <div class="fig-grid">
+    <div class="cell"><img src="assets/media/robot_mit.png" alt="MIT Humanoid in MuJoCo" loading="lazy">
+      <div class="lbl"><b>MIT Humanoid</b> · 5-DoF legs · primary platform</div></div>
+    <div class="cell"><img src="assets/media/robot_g1.png" alt="Unitree G1 in MuJoCo" loading="lazy">
+      <div class="lbl"><b>Unitree G1</b> · 6-DoF legs · full-wrench model</div></div>
+    <div class="cell"><img src="assets/media/robot_h1.png" alt="Unitree H1 in MuJoCo" loading="lazy">
+      <div class="lbl"><b>Unitree H1</b> · integration target</div></div>
+  </div>
+  <figcaption><span class="figno">Figure 3</span>Three humanoids, one controller. Runtime-sized
+  limb data means the 5-DoF MIT leg and the 6-DoF G1 leg flow through identical code paths; the
+  wrench model (<code>full_wrench</code> vs. <code>no_roll_moment</code>) is a YAML switch. The
+  G1 and H1 configurations are integration starting points, not tuned results.</figcaption>
+</figure>
+
+<p>
+Adding a robot therefore requires exactly three artifacts — an MJCF model with assets, a
+<code>RobotMujocoSpec</code> mapping, and a YAML tuning file — plus registering the new
+<code>RobotType</code>. The discipline paid off immediately during development: bugs found on
+one robot were structural, not robot-specific, and fixes propagated for free.
+</p>

@@ -1,0 +1,69 @@
+<div class="eyebrow">Legged Robotics · Model-Predictive Control · MuJoCo</div>
+
+<h1>Convex MPC for Bipedal Humanoid Locomotion</h1>
+
+<p class="subtitle">
+Extending the MIT Cheetah&nbsp;3 convex model-predictive controller from quadrupedal
+point-foot contact to CoP-constrained humanoid walking — single-rigid-body modeling,
+6D contact-wrench optimization, heuristic swing-foot planning, reactive contact handling,
+and a reproducible MPC debugging workflow, built from scratch in C++ on MuJoCo.
+</p>
+
+<div class="byline">
+  <div><div class="k">Author</div><div class="v">Inseong Paik</div></div>
+  <div><div class="k">Published</div><div class="v">June 2026</div></div>
+  <div><div class="k">Code</div><div class="v"><a href="https://github.com/ispaik06/convex-mpc-biped">github.com/ispaik06/convex-mpc-biped</a></div></div>
+  <div><div class="k">Stack</div><div class="v">C++17 · MuJoCo · Eigen · OSQP · Python</div></div>
+</div>
+
+<figure class="hero-fig plain">
+  <video autoplay loop muted playsinline preload="metadata" src="assets/media/walk_full.mp4"></video>
+  <figcaption><span class="figno">Video 1</span>The MIT Humanoid walking under the convex MPC
+  in MuJoCo: omnidirectional velocity tracking, in-place turning, and body-pose tracking from
+  a single controller and a single set of weights.</figcaption>
+</figure>
+
+<div class="abstract">
+<span class="co-title">Abstract</span>
+<p>
+This article documents a locomotion controller I built for bipedal humanoid robots, centered on a
+<strong>convex model-predictive controller (MPC)</strong> over <strong>single-rigid-body (SRB)</strong> dynamics.
+The formulation follows the MIT Cheetah&nbsp;3 controller of Di&nbsp;Carlo et&nbsp;al., but a biped
+is a harsher customer than a quadruped: there are only two contacts, the support region of each
+foot is a small rectangle rather than a point, and single-support phases leave no margin for
+sloppy force allocation. Moving from four point feet to two finite feet forces the decision
+variable from 3D contact <em>forces</em> to 6D contact <em>wrenches</em>, and forces the constraint
+set from a friction pyramid alone to a friction pyramid <em>plus</em> a center-of-pressure (CoP)
+support polygon and a torsional friction bound — all expressed in each foot's yaw-rotated frame.
+</p>
+<p>
+Beyond the QP itself, most of the engineering lives in the layers around it: a receding,
+estimator-anchored reference trajectory that refuses to chase stale world-frame targets; a
+body-yaw cost transform that keeps anisotropic tracking weights physically meaningful while
+turning; a wrapped/unwrapped yaw policy that survives continuous rotation; Raibert-style
+swing-foot planning with touchdown-yaw preview and capture-point stopping; early/late contact
+handling that reconciles the gait schedule with measured contact; and OSQP solver engineering
+(structure-exploiting sparsity, contact-signature cold starts, shifted warm starts) that keeps
+the solve fast at 500&nbsp;Hz control rates. Every MPC solve can be captured as a self-contained
+JSON snapshot and replayed offline through four independent verification layers. The result
+walks, turns in place, and tracks body pose on the MIT Humanoid in MuJoCo, and retargets to the
+Unitree G1 and H1 through robot-specific bindings and YAML tuning alone.
+</p>
+</div>
+
+<ul class="contrib">
+  <li><b>6D contact-wrench MPC with CoP constraints.</b> Full derivation of the rectangular
+  support-polygon constraint for a yaw-rotated foot, from $x_{\mathrm{cop}} = -M_y/F_z$ to the
+  sparse world-frame constraint matrix the solver actually touches.</li>
+  <li><b>Frame discipline.</b> A deliberate split between world-frame dynamics, body-yaw command
+  and cost semantics, and foot-frame contact geometry — including a convexity-preserving
+  yaw-dependent cost transform and an unwrapped-yaw policy for the MPC state.</li>
+  <li><b>Reactive contact management.</b> Hysteresis-based contact estimation, early-touchdown
+  freezing, late-contact ground search, contact-force ramping, and a near-term MPC horizon
+  override that keeps the QP consistent with measured contact.</li>
+  <li><b>Solver engineering.</b> Row-level sparse constraint patterns, direct sparse fills without
+  dense intermediates, contact-signature-triggered cold starts, and shifted warm starting.</li>
+  <li><b>Reproducible debugging.</b> Single-keystroke MPC snapshots replayed through four
+  verification layers: SRB reconstruction, wrench-realizability projection, a MuJoCo contact
+  probe, and a full receding-horizon closed-loop replay.</li>
+</ul>

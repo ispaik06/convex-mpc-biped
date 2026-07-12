@@ -1,0 +1,152 @@
+<h2 id="architecture"><span class="secno">2</span>System Architecture</h2>
+
+<p>
+The controller is organized as a strict hierarchy — <em>planning decides, prediction optimizes,
+execution obeys</em> — with one non-negotiable invariant: every layer consumes the same contact
+schedule and the same motion reference. Most walking-controller bugs I encountered were not bugs
+inside a layer but disagreements <em>between</em> layers about who is in contact and where the
+body is supposed to be; the architecture exists to make such disagreements structurally hard to
+write.
+</p>
+
+<figure class="diagram" role="img" aria-label="Three-layer control hierarchy diagram">
+<svg viewBox="0 0 860 470" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dg-arrow"/>
+    </marker>
+  </defs>
+
+  <!-- Layer 1 -->
+  <rect x="20" y="16" width="820" height="120" rx="12" class="dg-box" stroke-dasharray="4 4"/>
+  <text x="40" y="42" class="dg-text">High-level motion &amp; contact planning</text>
+  <text x="40" y="59" class="dg-sub">every control tick · 500 Hz</text>
+  <text x="836" y="42" text-anchor="end" class="dg-lbl">user command → gait phase → footholds</text>
+
+  <rect x="40" y="74" width="180" height="44" rx="8" class="dg-box"/>
+  <text x="130" y="93" text-anchor="middle" class="dg-text">Command filter</text>
+  <text x="130" y="108" text-anchor="middle" class="dg-sub">LPF + limits + deadband</text>
+
+  <rect x="240" y="74" width="170" height="44" rx="8" class="dg-box"/>
+  <text x="325" y="93" text-anchor="middle" class="dg-text">LocomotionFSM</text>
+  <text x="325" y="108" text-anchor="middle" class="dg-sub">standing ⇄ walking</text>
+
+  <rect x="430" y="74" width="180" height="44" rx="8" class="dg-box"/>
+  <text x="520" y="93" text-anchor="middle" class="dg-text">GaitScheduler</text>
+  <text x="520" y="108" text-anchor="middle" class="dg-sub">phase, contact schedule</text>
+
+  <rect x="630" y="74" width="190" height="44" rx="8" class="dg-box"/>
+  <text x="725" y="93" text-anchor="middle" class="dg-text">SwingFootPlanner</text>
+  <text x="725" y="108" text-anchor="middle" class="dg-sub">touchdown targets</text>
+
+  <line x1="220" y1="96" x2="240" y2="96" class="dg-edge" marker-end="url(#arr1)"/>
+  <line x1="410" y1="96" x2="430" y2="96" class="dg-edge" marker-end="url(#arr1)"/>
+  <line x1="610" y1="96" x2="630" y2="96" class="dg-edge" marker-end="url(#arr1)"/>
+
+  <!-- ContactManager overlay -->
+  <rect x="240" y="168" width="370" height="44" rx="8" class="dg-box-accent"/>
+  <text x="425" y="187" text-anchor="middle" class="dg-text">ContactManager</text>
+  <text x="425" y="202" text-anchor="middle" class="dg-sub">measured vs. scheduled contact · early/late touchdown overlay</text>
+  <line x1="520" y1="118" x2="470" y2="168" class="dg-edge" marker-end="url(#arr1)"/>
+  <line x1="725" y1="118" x2="560" y2="168" class="dg-edge" marker-end="url(#arr1)"/>
+
+  <!-- Layer 2 -->
+  <rect x="20" y="244" width="820" height="120" rx="12" class="dg-box" stroke-dasharray="4 4"/>
+  <text x="40" y="270" class="dg-text">Predictive dynamics control</text>
+  <text x="40" y="287" class="dg-sub">scheduled solves · ≈71 Hz on a 20 ms horizon grid</text>
+  <text x="836" y="270" text-anchor="end" class="dg-lbl">reference → SRB lift → QP → wrench horizon</text>
+
+  <rect x="40" y="302" width="230" height="44" rx="8" class="dg-box"/>
+  <text x="155" y="321" text-anchor="middle" class="dg-text">ReferenceTrajectory</text>
+  <text x="155" y="336" text-anchor="middle" class="dg-sub">estimator-anchored rollout</text>
+
+  <rect x="300" y="302" width="230" height="44" rx="8" class="dg-box"/>
+  <text x="415" y="321" text-anchor="middle" class="dg-text">MPCFormulation</text>
+  <text x="415" y="336" text-anchor="middle" class="dg-sub">A(ψ), B(r, ψ) · ZOH · lifting</text>
+
+  <rect x="560" y="302" width="260" height="44" rx="8" class="dg-box-accent"/>
+  <text x="690" y="321" text-anchor="middle" class="dg-text">ConvexMPC · OSQP</text>
+  <text x="690" y="336" text-anchor="middle" class="dg-sub">wrench QP, warm-started</text>
+
+  <line x1="270" y1="324" x2="300" y2="324" class="dg-edge" marker-end="url(#arr1)"/>
+  <line x1="530" y1="324" x2="560" y2="324" class="dg-edge" marker-end="url(#arr1)"/>
+  <line x1="425" y1="212" x2="425" y2="302" class="dg-edge" marker-end="url(#arr1)"/>
+  <text x="432" y="240" class="dg-lbl">horizon contact override</text>
+
+  <!-- Layer 3 -->
+  <rect x="20" y="388" width="820" height="66" rx="12" class="dg-box" stroke-dasharray="4 4"/>
+  <text x="40" y="412" class="dg-text">Torque execution</text>
+  <text x="40" y="429" class="dg-sub">500 Hz</text>
+
+  <rect x="240" y="398" width="200" height="44" rx="8" class="dg-box"/>
+  <text x="340" y="417" text-anchor="middle" class="dg-text">Stance wrench map</text>
+  <text x="340" y="432" text-anchor="middle" class="dg-sub">τ = Jᵥᵀ F + J𝜔ᵀ M</text>
+
+  <rect x="460" y="398" width="200" height="44" rx="8" class="dg-box"/>
+  <text x="560" y="417" text-anchor="middle" class="dg-text">Swing foot control</text>
+  <text x="560" y="432" text-anchor="middle" class="dg-sub">task-space PD + dynamics</text>
+
+  <rect x="680" y="398" width="140" height="44" rx="8" class="dg-box"/>
+  <text x="750" y="417" text-anchor="middle" class="dg-text">Arm joint PD</text>
+  <text x="750" y="432" text-anchor="middle" class="dg-sub">fixed posture</text>
+
+  <line x1="690" y1="346" x2="450" y2="398" class="dg-edge" marker-end="url(#arr1)"/>
+  <text x="600" y="376" class="dg-lbl">first-step wrench w₀*</text>
+</svg>
+<figcaption><span class="figno">Figure 1</span>The three-layer control hierarchy. The
+<code>ContactManager</code> sits between planning and prediction as a reactive overlay: it can
+override both the swing-foot targets and the near-term MPC contact schedule when measured
+contact disagrees with the nominal gait (<a href="#gait">§7</a>).</figcaption>
+</figure>
+
+<h3 id="runtime-loop">2.1&ensp;Runtime loop</h3>
+
+<p>
+One process runs everything. <code>SimulationRunner</code> owns the MuJoCo model and steps
+physics at 500&nbsp;Hz; on every step it refreshes the cheater-state estimate, runs
+<code>RobotRunner</code> — which drives leg/arm initialization and then the controller proper —
+and applies the composed torque command back to the actuators. Inside
+<code>MyController::runController()</code> the per-tick sequence is fixed:
+</p>
+
+<ol>
+  <li>synchronize the <code>LocomotionFSM</code> and the horizon clock;</li>
+  <li>filter the user command and update the body pose target;</li>
+  <li>query the <code>SwingFootPlanner</code> for nominal touchdown targets;</li>
+  <li>let the <code>ContactManager</code> reconcile scheduled vs. measured contact and possibly
+      override those targets;</li>
+  <li>advance the swing trajectories;</li>
+  <li>if this tick is a scheduled solve boundary: rebuild reference, SRB matrices, constraints,
+      and solve the QP;</li>
+  <li>write leg commands — stance legs get the newest optimal wrench, swing legs get
+      trajectory-tracking commands.</li>
+</ol>
+
+<div class="tbl-wrap">
+<table class="tbl-num">
+  <caption><span class="figno">Table 2</span>Execution rates in the current MIT Humanoid tuning.
+  All timing is YAML-driven; the MPC solve cadence is <code>iterations_between_solve = 7</code>
+  control ticks.</caption>
+  <thead><tr><th>Layer</th><th>Rate</th><th>Period</th></tr></thead>
+  <tbody>
+    <tr><td>MuJoCo physics integration</td><td>500 Hz</td><td>2 ms</td></tr>
+    <tr><td>State estimation + controller tick</td><td>500 Hz</td><td>2 ms</td></tr>
+    <tr><td>Contact management + swing update</td><td>500 Hz</td><td>2 ms</td></tr>
+    <tr><td>Leg / arm torque generation</td><td>500 Hz</td><td>2 ms</td></tr>
+    <tr><td>MPC solve + reference rebuild</td><td>≈71.4 Hz</td><td>14 ms</td></tr>
+    <tr><td>MPC prediction grid ($\Delta t$, horizon $H{=}25$)</td><td>50 Hz</td><td>20 ms × 25 = 0.5 s</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+<span class="co-title">Design note — two clocks, deliberately decoupled</span>
+<p>
+The solve cadence (every 7 ticks, 14&nbsp;ms) and the prediction grid (20&nbsp;ms) are
+intentionally different knobs. The horizon spacing is tied to the gait — 25 samples at 20&nbsp;ms
+cover exactly one 0.5&nbsp;s gait cycle — while the solve rate is tuned to how quickly the robot
+must react to disturbances. A <code>HorizonClock</code> keeps the horizon sample times anchored
+to a consistent cycle origin so that gait phase, constraint schedule, and reference all agree on
+what time step $k$ means.
+</p>
+</div>

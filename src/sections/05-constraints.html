@@ -1,0 +1,286 @@
+<h2 id="constraints"><span class="secno">5</span>Contact-Wrench Constraints for a Finite Foot</h2>
+
+<p>
+This section is the heart of the biped extension. A point foot needs one physical law — Coulomb
+friction. A finite foot needs three: the force must stay inside the friction cone, the
+<em>center of pressure</em> must stay inside the foot, and the free yaw moment must stay inside
+the torsional friction budget. All three are naturally expressed in the foot frame $F$, while the
+QP's decision variables live in the world frame — and the resulting frame transformation is
+where a naive implementation quietly goes wrong.
+</p>
+
+<p>Per horizon step, the stacked wrench variable is ordered forces-first:</p>
+
+$$
+\mathbf{u}_k =
+[\,\underbrace{F_{Lx}\; F_{Ly}\; F_{Lz}}_{0..2}\;
+\underbrace{F_{Rx}\; F_{Ry}\; F_{Rz}}_{3..5}\;
+\underbrace{M_{Lx}\; M_{Ly}\; M_{Lz}}_{6..8}\;
+\underbrace{M_{Rx}\; M_{Ry}\; M_{Rz}}_{9..11}\,]^{\!\top}_{W},
+$$
+
+<p>
+so each foot's 6D wrench occupies the column sets $\{0,1,2,6,7,8\}$ (left) and
+$\{3,4,5,9,10,11\}$ (right) — bookkeeping that matters once the constraint matrix goes sparse
+(<a href="#solver">§10</a>).
+</p>
+
+<h3 id="friction-pyramid">5.1&ensp;Friction pyramid and normal-force bounds</h3>
+
+<p>In the foot frame, Coulomb friction bounds the tangential force inside a circular cone,</p>
+
+$$
+\sqrt{F_{x,F}^2 + F_{y,F}^2} \;\le\; \mu\, F_{z,F},
+\qquad F_{z,F} \ge 0,
+$$
+
+<p>which is second-order and therefore linearized to the inscribed pyramid — four rows:</p>
+
+$$
+\pm F_{x,F} - \mu F_{z,F} \le 0,
+\qquad
+\pm F_{y,F} - \mu F_{z,F} \le 0.
+$$
+
+<p>Two more rows box the normal force,</p>
+
+$$
+F_{\min} \le F_{z,F} \le F_{\max},
+$$
+
+<p>
+with $F_{\min} = 5$&nbsp;N and $F_{\max} = 1500$&nbsp;N in the MIT tuning. The lower bound is not
+cosmetic: forcing a strictly positive normal force on every scheduled stance foot keeps the foot
+<em>loaded</em>, which stabilizes the contact and keeps the CoP constraint below well-posed —
+$F_z > 0$ is exactly what licenses the multiplication in <a href="#cop">§5.2</a>. During contact
+transitions this bound is softened by the contact ramp (<a href="#gait">§7.5</a>).
+</p>
+
+<h3 id="cop">5.2&ensp;The center-of-pressure constraint</h3>
+
+<figure class="diagram" role="img" aria-label="Foot support polygon diagram">
+<svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dg-arrow"/>
+    </marker>
+  </defs>
+  <!-- foot rectangle (top view): x_F up (length), y_F left (width) -->
+  <rect x="250" y="40" width="120" height="220" rx="6" class="dg-box" stroke-width="1.6"/>
+  <!-- axes from center -->
+  <line x1="310" y1="150" x2="310" y2="18" class="dg-edge" marker-end="url(#arr2)"/>
+  <text x="318" y="30" class="dg-math">x_F</text>
+  <line x1="310" y1="150" x2="180" y2="150" class="dg-edge" marker-end="url(#arr2)"/>
+  <text x="163" y="144" class="dg-math">y_F</text>
+  <circle cx="310" cy="150" r="3.2" class="dg-arrow"/>
+  <text x="318" y="167" class="dg-sub">contact origin O</text>
+  <!-- CoP point -->
+  <circle cx="288" cy="108" r="4.5" fill="none" stroke="currentColor" class="dg-edge" stroke-width="1.8"/>
+  <circle cx="288" cy="108" r="1.6" class="dg-arrow"/>
+  <text x="238" y="98" class="dg-sub">CoP</text>
+  <!-- half length / width markers -->
+  <line x1="392" y1="150" x2="392" y2="40" class="dg-edge" stroke-dasharray="3 3"/>
+  <text x="400" y="100" class="dg-math">a</text>
+  <line x1="250" y1="282" x2="310" y2="282" class="dg-edge" stroke-dasharray="3 3"/>
+  <text x="275" y="276" class="dg-math">b</text>
+  <!-- wrench arrows -->
+  <line x1="440" y1="220" x2="440" y2="120" class="dg-edge" stroke-width="1.8" marker-end="url(#arr2)"/>
+  <text x="448" y="130" class="dg-math">F_z</text>
+  <path d="M 470 190 a 22 22 0 1 1 10 -38" class="dg-edge" marker-end="url(#arr2)"/>
+  <text x="500" y="160" class="dg-math">M_x, M_y</text>
+  <text x="440" y="250" class="dg-sub">normal force + tipping moments</text>
+  <!-- annotation -->
+  <text x="40" y="52" class="dg-sub">a: foot half-length along x_F = 0.065 m</text>
+  <text x="40" y="70" class="dg-sub">b: foot half-width along y_F = 0.010 m</text>
+  <text x="40" y="220" class="dg-sub">CoP must remain inside</text>
+  <text x="40" y="236" class="dg-sub">the shaded rectangle:</text>
+  <text x="40" y="258" class="dg-math">|x_cop| ≤ a, |y_cop| ≤ b</text>
+</svg>
+<figcaption><span class="figno">Figure 2</span>Top view of the rectangular support polygon in the
+foot frame. The MIT Humanoid's foot is long and narrow ($a = 6.5$&nbsp;cm, $b = 1$&nbsp;cm), so
+the pitch-moment budget dwarfs the roll-moment budget — a fact the constraint matrix must encode
+per axis, in the correct frame.</figcaption>
+</figure>
+
+<p>
+The center of pressure is the point on the sole where the contact pressure distribution
+resolves to a pure force. With the wrench taken about the foot origin,
+</p>
+
+$$
+x_{\mathrm{cop},F} = -\frac{M_{y,F}}{F_{z,F}},
+\qquad
+y_{\mathrm{cop},F} = \frac{M_{x,F}}{F_{z,F}},
+$$
+
+<p>
+(a pitch-forward moment moves the pressure toward the heel; a roll moment moves it laterally —
+the signs follow from $\mathbf{M} = \mathbf{r}_{\mathrm{cop}} \times \mathbf{F}$). Physical
+validity of the contact is precisely the CoP remaining inside the sole rectangle:
+</p>
+
+$$
+-a \le x_{\mathrm{cop},F} \le a,
+\qquad
+-b \le y_{\mathrm{cop},F} \le b .
+$$
+
+<p>
+These are ratios of decision variables — nonlinear as written. But stance already guarantees
+$F_{z,F} > 0$ through the normal-force bound, so multiplying through by $F_{z,F}$ is a legal,
+<em>exact</em> linearization (not an approximation):
+</p>
+
+$$
+\pm M_{x,F} - b\,F_{z,F} \le 0,
+\qquad
+\pm M_{y,F} - a\,F_{z,F} \le 0.
+$$
+
+<p>Four linear rows. This is the entire mathematical cost of upgrading from point feet to
+finite feet — the difficulty is not the algebra but the frame in which it must be applied.</p>
+
+<h3 id="torsional">5.3&ensp;Torsional friction</h3>
+
+<p>
+A flat foot resists yaw torque only through distributed tangential friction, bounded
+approximately by
+</p>
+
+$$
+\lvert M_{z,F}\rvert \;\le\; \mu_t\, F_{z,F},
+\qquad
+\mu_t = \lambda_{\mathrm{tor}}\,\mu,
+$$
+
+<p>
+where $\lambda_{\mathrm{tor}}$ collapses the pressure-distribution geometry into one scale
+(0.0657 in the MIT tuning — of the order of the foot's characteristic radius). Without these two
+rows the QP will happily balance an in-place turn on yaw torque the sole cannot supply, and the
+stance foot pivots underneath the robot.
+</p>
+
+<h3 id="foot-template">5.4&ensp;The per-foot template</h3>
+
+<p>Stacking all twelve rows against the local wrench
+$\mathbf{w}_F = [F_{x,F}\,F_{y,F}\,F_{z,F}\,M_{x,F}\,M_{y,F}\,M_{z,F}]^\top$:</p>
+
+$$
+C_F \;=\;
+\begin{bmatrix}
+1 & 0 & -\mu & 0 & 0 & 0\\
+-1 & 0 & -\mu & 0 & 0 & 0\\
+0 & 1 & -\mu & 0 & 0 & 0\\
+0 & -1 & -\mu & 0 & 0 & 0\\
+0 & 0 & 1 & 0 & 0 & 0\\
+0 & 0 & -1 & 0 & 0 & 0\\
+0 & 0 & -b & 1 & 0 & 0\\
+0 & 0 & -b & -1 & 0 & 0\\
+0 & 0 & -a & 0 & 1 & 0\\
+0 & 0 & -a & 0 & -1 & 0\\
+0 & 0 & -\mu_t & 0 & 0 & 1\\
+0 & 0 & -\mu_t & 0 & 0 & -1
+\end{bmatrix},
+\qquad
+\mathbf{b}_F =
+\begin{bmatrix}
+0\\0\\0\\0\\ F_{\max}\\ -F_{\min}\\ 0\\0\\0\\0\\0\\0
+\end{bmatrix},
+\qquad
+C_F\, \mathbf{w}_F \le \mathbf{b}_F .
+$$
+
+<h3 id="yaw-rotation">5.5&ensp;Rotating the constraints, not the variables</h3>
+
+<p>
+The QP variables are world-frame wrenches, but $C_F$ speaks foot-frame. The clean resolution is
+to compose the template with the world→foot rotation, producing a matrix that acts directly on
+world-frame variables:
+</p>
+
+$$
+C_W \;=\; C_F \cdot \mathrm{blkdiag}\!\big(R_{WF}^{\top},\, R_{WF}^{\top}\big),
+\qquad
+R_{WF} = R_z(\psi_F),
+$$
+
+<p>with $\psi_F$ the stance foot's yaw, read from the foot frame's $x$-axis at constraint-build
+time. Writing $c = \cos\psi_F$, $s = \sin\psi_F$, the full explicit result:</p>
+
+$$
+C_W =
+\begin{bmatrix}
+c & s & -\mu & 0 & 0 & 0\\
+-c & -s & -\mu & 0 & 0 & 0\\
+-s & c & -\mu & 0 & 0 & 0\\
+s & -c & -\mu & 0 & 0 & 0\\
+0 & 0 & 1 & 0 & 0 & 0\\
+0 & 0 & -1 & 0 & 0 & 0\\
+0 & 0 & -b & c & s & 0\\
+0 & 0 & -b & -c & -s & 0\\
+0 & 0 & -a & -s & c & 0\\
+0 & 0 & -a & s & -c & 0\\
+0 & 0 & -\mu_t & 0 & 0 & 1\\
+0 & 0 & -\mu_t & 0 & 0 & -1
+\end{bmatrix}.
+$$
+
+<div class="callout warn">
+<span class="co-title">The trap this design avoids</span>
+<p>
+Applying the CoP bounds directly to world-frame $M_x, M_y$ is correct <em>only when the foot yaw
+is exactly zero</em>. The support rectangle is glued to the foot, not to the world and not to the
+torso: at $\psi_F = 90°$, the world's $x$-moment is the foot's <em>roll</em> channel with its
+1&nbsp;cm budget, not the 6.5&nbsp;cm pitch budget. A controller with world-axis CoP constraints
+walks straight flawlessly and tips its feet the moment it turns — a bug that is invisible in
+exactly the tests people run first. Note also the sparsity consequence, which
+<a href="#solver">§10</a> exploits: after rotation, every friction row touches
+$\{F_x, F_y, F_z\}$ and every CoP row touches $\{F_z, M_x, M_y\}$.
+</p>
+</div>
+
+<h3 id="equality-constraints">5.6&ensp;Equality constraints: swing legs and the 5-DoF ankle</h3>
+
+<p>
+A second matrix $D$ carries the equalities, $D_k \mathbf{u}_k = \mathbf{0}$, with 12 rows per
+step in three roles:
+</p>
+
+<ul>
+  <li><strong>Swing-leg zeroing.</strong> If side $s$ is in swing at step $k$, identity rows pin
+  that leg's six wrench components to zero — the gait schedule expressed as constraint structure.
+  (The inequality rows for that foot are simultaneously deactivated.)</li>
+  <li><strong>The no-roll-moment row.</strong> The MIT Humanoid's leg has five actuated DoF: the
+  ankle can pitch but not roll. A stance foot therefore cannot exert an ankle-roll moment about
+  its own long axis. When the <code>no_roll_moment</code> wrench model is active, the roll-row of
+  a stance foot is replaced by
+  $$
+  \hat{\mathbf{x}}_{F}^{W} \cdot \mathbf{M}^W \;=\; 0,
+  $$
+  the foot's <em>current world-frame</em> $x$-axis dotted with its moment — three coefficients in
+  the moment columns, updated from the measured foot pose before every constraint build. Without
+  this row the QP allocates roll moments the hardware cannot produce, and the torque mapping
+  silently projects them away (<a href="#torque">§9.3</a> quantifies the resulting error).</li>
+  <li><strong>Stance passthrough.</strong> Stance rows not used by either role contribute nothing,
+  but their <em>slots</em> remain in the sparse pattern so that stance/swing flips change only
+  values, not structure — the detail that makes warm starting practical
+  (<a href="#solver">§10.3</a>).</li>
+</ul>
+
+<p>Stacked over the horizon, the complete constraint block is</p>
+
+$$
+C \in \mathbb{R}^{24H \times 12H},
+\qquad
+D \in \mathbb{R}^{12H \times 12H},
+\qquad
+\underline{\mathbf{c}} \le
+\begin{bmatrix} C \\ D \end{bmatrix} \mathbf{U} \le
+\overline{\mathbf{c}},
+$$
+
+<p>
+with the equality rows encoded as equal lower/upper bounds in OSQP's two-sided form, and the
+inequality lower bounds at $-\infty$. For $H = 25$: 300 variables, 600 inequality rows, 300
+equality rows — solved comfortably within a 2&nbsp;ms control tick.
+</p>

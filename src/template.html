@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convex MPC for Bipedal Humanoid Locomotion — Inseong Paik</title>
+<meta name="description" content="Extending the MIT Cheetah 3 convex model-predictive controller to CoP-constrained bipedal humanoid locomotion: single-rigid-body modeling, 6D contact-wrench optimization, swing-foot planning, contact-event handling, solver engineering, and reproducible MPC debugging in MuJoCo.">
+<meta property="og:title" content="Convex MPC for Bipedal Humanoid Locomotion">
+<meta property="og:description" content="A technical deep-dive: extending the MIT Cheetah 3 convex MPC to CoP-constrained humanoid walking.">
+<meta property="og:type" content="article">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦿</text></svg>">
+<!--STYLE-->
+</head>
+<body>
+<script>
+(function () {
+  var t = localStorage.getItem("cmpc-theme");
+  if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
+
+<div class="page">
+  <aside class="sidebar">
+    <!--TOC-->
+  </aside>
+
+  <main class="article">
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle color theme" title="Toggle theme">
+      <svg class="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.6"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M4.9 19.1l1.9-1.9M17.2 6.8l1.9-1.9"/></svg>
+      <svg class="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <!--BODY-->
+  </main>
+</div>
+
+<script>
+// Theme toggle
+document.getElementById("theme-toggle").addEventListener("click", function () {
+  var root = document.documentElement;
+  var dark = root.getAttribute("data-theme") === "dark";
+  if (dark) { root.removeAttribute("data-theme"); localStorage.setItem("cmpc-theme", "light"); }
+  else { root.setAttribute("data-theme", "dark"); localStorage.setItem("cmpc-theme", "dark"); }
+});
+
+// TOC scroll spy
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll(".toc a"));
+  var map = {};
+  links.forEach(function (a) { map[a.getAttribute("href").slice(1)] = a; });
+  var headings = Array.prototype.slice.call(document.querySelectorAll("h2[id], h3[id]"));
+  var active = null;
+  function setActive(id) {
+    if (active) active.classList.remove("active");
+    active = map[id] || null;
+    if (active) active.classList.add("active");
+  }
+  var visible = new Set();
+  var obs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) visible.add(e.target.id); else visible.delete(e.target.id);
+    });
+    var first = headings.find(function (h) { return visible.has(h.id); });
+    if (first) setActive(first.id);
+  }, { rootMargin: "0px 0px -70% 0px" });
+  headings.forEach(function (h) { obs.observe(h); });
+})();
+
+// Pause hero/gallery videos when offscreen (battery friendliness)
+(function () {
+  var vids = Array.prototype.slice.call(document.querySelectorAll("video[autoplay]"));
+  var obs = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.play().catch(function(){}); }
+      else { e.target.pause(); }
+    });
+  }, { rootMargin: "120px" });
+  vids.forEach(function (v) { obs.observe(v); });
+})();
+</script>
+</body>
+</html>

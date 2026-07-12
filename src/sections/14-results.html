@@ -1,0 +1,88 @@
+<h2 id="results"><span class="secno">13</span>Results</h2>
+
+<p>
+All results below are the MIT Humanoid in MuJoCo at 500&nbsp;Hz physics, running the single
+controller and single weight set documented throughout this article — no per-behavior mode
+switching beyond the standing/walking FSM. The clips show commanded operating points, not
+envelope maxima.
+</p>
+
+<figure>
+  <div class="fig-grid">
+    <div class="cell">
+      <video autoplay loop muted playsinline preload="metadata" src="assets/media/walk_forward.mp4"></video>
+      <div class="lbl"><b>Forward</b> · $\dot x = 0.6$ m/s</div>
+    </div>
+    <div class="cell">
+      <video autoplay loop muted playsinline preload="metadata" src="assets/media/walk_lateral.mp4"></video>
+      <div class="lbl"><b>Lateral</b> · $\dot y = 0.3$ m/s</div>
+    </div>
+    <div class="cell">
+      <video autoplay loop muted playsinline preload="metadata" src="assets/media/turn_inplace.mp4"></video>
+      <div class="lbl"><b>In-place turn</b> · $\dot\psi = 1.3$ rad/s</div>
+    </div>
+    <div class="cell">
+      <video autoplay loop muted playsinline preload="metadata" src="assets/media/track_roll.mp4"></video>
+      <div class="lbl"><b>Roll tracking</b> · $|\phi| \le 30°$</div>
+    </div>
+    <div class="cell">
+      <video autoplay loop muted playsinline preload="metadata" src="assets/media/track_pitch.mp4"></video>
+      <div class="lbl"><b>Pitch tracking</b> · $|\theta| \le 30°$</div>
+    </div>
+    <div class="cell">
+      <video autoplay loop muted playsinline preload="metadata" src="assets/media/track_height.mp4"></video>
+      <div class="lbl"><b>Height tracking</b> · $p_z$ command</div>
+    </div>
+  </div>
+  <figcaption><span class="figno">Video 2</span>Locomotion and body-pose tracking under one
+  controller: omnidirectional walking, in-place turning at 1.3&nbsp;rad/s, and standing-mode
+  roll/pitch/height tracking. The combined demonstration is Video&nbsp;1 at the top of the
+  article.</figcaption>
+</figure>
+
+<h3 id="tuning-summary">13.1&ensp;The numbers behind the clips</h3>
+
+<div class="tbl-wrap">
+<table class="tbl-num">
+  <caption><span class="figno">Table 6</span>MIT Humanoid operating configuration (all
+  YAML-driven).</caption>
+  <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Gait cycle / swing / stance</td><td>0.5 s / 0.17 s / 0.33 s</td></tr>
+    <tr><td>Double-support fraction</td><td>32% of cycle</td></tr>
+    <tr><td>Horizon</td><td>25 steps × 20 ms = 0.5 s (one full cycle)</td></tr>
+    <tr><td>MPC solve cadence</td><td>every 7 ticks ≈ 71.4 Hz</td></tr>
+    <tr><td>Command limits $(\dot x, \dot y, \dot\psi)$</td><td>0.7 m/s, 0.5 m/s, 2.0 rad/s</td></tr>
+    <tr><td>Friction $\mu$ / torsional scale</td><td>1.0 / 0.0657</td></tr>
+    <tr><td>Foot half-length $a$ / half-width $b$</td><td>6.5 cm / 1.0 cm</td></tr>
+    <tr><td>Normal force bounds</td><td>$5 \le F_z \le 1500$ N</td></tr>
+    <tr><td>Swing height / natural frequency</td><td>6 cm / (151, 151, 110) rad/s</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="tbl-wrap">
+<table class="tbl-num">
+  <caption><span class="figno">Table 7</span>Walking-mode MPC weights (diagonal of $Q$; input
+  weight $R = 10^{-3}\,\mathbf{1}_{12}$). The heavy planar-position and height weights — with
+  $p_y$ five times $p_x$ — are what the body-yaw cost transform of §4.3 keeps pointed at the
+  robot's actual lateral axis while turning.</caption>
+  <thead><tr><th>$\phi$</th><th>$\theta$</th><th>$\psi$</th><th>$p_x$</th><th>$p_y$</th><th>$p_z$</th>
+  <th>$\omega_{x,y,z}$</th><th>$v_x$</th><th>$v_y$</th><th>$v_z$</th></tr></thead>
+  <tbody>
+    <tr><td>5·10⁴</td><td>9·10³</td><td>500</td><td>2·10⁵</td><td>~10⁶</td><td>1.1·10⁵</td>
+    <td>10</td><td>100</td><td>70</td><td>10</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+Two qualitative observations from tuning that the tables cannot show. First, the CoP constraints
+are not decorative: widening the modeled foot beyond its physical dimensions produces immediate
+foot-roll at touchdown, and narrowing it makes the QP visibly re-route moment demand into
+tangential force pairs — the constraint set is active and load-bearing in ordinary walking.
+Second, the contact manager earns its complexity at the transitions: with early-contact handling
+disabled, small terrain-timing mismatches that the schedule cannot see accumulate into stumbles
+within a few strides; with it enabled, the same mismatches are absorbed as single-tick target
+freezes that are hard to even spot in the viewer.
+</p>

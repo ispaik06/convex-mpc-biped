@@ -1,0 +1,110 @@
+<h2 id="introduction"><span class="secno">1</span>Introduction</h2>
+
+<p>
+Making a humanoid robot walk is a control problem with an unusually hostile structure.
+Four properties conspire against you:
+</p>
+
+<ul>
+  <li><strong>Floating-base dynamics.</strong> The torso is not bolted to anything. It moves
+  freely in $SE(3)$ and can only be stabilized indirectly, through whatever forces the feet can
+  exert on the ground.</li>
+  <li><strong>Underactuation.</strong> There is no actuator on the center of mass. During single
+  support — most of a walking cycle — the system is fundamentally underactuated, and the
+  controller must plan <em>through</em> the underactuation rather than fight it.</li>
+  <li><strong>Hybrid contact dynamics.</strong> Every touchdown and liftoff switches the dynamics
+  model. The controller must reason about a <em>sequence</em> of contact configurations, not a
+  single smooth system.</li>
+  <li><strong>A small support region.</strong> A quadruped in trot still spans a support line
+  between diagonal feet; a biped in single support balances on one foot a few centimeters wide.
+  Feasible contact wrenches live in a thin cone, and constraint violations turn directly into
+  foot roll and falls.</li>
+</ul>
+
+<p>
+Model-predictive control is a natural answer to the first three properties: predict the body
+motion over a horizon that covers upcoming contact switches, and optimize contact forces subject
+to the physics of friction. The catch has always been speed. Nonlinear whole-body MPC is
+expensive and its solvers come with few guarantees; a controller that occasionally fails to
+return a force is not a controller you can stand on.
+</p>
+
+<p>
+The MIT Cheetah&nbsp;3 controller of <a href="#ref-dicarlo">Di&nbsp;Carlo et&nbsp;al. [1]</a>
+showed how much of the problem survives aggressive simplification. Model the robot as a single
+rigid body driven by ground-reaction forces; linearize the orientation dynamics around yaw;
+treat the footstep locations as given by a heuristic planner. What remains is a <em>convex</em>
+quadratic program that solves to global optimality in well under a millisecond — fast enough to
+re-plan the entire force profile 25–50 times per second, robust enough to gallop a 45&nbsp;kg
+quadruped at 3&nbsp;m/s.
+</p>
+
+<p>
+This project asks: <em>how much of that story carries over to a biped, and what must be added
+where it does not?</em> The answer occupies the rest of this article. The short version is that
+the SRB-plus-convex-QP skeleton transfers beautifully, but essentially every interface around it
+— the contact model, the constraint geometry, the reference generation, the cost frame, and the
+recovery behaviors — has to be rebuilt for two feet.
+</p>
+
+<h3 id="from-quadruped-to-biped">1.1&ensp;From quadruped point feet to humanoid wrenches</h3>
+
+<p>
+The Cheetah's feet are rubber balls: each contact transmits a pure force, and the friction cone
+is the entire constraint story. A humanoid foot is a rigid plate. It transmits a force
+<em>and a moment</em> — a full 6D wrench — and that moment is bounded by the geometry of the
+foot itself: push the center of pressure past the toe and the foot tips regardless of what the
+QP believed. The table below summarizes what changed relative to the reference formulation.
+</p>
+
+<div class="tbl-wrap">
+<table>
+  <caption><span class="figno">Table 1</span>What transfers from the Cheetah&nbsp;3 formulation
+  and what this project replaces.</caption>
+  <thead>
+    <tr><th>Aspect</th><th>Cheetah&nbsp;3 (Di&nbsp;Carlo et&nbsp;al.)</th><th>This project</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Platform</td><td>Quadruped, 12 DoF</td><td>Biped humanoids (MIT Humanoid, Unitree G1/H1)</td></tr>
+    <tr><td>Contact model</td><td>Point foot, 3D force $\mathbf{f}_i \in \mathbb{R}^3$</td>
+        <td>Finite foot, 6D wrench $[\mathbf{F}_i;\,\mathbf{M}_i] \in \mathbb{R}^6$</td></tr>
+    <tr><td>Input dimension / step</td><td>$3n$, up to 4 contacts</td><td>$12$ (two feet, forces + moments)</td></tr>
+    <tr><td>Force constraints</td><td>Friction pyramid, $F_z$ bounds</td>
+        <td>Friction pyramid, $F_z$ bounds, <b>rectangular CoP polygon</b>, <b>torsional friction</b>, all in the yaw-rotated foot frame</td></tr>
+    <tr><td>Swing-leg DoF handling</td><td>3-DoF legs, full task-space control</td>
+        <td>5-DoF legs (MIT) require a no-roll-moment equality row and wrench-realizability analysis; 6-DoF legs (G1) use the full wrench</td></tr>
+    <tr><td>Cost frame</td><td>World-axis diagonal weights</td>
+        <td>Body-yaw-rotated tracking cost, fixed from the reference yaw to preserve convexity</td></tr>
+    <tr><td>Reference</td><td>Operator velocities integrated forward</td>
+        <td>Estimator-anchored receding reference with gait-gated yaw integration</td></tr>
+    <tr><td>QP solver</td><td>qpOASES, dense</td><td>OSQP via OsqpEigen, structure-exploiting sparsity, signature-aware warm starts</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3 id="scope">1.2&ensp;Scope and honest framing</h3>
+
+<p>
+Everything here runs in MuJoCo with ground-truth (“cheater”) state estimation; hardware transfer,
+sensor-based estimation, and rough terrain are explicitly out of scope
+(<a href="#limitations">§14</a>). The MIT Humanoid is the primary, validated platform — its MJCF
+is not redistributed in the public repository — and the Unitree G1/H1 configurations are
+integration starting points rather than tuned results. The project was built over roughly three
+months as a from-scratch implementation: the simulator harness, controller stack, solver
+integration, debugging tools, and the web telemetry dashboard are all part of the codebase this
+article walks through.
+</p>
+
+<div class="callout">
+<span class="co-title">How to read this article</span>
+<p>
+Sections <a href="#architecture">2</a>–<a href="#srb-model">3</a> set up the architecture and the
+model. Sections <a href="#convex-mpc">4</a>–<a href="#constraints">5</a> are the mathematical
+core: the condensed QP and the contact-wrench constraint set. Sections
+<a href="#reference-trajectory">6</a>–<a href="#torque">9</a> cover the planning and execution
+layers around the QP. Sections <a href="#solver">10</a>–<a href="#debugging">12</a> are the
+systems half: solver engineering, robot-independent structure, and the debugging methodology.
+Results and limitations close it out. Readers who want the biped-specific mathematics can go
+straight to <a href="#constraints">§5</a>.
+</p>
+</div>

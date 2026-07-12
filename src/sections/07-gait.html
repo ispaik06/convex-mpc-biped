@@ -1,0 +1,157 @@
+<h2 id="gait"><span class="secno">7</span>Gait Scheduling and Reactive Contact Management</h2>
+
+<p>
+Two components share responsibility for contact, and the split is deliberate:
+<code>GaitScheduler</code> is a <em>pure function of time</em> — the periodic plan — while
+<code>ContactManager</code> is the reactive layer that reconciles that plan with measured
+reality. The scheduler never lies about the plan; the manager is allowed to override it for a
+few ticks when the ground disagrees.
+</p>
+
+<h3 id="phase">7.1&ensp;Periodic phase and the nominal schedule</h3>
+
+<p>
+With cycle time $T_c$, swing time $T_{\mathrm{sw}}$, stance time $T_{\mathrm{st}}$
+($T_c = T_{\mathrm{sw}} + T_{\mathrm{st}}$, enforced at config load), each side's phase is the
+fractional cycle position with a half-cycle offset between legs:
+</p>
+
+$$
+\varphi_s(t) = \mathrm{frac}\!\left(\frac{t - t_0}{T_c} + \phi_s\right),
+\qquad
+\phi_{\mathrm{Left}} = \tfrac{1}{2},\;\; \phi_{\mathrm{Right}} = 0,
+$$
+
+$$
+c_s(t) =
+\begin{cases}
+1, & 0 \le \varphi_s(t) < T_{\mathrm{st}}/T_c \quad \text{(stance)}\\[2pt]
+0, & \text{otherwise} \quad \text{(swing)},
+\end{cases}
+$$
+
+<p>
+where $t_0$ is the cycle origin maintained by the <code>HorizonClock</code>. Standing mode
+short-circuits everything to $c_s \equiv 1$. The MIT gait uses
+$T_c = 0.5$&nbsp;s, $T_{\mathrm{sw}} = 0.17$&nbsp;s, $T_{\mathrm{st}} = 0.33$&nbsp;s — a stance
+fraction of 66%, giving a double-support overlap of
+</p>
+
+$$
+T_{\mathrm{ds}} = 2T_{\mathrm{st}} - T_c = 0.16\ \text{s}
+$$
+
+<p>
+per half-cycle (32% of the cycle in double support). That is a conservative, walking-like gait:
+plenty of overlap for wrench handoff between feet, at the cost of top speed.
+</p>
+
+<h3 id="horizon-constraints">7.2&ensp;From schedule to constraint structure</h3>
+
+<p>
+At every scheduled solve, the scheduler evaluates $c_s(t_k)$ across the horizon and emits the
+per-step constraint data of <a href="#constraints">§5</a>: stance flags select which
+inequality rows are live and which equality rows zero a swing leg, the normal-force bounds are
+written into the bound vector, and each stance foot's yaw (read from its measured $x$-axis)
+parameterizes the rotated rows. Because $H\,\Delta t$ equals one full gait cycle, the QP always
+sees a complete stance/swing rotation ahead — the property that lets it pre-load the incoming
+foot <em>before</em> the outgoing foot lifts.
+</p>
+
+<h3 id="contact-estimation">7.3&ensp;Measured contact with hysteresis</h3>
+
+<p>Contact is estimated from the measured normal force with two-sided hysteresis and
+tick-count confirmation:</p>
+
+$$
+\hat c_{t+1} =
+\begin{cases}
+1, & F_z \ge F_{\mathrm{on}} \ \text{for } N_{\mathrm{on}} \text{ consecutive ticks}\\[2pt]
+0, & F_z \le F_{\mathrm{off}} \ \text{for } N_{\mathrm{off}} \text{ consecutive ticks}\\[2pt]
+\hat c_t, & \text{otherwise,}
+\end{cases}
+$$
+
+<p>
+with $F_{\mathrm{on}} = 36$&nbsp;N, $F_{\mathrm{off}} = 0.5$&nbsp;N in the MIT tuning — the wide
+gap is intentional, because grazing contact at touchdown produces force chatter precisely when a
+wrong contact bit does the most damage.
+</p>
+
+<h3 id="early-contact">7.4&ensp;Early contact</h3>
+
+<p>The foot finds ground before the schedule expects it:</p>
+
+$$
+\mathrm{early} \;=\; (c_{\mathrm{sched}} = 0)\;\wedge\;(\hat c = 1)\;\wedge\;\mathrm{releasedDuringSwing},
+$$
+
+<p>
+where the third conjunct — the foot must first have reached a <em>confirmed no-contact</em> state
+during this swing — prevents residual liftoff contact from being misclassified as touchdown.
+On detection, four things happen in order:
+</p>
+
+<ol>
+  <li><strong>Freeze the foothold.</strong> The commanded target snaps to the actual landing
+  point, $\mathbf{p}^W_{\mathrm{cmd}} \leftarrow \mathbf{p}^W_{\mathrm{foot}}$ — continuing to
+  drag a grounded foot toward a planned target only scuffs and destabilizes it.</li>
+  <li><strong>Switch the leg to support mode.</strong> Swing-foot tracking hands over to stance
+  wrench control immediately.</li>
+  <li><strong>Update the near-term MPC schedule.</strong> The first $N_{\mathrm{lock}}$ horizon
+  steps are overridden to reflect the true contact state
+  (<a href="#horizon-override">§7.5</a>), so the very next solve allocates force to the foot that
+  actually exists.</li>
+  <li><strong>Ramp the load.</strong> Wrench feedforward on the new contact scales in smoothly
+  rather than stepping.</li>
+</ol>
+
+<h3 id="horizon-override">7.5&ensp;Late contact, the contact ramp, and the horizon override</h3>
+
+<p>
+The mirror failure — schedule says stance, force says nothing — triggers <em>ground search</em>:
+the touchdown anchor freezes and the commanded target descends at a bounded rate,
+</p>
+
+$$
+d_{\mathrm{search}}(t + \Delta t) = \min\big(d_{\max},\; d_{\mathrm{search}}(t) + v_{\mathrm{search}}\,\Delta t\big),
+\qquad
+\mathbf{p}^W_{\mathrm{search}} = \mathbf{p}^W_{\mathrm{freeze}} - d_{\mathrm{search}}\,\mathbf{e}_z,
+$$
+
+<p>
+until contact is re-established or a timeout flags recovery failure. Around every contact
+transition, a ramp factor
+</p>
+
+$$
+\alpha = \operatorname{clamp}\!\left(\frac{t_{\mathrm{contact}}}{T_{\mathrm{ramp}}},\, 0,\, 1\right)
+$$
+
+<p>
+scales both the stance wrench feedforward in the leg controller <em>and</em> the effective
+minimum normal force inside the MPC bounds,
+$F_{z,\min}^{\mathrm{eff}} = \alpha F_{z,\min}$ — so the QP is never forced to demand full
+loading from a foot that has been on the ground for two milliseconds. All of this reaches the
+solver through a single narrow interface, the <em>horizon override</em>: the first
+$N_{\mathrm{lock}}$ steps of the constraint schedule are rewritten with the measured contact
+flags and ramp scales, while the remainder of the horizon keeps the nominal periodic plan. The
+MPC believes the world for the next few steps and the plan thereafter.
+</p>
+
+<h3 id="stance-yaw-hold">7.6&ensp;Stance-foot yaw hold</h3>
+
+<p>
+One last stabilizer, applied at torque level rather than as a QP constraint: a small PD moment
+about the world vertical holds each stance foot's heading at its touchdown yaw,
+</p>
+
+$$
+M^W_{z,\mathrm{hold}} = \alpha\,\big(k_p\,\mathrm{wrap}(\psi_{\mathrm{td}} - \psi_{\mathrm{foot}}) - k_d\,\dot\psi_{\mathrm{foot}}\big),
+$$
+
+<p>
+ramped by the same $\alpha$ and added only to the stance moment feedforward. During in-place
+turning this suppresses the slow stance-foot pivot that torsional friction alone leaves
+underdamped — one of those small terms that separates “turns” from “turns cleanly.”
+</p>

@@ -1,0 +1,92 @@
+<h2 id="torque"><span class="secno">9</span>From Optimal Wrench to Joint Torque</h2>
+
+<p>
+The QP hands back a wrench horizon; the robot needs joint torques in the same 2&nbsp;ms tick.
+The mapping differs fundamentally by contact state, and its limits — what a 5-DoF leg can and
+cannot realize — close the loop back to the constraint design of <a href="#constraints">§5.6</a>.
+</p>
+
+<h3 id="stance-map">9.1&ensp;Stance: the Jacobian-transpose wrench map</h3>
+
+<p>
+A stance foot applies the commanded ground-reaction wrench; equivalently, the ground applies its
+reaction to the robot. By the principle of virtual work, with $J_v, J_\omega \in \mathbb{R}^{3\times n_j}$
+the foot's translational and rotational Jacobians,
+</p>
+
+$$
+\boldsymbol{\tau}_{\mathrm{stance}}
+= J_v^{\top}\, \mathbf{F}^W \;+\; J_\omega^{\top}\, \mathbf{M}^W,
+$$
+
+<p>
+scaled through the contact ramp $\alpha$ near transitions and augmented by the yaw-hold moment
+of <a href="#stance-yaw-hold">§7.6</a>. The moment term is the biped-specific half: on a point
+foot $J_\omega^\top \mathbf{M}$ does not exist, whereas here it is the channel through which the
+CoP-constrained ankle moments of §5 become physical ankle torques. No joint-space feedback runs
+on a stance leg — the MPC <em>is</em> the feedback loop, re-solving at 71&nbsp;Hz.
+</p>
+
+<h3 id="swing-osc">9.2&ensp;Swing: task-space control with the leg's own dynamics</h3>
+
+<p>Swing legs track the trajectory of <a href="#swing-traj">§8.3</a> with an operational-space
+law that compensates the leg's actual inertia rather than treating it as a point mass:</p>
+
+$$
+\boldsymbol{\tau}_{\mathrm{swing}}
+= J_v^{\top}\Big[\mathbf{F}_{\mathrm{ff}} + K_p(\mathbf{p}^{\mathrm{des}} - \mathbf{p})
++ K_d(\mathbf{v}^{\mathrm{des}} - \mathbf{v})\Big]
++ J_v^{\top}\Lambda\big(\mathbf{a}^{\mathrm{des}} - \dot J_v \dot{\mathbf{q}}\big)
++ \mathbf{b},
+$$
+
+<p>where $\mathbf{b}$ collects gravity and Coriolis torques for the isolated leg and</p>
+
+$$
+\Lambda = \big(J_v\, M^{-1} J_v^{\top}\big)^{-1}
+$$
+
+<p>
+is the apparent (task-space) inertia at the foot, built from the leg-only mass matrix $M$. The
+Cartesian gains follow the natural-frequency rule of [1]: to keep closed-loop bandwidth constant
+as the leg folds and its apparent mass changes,
+</p>
+
+$$
+K_{p,i} = \omega_i^2\, \Lambda_{ii},
+$$
+
+<p>
+with $\boldsymbol{\omega} = (151, 151, 110)$&nbsp;rad/s in the MIT tuning — the gain matrix
+re-derived from $\Lambda$ every tick instead of hand-tuned per posture. A separate attitude PD
+levels the swing foot in pitch and tracks the touchdown heading in yaw; roll control is
+disabled on the MIT Humanoid for the reason the next subsection makes precise.
+</p>
+
+<h3 id="realizability">9.3&ensp;Wrench realizability and the 5-DoF leg</h3>
+
+<p>
+Stack a foot's Jacobians into $A = [J_v^\top\; J_\omega^\top]^\top$-adjoint form, mapping wrench
+to torque as $\boldsymbol{\tau} = A^\top \mathbf{w}$ with
+$A^\top \in \mathbb{R}^{n_j \times 6}$. For the MIT Humanoid, $n_j = 5$: the map cannot be
+injective, and there is (at least) a one-dimensional subspace of wrenches that produce
+<em>zero</em> joint torque — wrenches the leg simply cannot exert. What the leg actually
+realizes is the row-space projection
+</p>
+
+$$
+\mathbf{w}_{\mathrm{rec}} = \big(A^\top\big)^{+} \big(A^\top \mathbf{w}_{\mathrm{qp}}\big),
+$$
+
+<p>
+and the residual $\mathbf{w}_{\mathrm{qp}} - \mathbf{w}_{\mathrm{rec}}$ is silently discarded by
+physics. This is not hypothetical: with a pitch-only ankle, the missing DoF is essentially the
+ankle-roll moment, and any $M_x^F$ the QP requests evaporates at the torque map. Two design
+consequences follow. First, the <code>no_roll_moment</code> equality row of
+<a href="#equality-constraints">§5.6</a> exists so the QP <em>knows</em> about the null direction
+instead of spending wrench budget there. Second, the wrench-reconstruction probe of
+<a href="#debugging">§12</a> computes exactly this projection from logged data, turning "the
+QP asked for something impossible" from a hunch into a plotted, per-axis error bar. On the
+6-DoF-per-leg Unitree G1 the same machinery runs with the full wrench model and the equality row
+disabled — one YAML switch, no code change.
+</p>

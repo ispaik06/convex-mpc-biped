@@ -1,0 +1,108 @@
+<h2 id="debugging"><span class="secno">12</span>Reproducible Debugging: Four Layers of MPC Verification</h2>
+
+<p>
+An MPC controller fails in ways a PD controller cannot: the robot stumbles, and the cause might
+be the model, the reference, the constraints, the solver, or none of them — a torque map or a
+simulator disagreement downstream of a perfectly good solve. Staring at a live viewer does not
+localize such failures. The methodology here is a debugging <em>principle</em> made executable:
+</p>
+
+<div class="callout">
+<span class="co-title">Principle</span>
+<p>Every important MPC result must be reproducible from a captured controller state, offline,
+without the simulator running — and each potential failure layer must be testable in
+isolation.</p>
+</div>
+
+<p>
+Pressing <code>Shift+L</code> (or hitting a configured trigger time) captures the next scheduled
+solve as a self-contained JSON snapshot: the full MuJoCo <code>qpos</code>/<code>qvel</code>, the
+applied torque command, the reduced state $\mathbf{x}_0$, the reference trajectory and contact
+schedule, the condensed matrices $A_{\mathrm{qp}}, B_{\mathrm{qp}}$, the optimized wrench
+horizon, foot positions and Jacobians, and the complete controller configuration. One script
+then runs four independent analyses, each isolating a different layer of the pipeline.
+</p>
+
+<h3 id="dbg-srb">12.1&ensp;Layer 1 — SRB reconstruction: <em>is the solve internally consistent?</em></h3>
+
+<p>Recompute the predicted horizon from the logged pieces,
+$\mathbf{X} = A_{\mathrm{qp}}\mathbf{x}_0 + B_{\mathrm{qp}}\mathbf{U}^\ast$, and compare against
+the stored prediction. This is a pure algebra check of the condensing and logging path — it
+must agree to machine precision, and it does (max reconstruction error ~$10^{-15}$). When it
+ever disagrees, the bug is in matrix assembly, not in control.</p>
+
+<figure>
+  <img src="assets/plots/srb_reconstruct.png" alt="SRB reconstruction plot" loading="lazy">
+  <figcaption><span class="figno">Figure 4</span>SRB reconstruction of a captured walking solve:
+  reconstructed COM path, height, attitude, and velocity horizon overlaid on the stored
+  prediction. Agreement at $10^{-15}$ confirms the condensed algebra end-to-end.</figcaption>
+</figure>
+
+<h3 id="dbg-wrench">12.2&ensp;Layer 2 — Wrench reconstruction: <em>can the legs even do this?</em></h3>
+
+<p>Project the QP wrench through the leg-Jacobian row space,
+$\mathbf{w}_{\mathrm{rec}} = (A^\top)^{+}(A^\top \mathbf{w}_{\mathrm{qp}})$
+(<a href="#realizability">§9.3</a>), and plot the per-axis residual. For the 5-DoF MIT leg this
+makes the unrealizable wrench directions visible as concrete error bars — the plot that
+motivated the no-roll-moment constraint and now guards it.</p>
+
+<figure>
+  <img src="assets/plots/wrench_reconstruction.png" alt="Wrench reconstruction plot" loading="lazy">
+  <figcaption><span class="figno">Figure 5</span>QP wrench vs. its Jacobian row-space projection
+  for one captured solve. Components that survive the projection are realizable by the leg;
+  the residual (bottom) is what physics will silently discard.</figcaption>
+</figure>
+
+<h3 id="dbg-probe">12.3&ensp;Layer 3 — MuJoCo contact probe: <em>does the simulator agree?</em></h3>
+
+<p>Restore the exact logged state into MuJoCo, apply the recorded torque command, run
+<code>mj_forward</code>, and measure the realized contact wrench about the same reference point
+the controller used. This is the ground-truth arbiter for sign conventions, moment reference
+points, and controller/simulator frame agreement — the class of bug that produces plausible
+torques and inexplicable behavior.</p>
+
+<figure>
+  <img src="assets/plots/contact_probe.png" alt="MuJoCo contact probe plot" loading="lazy">
+  <figcaption><span class="figno">Figure 6</span>Contact probe: QP-desired vs. MuJoCo-realized
+  force and moment at the stance foot, plus per-axis error and the sensitivity of the measured
+  moment to the chosen reference point.</figcaption>
+</figure>
+
+<h3 id="dbg-rh">12.4&ensp;Layer 4 — Receding-horizon replay: <em>does the loop work?</em></h3>
+
+<p>
+Starting from the captured state, rebuild reference, gait constraints, foot targets, SRB
+formulation, and QP at <em>every</em> rollout step — then propagate the ideal SRB model with each
+solve's first input. This is the controller running closed-loop against its own model, isolated
+from MuJoCo: reference tracking, contact-schedule updates, wrench evolution, and
+horizon-to-horizon consistency, all offline, with command sweeps
+(e.g. ramping $\dot x_{\mathrm{cmd}}$) available as flags. Divergence here is a formulation
+problem; convergence here plus failure in simulation points the finger at the layers below.
+</p>
+
+<figure>
+  <img src="assets/plots/receding_horizon_states.png" alt="Receding horizon replay states plot" loading="lazy">
+  <figcaption><span class="figno">Figure 7</span>Receding-horizon replay over 12&nbsp;s
+  (~860 re-solves): all twelve reduced states tracking their references through a commanded
+  forward-velocity ramp to 1&nbsp;m/s under the gait's periodic contact switching.</figcaption>
+</figure>
+
+<h3 id="dashboard">12.5&ensp;Live telemetry: shared memory to the browser</h3>
+
+<p>
+For interactive work, the controller publishes state and telemetry through shared memory to a
+Python-served web dashboard: twelve controller state channels with command overlays, a command
+compass, draggable multi-chart layouts — and a MuJoCo-WASM viewer that renders the same MJCF
+model from streamed <code>qpos</code>, so the browser shows the robot the controller believes in.
+The C++ side never blocks on a socket: <code>C++ → shared memory → Python → browser</code>.
+</p>
+
+<figure>
+  <div class="fig-grid cols-2">
+    <div class="cell"><img src="assets/media/dashboard_1.webp" alt="Web dashboard with WASM viewer" loading="lazy"></div>
+    <div class="cell"><img src="assets/media/dashboard_2.webp" alt="Web dashboard telemetry charts" loading="lazy"></div>
+  </div>
+  <figcaption><span class="figno">Figure 8</span>The web dashboard: live MuJoCo-WASM viewer with
+  filtered-command compass (left), and the twelve-channel telemetry grid with per-chart
+  raw/mean/moving-average modes (right).</figcaption>
+</figure>

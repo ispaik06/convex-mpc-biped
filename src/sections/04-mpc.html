@@ -1,0 +1,169 @@
+<h2 id="convex-mpc"><span class="secno">4</span>The Convex MPC: Discretization, Condensing, and Cost Geometry</h2>
+
+<h3 id="discretization">4.1&ensp;Zero-order-hold discretization</h3>
+
+<p>
+Each horizon step $k$ carries its own continuous-time pair $(A_{c,k}, B_{c,k})$, built from the
+reference yaw $\psi_k$ and the reference lever arms $\mathbf{r}_{L,k}, \mathbf{r}_{R,k}$. The
+zero-order-hold discrete model over $\Delta t = 20$&nbsp;ms is computed from a truncated matrix
+exponential:
+</p>
+
+$$
+A_{d,k} \;=\; \mathbf{1} + \Delta t\, A_{c,k} + \tfrac{1}{2}\Delta t^2 A_{c,k}^2,
+\qquad
+B_{d,k} \;=\; \Delta t\, B_{c,k} + \tfrac{1}{2}\Delta t^2 A_{c,k} B_{c,k}
+ + \tfrac{1}{6}\Delta t^3 A_{c,k}^2 B_{c,k}.
+$$
+
+<p>
+$A_c$ here is nilpotent-like in structure (orientation ← angular velocity ← nothing;
+position ← velocity ← gravity), so the truncation error at these magnitudes is negligible while
+avoiding a general <code>expm</code> — a small example of a recurring theme: the SRB structure is
+simple enough that exploiting it by hand beats calling the general-purpose routine.
+</p>
+
+<h3 id="condensed-qp">4.2&ensp;Condensing the horizon</h3>
+
+<p>
+Rather than keeping states as decision variables with dynamics as equality constraints, the
+horizon is condensed: the stacked state prediction
+$\mathbf{X} = [\mathbf{x}_1^\top \cdots \mathbf{x}_H^\top]^\top \in \mathbb{R}^{13H}$ is an
+affine function of the stacked input
+$\mathbf{U} = [\mathbf{u}_0^\top \cdots \mathbf{u}_{H-1}^\top]^\top \in \mathbb{R}^{12H}$,
+</p>
+
+$$
+\mathbf{X} \;=\; A_{\mathrm{qp}}\,\mathbf{x}_0 \;+\; B_{\mathrm{qp}}\,\mathbf{U},
+$$
+
+<p>with the lifted matrices built from per-step transition products — the LTV generalization of
+the constant-matrix condensing in [1]:</p>
+
+$$
+A_{\mathrm{qp}} =
+\begin{bmatrix}
+\Phi_{1,0} \\ \Phi_{2,0} \\ \vdots \\ \Phi_{H,0}
+\end{bmatrix},
+\qquad
+[B_{\mathrm{qp}}]_{kj} =
+\begin{cases}
+\Phi_{k, j+1}\, B_{d,j}, & j < k\\[2pt]
+\mathbf{0}, & j \ge k
+\end{cases}
+\qquad
+\Phi_{k,j} \;=\; A_{d,k-1} A_{d,k-2} \cdots A_{d,j}.
+$$
+
+<p>
+The payoff is size: the decision vector shrinks to the wrenches alone ($12H = 300$ variables for
+$H{=}25$), swing-foot wrenches are eliminated by cheap equality rows rather than extra states,
+and the Hessian dimension is independent of the state dimension. The cost is that $B_{\mathrm{qp}}$
+is dense — which is embraced rather than fought; <a href="#solver">§10</a> shows where the
+sparsity that <em>does</em> exist is spent.
+</p>
+
+<p>The tracking objective is the weighted least-squares deviation plus a wrench-magnitude penalty,</p>
+
+$$
+J(\mathbf{U})
+= \big\lVert A_{\mathrm{qp}}\mathbf{x}_0 + B_{\mathrm{qp}}\mathbf{U} - \mathbf{X}_{\mathrm{ref}} \big\rVert_{L}^{2}
++ \lVert \mathbf{U} \rVert_{K}^{2},
+$$
+
+<p>
+with $L = \mathrm{diag}(Q_1, \dots, Q_H)$ and $K = \mathrm{diag}(R, \dots, R)$ block-diagonal.
+Expanding and dropping constants gives the standard QP data
+</p>
+
+$$
+\min_{\mathbf{U}}\;\; \tfrac{1}{2}\,\mathbf{U}^{\!\top} \mathbf{H}\,\mathbf{U} + \mathbf{g}^{\!\top}\mathbf{U},
+\qquad
+\mathbf{H} = 2\big(B_{\mathrm{qp}}^{\top} L\, B_{\mathrm{qp}} + K\big),
+\qquad
+\mathbf{g} = 2\,B_{\mathrm{qp}}^{\top} L \big(A_{\mathrm{qp}}\mathbf{x}_0 - \mathbf{X}_{\mathrm{ref}}\big),
+$$
+
+<p>subject to the contact-wrench inequalities and swing-zero equalities of
+<a href="#constraints">§5</a>. Only the first input $\mathbf{u}_0^\ast$ is applied; the rest of
+the horizon exists to make $\mathbf{u}_0^\ast$ farsighted.</p>
+
+<h3 id="cost-transform">4.3&ensp;The body-yaw cost transform</h3>
+
+<p>
+Here is a failure mode that does not exist on a robot that mostly walks straight. Suppose the
+position weights are anisotropic — say lateral tracking is punished ten times harder than
+longitudinal, which is typical for a narrow-footed biped. With a world-axis diagonal $Q$, the
+cost
+</p>
+
+$$
+J = (\mathbf{x} - \mathbf{x}_{\mathrm{ref}})^{\!\top} Q_{\mathrm{world}}\, (\mathbf{x} - \mathbf{x}_{\mathrm{ref}})
+$$
+
+<p>
+means “punish world-$y$ error hard.” The moment the robot yaws 90°, that axis is now the robot's
+<em>forward</em> direction: the controller is suddenly stiff where it should be permissive and
+loose where it needs authority. Foot placement rotates with the heading, the tracking objective
+does not, and the two drift apart — the classic symptom is a robot that walks straight
+beautifully and feels underdamped the moment it turns.
+</p>
+
+<p>
+The fix used here transforms the tracking <em>error</em> into the body-yaw frame at every horizon
+step, using the <em>reference</em> yaw $\psi_{\mathrm{ref},k}$ — a known constant at QP-build
+time:
+</p>
+
+$$
+\mathbf{e}_k = T_k\,(\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k}),
+\qquad
+J = \sum_k \mathbf{e}_k^{\!\top} Q\, \mathbf{e}_k
+= \sum_k (\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k})^{\!\top}\, \underbrace{T_k^{\!\top} Q\, T_k}_{Q_k}\, (\mathbf{x}_k - \mathbf{x}_{\mathrm{ref},k}),
+$$
+
+<p>where $T_k$ rotates exactly three blocks and leaves the rest alone:</p>
+
+$$
+T_k = \mathrm{blkdiag}\big(\,\mathbf{1}_3,\;
+R_z(\psi_{\mathrm{ref},k})^\top,\;
+R_z(\psi_{\mathrm{ref},k})^\top,\;
+R_z(\psi_{\mathrm{ref},k})^\top,\;
+1\,\big)
+$$
+
+<p>
+acting on (orientation, position, angular velocity, linear velocity, gravity). Because $T_k$
+depends only on the reference — never on the decision variables — each $Q_k$ is a constant
+positive-semidefinite matrix and <strong>the problem remains a convex QP</strong>. The Euler
+block stays untransformed deliberately: roll and pitch are already body-relative tilt angles,
+and “rotating” raw Euler errors with a planar rotation would mix conventions. In the
+implementation this is a per-step reweighting inside the QP assembly
+(<code>bodyYawStateCost()</code>), costing a handful of 3×3 multiplies per step.
+</p>
+
+<h3 id="yaw-policy">4.4&ensp;Wrapped vs. unwrapped yaw</h3>
+
+<p>
+A subtler prerequisite for turning: the yaw entry of the MPC state must be <em>continuous in
+time</em>, not confined to $(-\pi, \pi]$. Define the wrap operator and the unwrapped heading
+</p>
+
+$$
+\mathrm{wrap}(\alpha) = \operatorname{atan2}(\sin\alpha, \cos\alpha),
+\qquad
+\psi_{\mathrm{unwrapped}}(t) = \psi(0) + \int_0^t \dot\psi\,d\tau ,
+$$
+
+<p>
+and the policy is a two-line rule with long consequences:
+<strong>subtract yaws across time only in unwrapped form; take shortest-path errors only in
+wrapped form.</strong> The MPC initial state and the reference recurrence both use unwrapped yaw
+— if the state estimator hands the QP $\psi_0 = +179°$ and the reference integrates to $+181°$,
+the error must be $2°$, not $-358°$. Feed a wrapped state into an unwrapped reference at the
+$\pm180°$ seam and the QP sees a phantom full-turn error, requests a violent corrective moment,
+and the robot falls over — a bug family this project eliminated by construction, storing both
+representations in the state estimate and drawing every consumer from the correct one
+(wrapped for UI, logs, and feedback errors; unwrapped for the MPC state, reference, and
+touchdown-yaw prediction).
+</p>

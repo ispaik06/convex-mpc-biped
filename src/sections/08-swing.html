@@ -1,0 +1,134 @@
+<h2 id="swing"><span class="secno">8</span>Swing-Foot Planning and Trajectory Generation</h2>
+
+<p>
+The MPC decides <em>forces</em>; where the feet go is decided by a heuristic planner in the
+Raibert tradition — fast, transparent, and tunable. The Cheetah&nbsp;3 version is one line,
+$\mathbf{p}^{\mathrm{des}} = \mathbf{p}^{\mathrm{ref}} + \mathbf{v}^{\mathrm{CoM}}\Delta t/2$.
+The humanoid version below is that same idea, grown the features a biped actually needs:
+command preview instead of velocity feedback, touchdown-yaw prediction, a lateral crossing
+guard, and dedicated stopping behaviors.
+</p>
+
+<h3 id="touchdown-eq">8.1&ensp;The touchdown equation</h3>
+
+<p>
+Footholds anchor to the <em>estimated</em> reduced-body COM $\mathbf{p}^W_{\mathrm{center}}$ —
+consistent with the receding reference of <a href="#reference-trajectory">§6</a>. Nominal
+offsets $\mathbf{o}^B_{L,R} = [0, \pm w, 0]^\top$ carry the stance width ($w = 7.6$&nbsp;cm on
+the MIT Humanoid), either configured or inferred at startup and stripped of any fore-aft
+component. The command preview horizon is
+</p>
+
+$$
+T_p = \max\!\big(0,\; (0.5 + k_{\mathrm{half}})\, T_{\mathrm{st}}\big),
+$$
+
+<p>
+where $k_{\mathrm{half}}$ switches with filtered planar speed — 0.37 below 0.60&nbsp;m/s, 0.28 up
+to 0.65&nbsp;m/s, 0.26 above — so faster walking previews <em>relatively</em> less and trusts the
+gait more. The planner then previews the command through half the yaw it will accumulate, and
+rotates the nominal offset to the predicted touchdown heading:
+</p>
+
+$$
+\psi_{\mathrm{trans}} = \psi_0 + \tfrac{1}{2}\dot\psi_{\mathrm{cmd}} T_p,
+\qquad
+\Delta\mathbf{p}^W_{\mathrm{step}} = R_z(\psi_{\mathrm{trans}})\,
+\begin{bmatrix}\dot x_{\mathrm{cmd}}\\ \dot y_{\mathrm{cmd}}\\ 0\end{bmatrix} T_p,
+$$
+
+$$
+T_{\mathrm{td}} = \operatorname{clamp}\big(T_c(1 - \varphi_{\mathrm{gait}}),\, 0,\, T_{\mathrm{sw}}\big),
+\qquad
+\psi_{\mathrm{td}} = \psi_0 + \dot\psi_{\mathrm{cmd}}\, T_{\mathrm{td}},
+$$
+
+$$
+\mathbf{o}^B_{\mathrm{planned}}
+= R_z(\psi_0)^{\!\top} \Delta\mathbf{p}^W_{\mathrm{step}}
++ R_z(\psi_{\mathrm{td}} - \psi_0)\,\mathbf{o}^B_{\mathrm{leg}},
+$$
+
+$$
+\boxed{\;
+\mathbf{p}^W_{\mathrm{td}} = \mathbf{p}^W_{\mathrm{center}} + R_z(\psi_0)\,\mathbf{o}^B_{\mathrm{planned}},
+\qquad
+p^W_{\mathrm{td},z} = -5\ \mathrm{mm}.
+\;}
+$$
+
+<p>
+The two rotation angles are doing different jobs: $\psi_{\mathrm{trans}}$ aims the
+<em>translation</em> preview along the arc the body will follow; $\psi_{\mathrm{td}}$ rotates the
+<em>stance geometry</em> to where the body will be pointing at touchdown, so that during pure
+turning the feet step onto a rotating footprint rather than being dragged along a tangent. The
+target's $-5$&nbsp;mm height commands slight ground penetration, guaranteeing firm contact rather
+than a foot hovering at numerical zero. Targets latch at liftoff and hold for the swing —
+replanned mid-swing only on a zero-command edge or during turn-stop recovery.
+</p>
+
+<p>One asymmetric guard: the lateral component may never cross the body centerline,</p>
+
+$$
+o_{\mathrm{planned},y}^{B} \;\ge\; 0 \ \ (\text{left leg}),
+\qquad
+o_{\mathrm{planned},y}^{B} \;\le\; 0 \ \ (\text{right leg}),
+$$
+
+<p>which rules out the one catastrophic foothold — a self-crossing step — while leaving the
+rotated nominal offset otherwise untouched.</p>
+
+<h3 id="stopping">8.2&ensp;Stopping is its own behavior</h3>
+
+<p>
+Zeroing the command does not simply zero the preview. On a zero-command edge, the planner
+switches to a <strong>capture-point stop</strong>: the step center gains a braking offset
+proportional to the estimated body velocity,
+</p>
+
+$$
+\Delta\mathbf{p}^B_{\mathrm{stop}} = \operatorname{clamp}\big(k_{\mathrm{cp}}\, \mathbf{v}^B,\; \lVert\cdot\rVert \le d_{\max}\big),
+\qquad k_{\mathrm{cp}} = 0.2,\;\; d_{\max} = 8\ \mathrm{cm},
+$$
+
+<p>
+placing the feet ahead of the momentum they must absorb — a bounded, first-order cousin of the
+capture point. Both feet receive only nominal offsets about this center, so they converge to
+equal fore-aft positions without sacrificing braking authority. Stops after in-place turning are
+detected separately (previous command was yaw-dominant): both feet then share a single stop
+frame whose center and heading <em>track the estimated body</em> while the gait finishes
+aligning the feet. Freezing that frame in world coordinates instead lets the body drift away
+from its own support polygon mid-stop — one of those failure modes discovered only by stopping a
+turning robot many, many times.
+</p>
+
+<h3 id="swing-traj">8.3&ensp;Swing trajectory</h3>
+
+<p>
+Between liftoff and touchdown, the foot follows a smoothstep-blended path. With phase
+$s \in [0,1]$ and blend $\sigma(s) = 3s^2 - 2s^3$ (zero velocity at both ends), the horizontal
+components interpolate directly,
+</p>
+
+$$
+\mathbf{p}_{xy}(s) = (1 - \sigma(s))\,\mathbf{p}_{xy,0} + \sigma(s)\,\mathbf{p}_{xy,f},
+$$
+
+<p>while the vertical channel runs two back-to-back blends through an apex at
+$z_{\mathrm{mid}} = z_f + h_{\mathrm{swing}}$ ($h_{\mathrm{swing}} = 6$&nbsp;cm):</p>
+
+$$
+p_z(s) =
+\begin{cases}
+(1 - \sigma(2s))\, z_0 + \sigma(2s)\, z_{\mathrm{mid}}, & s \le \tfrac{1}{2}\\[4pt]
+(1 - \sigma(2s{-}1))\, z_{\mathrm{mid}} + \sigma(2s{-}1)\, z_f, & s > \tfrac{1}{2},
+\end{cases}
+$$
+
+<p>
+with analytic velocity and acceleration references fed to the swing controller
+(<a href="#torque">§9.2</a>). Because $\sigma'$ vanishes at the endpoints, touchdown approaches
+with near-zero commanded velocity — soft landings by construction rather than by gain tuning.
+The final target $\mathbf{p}_f$ can be moved mid-flight (by the contact manager or a replan);
+the blend re-aims continuously without restarting the phase clock.
+</p>

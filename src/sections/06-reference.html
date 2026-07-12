@@ -1,0 +1,115 @@
+<h2 id="reference-trajectory"><span class="secno">6</span>Reference Trajectory: Receding, Estimator-Anchored, Gait-Aware</h2>
+
+<p>
+The reference generator answers one question for the QP: <em>where should the body be at each of
+the next 25 horizon samples?</em> Its design principle sounds obvious and is routinely violated:
+<strong>a velocity-commanded walker must not chase a position it accumulated in the past.</strong>
+</p>
+
+<h3 id="seed-policy">6.1&ensp;Mode-dependent seeding</h3>
+
+<p>
+Each rebuild starts from a seed state $(\psi_0, \mathbf{p}_0^W, \dots)$ chosen by mode:
+</p>
+
+<ul>
+  <li><strong>Standing</strong> seeds from the <em>pose target</em> — position holding is the
+  entire job, so the reference should pull the body back to where it is supposed to stand.</li>
+  <li><strong>Walking</strong> seeds planar position and yaw from the <em>current state
+  estimate</em>, then rolls forward under the commanded velocity. Height, roll, and pitch remain
+  target quantities: $p_{z} = z_{\mathrm{nom}} + \Delta z_{\mathrm{cmd}}$, applied exactly once
+  rather than integrated.</li>
+</ul>
+
+<p>
+The walking choice is the important one. Suppose the robot is shoved sideways half a step. A
+persistent world-frame reference — one that kept integrating from where the body <em>used</em> to
+be — now demands that the MPC fight its way back to a stale line in space, spending its narrow
+lateral wrench budget on position recovery the operator never asked for. The receding reference
+instead accepts the displacement as the new origin and tracks velocity from there; foot placement
+(<a href="#swing">§8</a>), which is also anchored to the estimated COM, remains consistent with
+the body the robot actually has, not the body the integrator remembers. After this change,
+push-recovery behavior stopped fighting itself — the MPC and the foothold planner finally agreed
+about where “here” is.
+</p>
+
+<h3 id="yaw-gating">6.2&ensp;Gait-gated yaw integration</h3>
+
+<p>
+Yaw advances by recurrence along the horizon, optionally gated by the gait. The gate exists
+because physically, a biped turns by swinging a foot to a rotated placement — during double
+support with both feet planted, commanding continued rotation of the reference just winds up
+torsional stress against the constraint set of <a href="#torsional">§5.3</a>. The double-support
+predicate is sampled with a half-step lookback to avoid chattering at phase boundaries:
+</p>
+
+$$
+t_{s,k} =
+\begin{cases}
+t_k, & k = 0,\\[2pt]
+t_k - \tfrac{1}{2}\Delta t, & k \ge 1,
+\end{cases}
+\qquad
+g_k =
+\begin{cases}
+0, & c_L(t_{s,k}) \wedge c_R(t_{s,k}) \quad \text{(double support)}\\[2pt]
+1, & \text{otherwise,}
+\end{cases}
+$$
+
+$$
+\psi_k \;=\; \psi_{k-1} + g_k\, \dot\psi_{\mathrm{cmd}}\, \Delta t .
+$$
+
+<p>
+The integration mode is configurable (<code>single_support</code> /
+<code>double_support</code> / <code>always</code>); the current MIT tuning integrates at every
+step ($g_k \equiv 1$), which — combined with the stance-foot yaw-hold moment of
+<a href="#gait">§7.6</a> and the touchdown-yaw preview of <a href="#swing">§8</a> — produced the
+smoothest sustained turning. The gated machinery remains in place as a tuning lever, and the
+recurrence runs on unwrapped yaw per the policy of <a href="#yaw-policy">§4.4</a>.
+</p>
+
+<h3 id="planar-propagation">6.3&ensp;Planar propagation</h3>
+
+<p>Position rolls forward in world coordinates, but the command is interpreted in the
+body-yaw frame at each step's <em>current reference heading</em>:</p>
+
+$$
+\mathbf{p}^W_{k+1}
+= \mathbf{p}^W_k + R_z(\psi_k)
+\begin{bmatrix}\dot x_{\mathrm{cmd}}\\ \dot y_{\mathrm{cmd}}\\ 0\end{bmatrix}\Delta t,
+\qquad
+\mathbf{v}^W_k
+= R_z(\psi_k)
+\begin{bmatrix}\dot x_{\mathrm{cmd}}\\ \dot y_{\mathrm{cmd}}\\ \dot z_{\mathrm{cmd}}\end{bmatrix}.
+$$
+
+<p>
+So a fixed forward command traces an arc when combined with a yaw rate — the reference is a
+unicycle rollout, which is exactly the motion vocabulary of the keyboard/operator interface.
+Each horizon sample then assembles the full reference state: roll/pitch from the pose target,
+$\psi_k$ from the recurrence, $\boldsymbol{\omega}_{\mathrm{ref}} = [0, 0, g_k\dot\psi_{\mathrm{cmd}}]$,
+velocities from the rotated command, and the gravity constant. Deliberately conservative — the
+reference models only the reduced-body motion the MPC needs, nothing it does not.
+</p>
+
+<h3 id="lever-arms">6.4&ensp;Foot-relative lever arms</h3>
+
+<p>Alongside the state reference, the builder emits per-step contact lever arms measured from the
+<em>reference</em> body position to the planned foothold positions:</p>
+
+$$
+\mathbf{r}_{L,k} = \mathbf{p}^W_{L,\mathrm{des}} - \mathbf{p}^W_k,
+\qquad
+\mathbf{r}_{R,k} = \mathbf{p}^W_{R,\mathrm{des}} - \mathbf{p}^W_k .
+$$
+
+<p>
+These are not swing trajectories — they are the moment arms inside
+$B_c$'s $\hat{\mathbf{I}}^{-1}[\mathbf{r}]_\times$ blocks (<a href="#continuous-dynamics">§3.4</a>).
+This coupling is why reference and foothold planner must agree: shift the body reference without
+shifting the planned footholds and every predicted moment arm is wrong, which the QP then
+compensates with wrenches the real robot never needed. Keeping both anchored to the same
+estimated state is what makes the pair self-consistent.
+</p>
