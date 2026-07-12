@@ -610,16 +610,22 @@ Deep technical notes live in `docs/` — read these before touching frame conven
 
 <div align="center">
 
-<a href="https://github.com/ispaik06/convex-mpc-biped">
-  <img src="https://github-readme-stats.vercel.app/api/pin/?username=ispaik06&repo=convex-mpc-biped&bg_color=0D1117&title_color=A78BFA&text_color=C9D1D9&icon_color=8B5CF6&border_color=6D28D9&show_owner=true" alt="convex-mpc-biped repository card">
-</a>
+### [ispaik06/convex-mpc-biped](https://github.com/ispaik06/convex-mpc-biped)
+
+_SRB Convex MPC for humanoid locomotion in MuJoCo_
+
+<img src="https://img.shields.io/github/stars/ispaik06/convex-mpc-biped?style=flat-square&label=Stars&logo=github&color=8B5CF6&labelColor=1A1B27&logoColor=white" alt="Stars">
+<img src="https://img.shields.io/github/forks/ispaik06/convex-mpc-biped?style=flat-square&label=Forks&logo=github&color=7C3AED&labelColor=1A1B27&logoColor=white" alt="Forks">
+<img src="https://img.shields.io/github/watchers/ispaik06/convex-mpc-biped?style=flat-square&label=Watchers&logo=github&color=6D28D9&labelColor=1A1B27&logoColor=white" alt="Watchers">
+<img src="https://img.shields.io/github/issues/ispaik06/convex-mpc-biped?style=flat-square&label=Issues&logo=github&color=6366F1&labelColor=1A1B27&logoColor=white" alt="Issues">
 
 <br>
-<br>
 
-<img src="https://img.shields.io/github/languages/count/ispaik06/convex-mpc-biped?style=flat-square&label=Languages&color=8B5CF6&labelColor=1A1B27" alt="Language count">
-<img src="https://img.shields.io/github/languages/code-size/ispaik06/convex-mpc-biped?style=flat-square&label=Code%20size&color=7C3AED&labelColor=1A1B27" alt="Code size">
+<img src="https://img.shields.io/github/languages/top/ispaik06/convex-mpc-biped?style=flat-square&label=Top%20language&color=8B5CF6&labelColor=1A1B27" alt="Top language">
+<img src="https://img.shields.io/github/languages/count/ispaik06/convex-mpc-biped?style=flat-square&label=Languages&color=7C3AED&labelColor=1A1B27" alt="Language count">
+<img src="https://img.shields.io/github/languages/code-size/ispaik06/convex-mpc-biped?style=flat-square&label=Code%20size&color=6D28D9&labelColor=1A1B27" alt="Code size">
 <img src="https://img.shields.io/github/commit-activity/m/ispaik06/convex-mpc-biped?style=flat-square&label=Commits%2Fmonth&color=6366F1&labelColor=1A1B27" alt="Commit activity">
+<img src="https://img.shields.io/github/last-commit/ispaik06/convex-mpc-biped?style=flat-square&label=Last%20commit&logo=git&color=4F46E5&labelColor=1A1B27&logoColor=white" alt="Last commit">
 <img src="https://img.shields.io/github/license/ispaik06/convex-mpc-biped?style=flat-square&label=License&color=9333EA&labelColor=1A1B27" alt="License">
 
 </div>
