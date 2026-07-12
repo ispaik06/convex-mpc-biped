@@ -32,6 +32,21 @@
   <a href="#demos"><img src="https://img.shields.io/badge/%E2%96%B8%20Demos-4C1D95?style=for-the-badge&logoColor=white" alt="Demos"></a>
 </p>
 
+<!-- Featured technical article -->
+<p align="center">
+  <a href="https://ispaik06.github.io/convex-mpc-biped/">
+    <img src="https://img.shields.io/badge/%F0%9F%93%96%20FULL%20TECHNICAL%20ARTICLE-Convex%20MPC%20for%20Bipedal%20Humanoid%20Locomotion-A78BFA?style=for-the-badge&labelColor=1A1B27" alt="Read the full technical article">
+  </a>
+  <br>
+  <sub>
+    The complete write-up of this repository &mdash; SRB dynamics, the condensed QP, yaw-rotated friction/CoP
+    constraints, swing-foot planning, solver engineering, and the four-layer MPC debugging methodology,
+    <br>
+    with full derivations, diagrams, and result videos.
+    Article source lives on the <a href="../../tree/gh-pages"><code>gh-pages</code></a> branch.
+  </sub>
+</p>
+
 <!-- Repository analytics badges -->
 <p align="center">
   <img src="https://img.shields.io/github/stars/ispaik06/convex-mpc-biped?style=for-the-badge&logo=github&color=8B5CF6&labelColor=1A1B27&logoColor=white" alt="Stars">
