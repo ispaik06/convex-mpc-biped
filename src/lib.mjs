@@ -48,51 +48,30 @@ export function transformMath(html) {
 // Already-linked references (inside <a>...</a>) are left untouched.
 // ---------------------------------------------------------------------------
 
-const SECTION_IDS = {
-  1: "introduction",
-  2: "architecture",
-  3: "srb-model",
-  4: "convex-mpc",
-  5: "constraints",
-  6: "reference-trajectory",
-  7: "gait",
-  8: "swing",
-  9: "torque",
-  10: "solver",
-  11: "robot-independent",
-  12: "debugging",
-  13: "results",
-  14: "limitations",
-  15: "closing",
-  16: "references",
-};
-
-const SUBSECTION_IDS = {
-  "1.1": "from-quadruped-to-biped", "1.2": "scope",
-  "2.1": "runtime-loop",
-  "3.1": "state-input", "3.2": "frames", "3.3": "orientation-dynamics", "3.4": "continuous-dynamics",
-  "4.1": "discretization", "4.2": "condensed-qp", "4.3": "cost-transform", "4.4": "yaw-policy",
-  "5.1": "friction-pyramid", "5.2": "cop", "5.3": "torsional", "5.4": "foot-template",
-  "5.5": "yaw-rotation", "5.6": "equality-constraints",
-  "6.1": "seed-policy", "6.2": "yaw-gating", "6.3": "planar-propagation", "6.4": "lever-arms",
-  "7.1": "phase", "7.2": "horizon-constraints", "7.3": "contact-estimation",
-  "7.4": "early-contact", "7.5": "horizon-override", "7.6": "stance-yaw-hold",
-  "8.1": "touchdown-eq", "8.2": "stopping", "8.3": "swing-traj",
-  "9.1": "stance-map", "9.2": "swing-osc", "9.3": "realizability",
-  "10.1": "problem-size", "10.2": "sparsity", "10.3": "direct-fill",
-  "12.1": "dbg-srb", "12.2": "dbg-wrench", "12.3": "dbg-probe", "12.4": "dbg-rh", "12.5": "dashboard",
-  "13.1": "tuning-summary",
-};
+// Maps are derived from the headings themselves, so this works for any article
+// whose h2 headings carry <span class="secno">N</span> and whose h3 headings
+// start with "N.M" (e.g. <h3 id="cop">5.2&ensp;...).
+function deriveSectionMaps(html) {
+  const sections = {};
+  const subsections = {};
+  const h2re = /<h2\s+id="([^"]+)"[^>]*>\s*<span class="secno">(\d+)<\/span>/g;
+  const h3re = /<h3\s+id="([^"]+)"[^>]*>\s*(\d+)\.(\d+)/g;
+  let m;
+  while ((m = h2re.exec(html)) !== null) sections[Number(m[2])] = m[1];
+  while ((m = h3re.exec(html)) !== null) subsections[`${m[2]}.${m[3]}`] = m[1];
+  return { sections, subsections };
+}
 
 export function autoLinkSectionRefs(html) {
+  const { sections, subsections } = deriveSectionMaps(html);
   // Split on existing anchors so we never nest a link inside a link.
   const parts = html.split(/(<a\b[\s\S]*?<\/a>)/g);
   let linked = 0;
   const out = parts.map((part, i) => {
     if (i % 2 === 1) return part; // an existing <a>...</a> chunk
     return part.replace(/§(\d+)(?:\.(\d+))?/g, (m, sec, sub) => {
-      const id = sub != null ? (SUBSECTION_IDS[`${sec}.${sub}`] || SECTION_IDS[Number(sec)])
-                             : SECTION_IDS[Number(sec)];
+      const id = sub != null ? (subsections[`${sec}.${sub}`] || sections[Number(sec)])
+                             : sections[Number(sec)];
       if (!id) return m;
       linked += 1;
       return `<a href="#${id}">${m}</a>`;
