@@ -123,7 +123,7 @@ $$
 
 <p>
 For walking, roll and pitch stay near zero — the reference holds them at the pose target, and the
-weights of <a href="#results">Table&nbsp;7</a> punish deviations hard — so the small-angle form
+weights of <a href="#tuning-summary">Table&nbsp;7</a> punish deviations hard — so the small-angle form
 is used, which is exact in yaw and first-order in tilt:
 </p>
 
@@ -144,7 +144,7 @@ $$
 
 <p>
 which is the world-frame inertia of the body-frame tensor ${}^{B}\mathbf{I}$ under the
-small-tilt assumption. Both approximations are inherited from [1]; what is <em>not</em> inherited
+small-tilt assumption. Both approximations are inherited from <a href="https://doi.org/10.1109/IROS.2018.8594448" target="_blank" rel="noopener">[1]</a>; what is <em>not</em> inherited
 is where $\psi$ comes from — each horizon step $k$ uses its own reference yaw $\psi_k$
 (<a href="#convex-mpc">§4</a>), which is what lets the same QP remain honest during sustained
 in-place turning at 1.3&nbsp;rad/s.

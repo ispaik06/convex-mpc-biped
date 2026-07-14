@@ -67,8 +67,21 @@ export function autoLinkSectionRefs(html) {
   // Split on existing anchors so we never nest a link inside a link.
   const parts = html.split(/(<a\b[\s\S]*?<\/a>)/g);
   let linked = 0;
+  let retargeted = 0;
   const out = parts.map((part, i) => {
-    if (i % 2 === 1) return part; // an existing <a>...</a> chunk
+    if (i % 2 === 1) {
+      // Existing anchor: if its visible text is a section ref, retarget the href
+      // to the exact (sub)section id so hand-written links can't point coarse.
+      return part.replace(
+        /^<a href="#([^"]+)">(§(\d+)(?:\.(\d+))?)<\/a>$/,
+        (m, href, label, sec, sub) => {
+          const id = sub != null ? (subsections[`${sec}.${sub}`] || sections[Number(sec)])
+                                 : sections[Number(sec)];
+          if (!id || id === href) return m;
+          retargeted += 1;
+          return `<a href="#${id}">${label}</a>`;
+        });
+    }
     return part.replace(/§(\d+)(?:\.(\d+))?/g, (m, sec, sub) => {
       const id = sub != null ? (subsections[`${sec}.${sub}`] || sections[Number(sec)])
                              : sections[Number(sec)];
@@ -77,7 +90,7 @@ export function autoLinkSectionRefs(html) {
       return `<a href="#${id}">${m}</a>`;
     });
   });
-  console.log(`auto-linked ${linked} plain section reference(s)`);
+  console.log(`auto-linked ${linked} plain ref(s), retargeted ${retargeted} coarse ref(s)`);
   return out.join("");
 }
 
